@@ -12,4 +12,5 @@ tsconfig.json
 dist/**
 out/**/*.map
 **/__pycache__/**
+docs/**
 demo/logs/**

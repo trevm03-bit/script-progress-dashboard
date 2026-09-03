@@ -29,6 +29,14 @@ The dashboard lives in two places: the **Script Progress** icon in the Activity 
 sidebar view that stays open while you work) and **Script Progress: Open Dashboard**, a full
 editor tab — which is where the Access Map is drawn at size.
 
+## Screenshots
+
+![Sidebar, Access Map and dashboard side by side, with a stalled run](docs/dashboard-overview.png)
+
+![Access Map, force layout — a running script's links pulse](docs/access-map-force.png)
+
+![Access Map, radial layout — scripts on the inner ring, resources grouped by type outside](docs/access-map-radial.png)
+
 ## Install
 
 **With the `code` command**
