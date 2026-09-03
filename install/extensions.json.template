@@ -1,0 +1,20 @@
+[
+  {
+    "identifier": { "id": "trevor-marshall.script-progress-dashboard" },
+    "version": "1.0.0",
+    "location": {
+      "$mid": 1,
+      "fsPath": "<absolute path to the extension folder, backslashes doubled, e.g. X:\\\\...\\\\.vscode\\\\extensions\\\\trevor-marshall.script-progress-dashboard-1.0.0>",
+      "_sep": 1,
+      "external": "file:///<same path, forward slashes, drive letter URL-encoded as x%3A>",
+      "path": "/<same path with forward slashes, e.g. /x:/.../.vscode/extensions/trevor-marshall.script-progress-dashboard-1.0.0>",
+      "scheme": "file"
+    },
+    "relativeLocation": "trevor-marshall.script-progress-dashboard-1.0.0",
+    "metadata": {
+      "installedTimestamp": 1788400000000,
+      "pinned": false,
+      "source": "vsix"
+    }
+  }
+]

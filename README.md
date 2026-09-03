@@ -37,7 +37,7 @@ code --install-extension script-progress-dashboard-1.0.0.vsix
 
 or in VS Code: Extensions view → `…` menu → **Install from VSIX…**
 
-### Without any tooling (unpacked folder)
+### Without the `code` command (unpacked folder)
 
 Copy this folder (you need `package.json`, `out/`, `media/`, `LICENSE`, `README.md`; `node_modules`
 is not needed) to:
@@ -46,7 +46,13 @@ is not needed) to:
 %USERPROFILE%\.vscode\extensions\trevor-marshall.script-progress-dashboard-1.0.0\
 ```
 
-then run **Developer: Reload Window**. The compiled `out/` folder is committed for exactly this reason.
+VS Code only loads folders listed in `%USERPROFILE%\.vscode\extensions\extensions.json` (tested on
+1.136: an unlisted folder is marked as removed, silently). Add an entry to that JSON array, copying
+the shape of an existing one — the fields that matter are `identifier.id`
+(`trevor-marshall.script-progress-dashboard`), `version` (`1.0.0`), `location.fsPath` / `location.path`
+(the folder's absolute path) and `relativeLocation` (the folder name); `install/extensions.json.template`
+is a filled-in example. Then run **Developer: Reload Window**. The compiled `out/` folder is committed
+so this route needs no build.
 
 ## Report progress from a script
 
