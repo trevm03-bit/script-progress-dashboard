@@ -33,30 +33,37 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DataReader = exports.FILES = void 0;
-// Reads the four JSON files. Tolerant by design: a file is often caught mid-write, so a
-// parse failure keeps the LAST GOOD value for that file and reports the problem instead of
-// blanking the dashboard. No vscode import, so it is testable with plain Node.
+exports.DataReader = exports.SLOTS_DIR = exports.FILES = void 0;
+// Reads the data files. Tolerant by design: a file is often caught mid-write, so a parse
+// failure keeps the LAST GOOD value for that file and reports the problem instead of blanking
+// the dashboard. Also reads progress/<slug>.json slot files so concurrent scripts each get a
+// card. No vscode import, so it is testable with plain Node.
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const time_1 = require("./logic/time");
 exports.FILES = {
     progress: 'progress.json',
     history: 'run_history.json',
     deltas: 'deltas.json',
     access: 'access.json',
 };
+exports.SLOTS_DIR = 'progress';
 class DataReader {
     constructor(logsDir) {
         this.logsDir = logsDir;
         this.lastGood = {};
-        this.lastMtime = {};
+        /** In-memory facts the extension observed (process exit codes). Never written to disk. */
+        this.overlays = [];
     }
     setLogsDir(dir) {
         if (dir !== this.logsDir) {
             this.logsDir = dir;
             this.lastGood = {};
-            this.lastMtime = {};
+            this.overlays = [];
         }
+    }
+    addOverlay(o) {
+        this.overlays = [...this.overlays.filter(x => x.task !== o.task), o].slice(-20);
     }
     readAll() {
         const readErrors = [];
@@ -65,11 +72,20 @@ class DataReader {
         const history = this.readJson(exports.FILES.history, readErrors);
         const deltas = this.readJson(exports.FILES.deltas, readErrors);
         const access = this.readJson(exports.FILES.access, readErrors);
+        const main = isProgress(progress) ? progress : null;
+        const tasks = this.readSlots(readErrors, main);
+        // Drop overlays that no longer apply (the task reported a final state since).
+        this.overlays = this.overlays.filter(o => {
+            const t = tasks.find(x => x.task === o.task) ?? (main && main.task === o.task ? main : null);
+            return !t || t.status === 'running';
+        });
         return {
-            progress: isProgress(progress) ? progress : null,
+            progress: main,
+            tasks,
             history: Array.isArray(history) ? history.filter(isRun) : [],
             deltas: deltas && typeof deltas === 'object' && !Array.isArray(deltas) ? deltas : {},
             access: access && Array.isArray(access.nodes) ? access : null,
+            overlays: this.overlays,
             logsDir: this.logsDir,
             logsDirExists,
             readErrors,
@@ -78,15 +94,49 @@ class DataReader {
     /** A cheap "did anything change" signal for the poll loop: max mtime across the files. */
     latestMtime() {
         let latest = 0;
-        for (const name of Object.values(exports.FILES)) {
-            try {
-                const m = fs.statSync(path.join(this.logsDir, name)).mtimeMs;
-                if (m > latest)
-                    latest = m;
-            }
-            catch { /* missing file is fine */ }
+        const stat = (p) => { try {
+            const m = fs.statSync(p).mtimeMs;
+            if (m > latest)
+                latest = m;
         }
+        catch { /* missing is fine */ } };
+        for (const name of Object.values(exports.FILES))
+            stat(path.join(this.logsDir, name));
+        const slots = path.join(this.logsDir, exports.SLOTS_DIR);
+        try {
+            for (const f of fs.readdirSync(slots))
+                if (f.endsWith('.json'))
+                    stat(path.join(slots, f));
+        }
+        catch { /* no slots */ }
         return latest;
+    }
+    /** progress/<slug>.json files + the main file, de-duplicated by runId/task; running first, then newest. */
+    readSlots(errors, main) {
+        const out = new Map();
+        const key = (p) => p.runId ? `run:${p.runId}` : `task:${p.task}`;
+        const slots = path.join(this.logsDir, exports.SLOTS_DIR);
+        let names = [];
+        try {
+            names = fs.readdirSync(slots).filter(f => f.endsWith('.json'));
+        }
+        catch {
+            names = [];
+        }
+        for (const f of names) {
+            const p = this.readJson(`${exports.SLOTS_DIR}/${f}`, errors);
+            if (isProgress(p))
+                out.set(key(p), p);
+        }
+        if (main) {
+            const k = key(main);
+            const existing = out.get(k);
+            // The main file is the most recently written; prefer whichever is newer.
+            if (!existing || ((0, time_1.parseIso)(main.updatedAt)?.getTime() ?? 0) >= ((0, time_1.parseIso)(existing.updatedAt)?.getTime() ?? 0))
+                out.set(k, main);
+        }
+        const rank = (p) => (p.status === 'running' ? 0 : 1);
+        return [...out.values()].sort((a, b) => rank(a) - rank(b) || ((0, time_1.parseIso)(b.updatedAt)?.getTime() ?? 0) - ((0, time_1.parseIso)(a.updatedAt)?.getTime() ?? 0));
     }
     readJson(name, errors) {
         const file = path.join(this.logsDir, name);
@@ -98,7 +148,7 @@ class DataReader {
             }
             text = fs.readFileSync(file, 'utf-8');
         }
-        catch (e) {
+        catch {
             // Locked by the writer for a moment (Windows). Keep what we had.
             return this.lastGood[name] ?? null;
         }

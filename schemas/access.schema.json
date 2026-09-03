@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://trevor-marshall.dev/schemas/script-progress/access.schema.json",
+  "title": "Script Progress: access.json",
+  "description": "The Access Map graph: which tasks touch which resources. Written by access(); the reporter keeps every task node plus the 150 most recently seen resource nodes.",
+  "type": "object",
+  "required": ["nodes", "edges"],
+  "properties": {
+    "nodes": {
+      "type": "array",
+      "description": "Every script and resource in the map. Task nodes are always kept; resource nodes are dropped least-recently-seen first.",
+      "items": { "$ref": "#/definitions/accessNode" }
+    },
+    "edges": {
+      "type": "array",
+      "description": "One link per task/resource/mode combination. An edge whose endpoints are no longer in nodes is dropped.",
+      "items": { "$ref": "#/definitions/accessEdge" }
+    }
+  },
+  "definitions": {
+    "accessNode": {
+      "type": "object",
+      "description": "One node of the map: a script, or something a script touches.",
+      "required": ["id", "type", "label", "lastSeen"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique node id. Scripts are 'task:<task name>'; resources are '<type>:<name>', e.g. 'table:sales.orders'."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["task", "file", "table", "api", "other"],
+          "description": "task = one of your scripts; file = a file on disk; table = a database table or view; api = a service or endpoint; other = anything else. The type sets the node color and its legend group."
+        },
+        "label": {
+          "type": "string",
+          "description": "Text drawn next to the node. For a task this is the task name; for a resource it is the name passed to access()."
+        },
+        "lastSeen": {
+          "type": "string",
+          "description": "ISO timestamp of the last time this node was touched. Used by scriptProgress.accessMap.timeWindowDays and to decide which resources to drop when over the node cap."
+        }
+      }
+    },
+    "accessEdge": {
+      "type": "object",
+      "description": "One link from a task to a resource, in one direction.",
+      "required": ["from", "to", "mode", "count", "lastSeen"],
+      "properties": {
+        "from": {
+          "type": "string",
+          "description": "Id of the task node that did the touching."
+        },
+        "to": {
+          "type": "string",
+          "description": "Id of the resource node that was touched."
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["read", "write"],
+          "description": "read = the script read the resource (drawn dashed); write = the script wrote to it (drawn solid)."
+        },
+        "count": {
+          "type": "number",
+          "description": "How many times this exact link has been recorded. Line width grows with the count."
+        },
+        "lastSeen": {
+          "type": "string",
+          "description": "ISO timestamp of the most recent time this link was recorded."
+        }
+      }
+    }
+  }
+}

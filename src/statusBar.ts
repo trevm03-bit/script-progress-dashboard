@@ -1,8 +1,8 @@
 // The status-bar item: one line, always visible. Ticks once a second while a task runs so
-// the elapsed time moves even between writes.
+// the elapsed time moves even between writes. Click → a menu of actions (or the dashboard).
 import * as vscode from 'vscode';
-import { DashboardData, Settings } from './types';
-import { clockTime, formatDuration, liveElapsed, liveEta, minutesSinceUpdate, taskState } from './logic/time';
+import { DashboardData, Settings, TaskState } from './types';
+import { clockTime, formatDuration, liveElapsed, liveEta, minutesSinceUpdate, percent, taskState } from './logic/time';
 
 export class StatusBarManager implements vscode.Disposable {
   private item: vscode.StatusBarItem;
@@ -13,15 +13,15 @@ export class StatusBarManager implements vscode.Disposable {
   constructor() {
     this.item = vscode.window.createStatusBarItem('scriptProgress.status', vscode.StatusBarAlignment.Left, 100);
     this.item.name = 'Script Progress';
-    this.item.command = 'scriptProgress.openPanel';
   }
 
   update(data: DashboardData, settings: Settings): void {
     this.data = data;
     this.settings = settings;
+    this.item.command = settings.statusBar.clickAction === 'menu' ? 'scriptProgress.statusMenu' : 'scriptProgress.openPanel';
     this.render();
-    // Tick only while something is running; otherwise nothing on the bar changes by itself.
-    const running = data.progress && taskState(data.progress, settings.staleRunningMinutes, new Date()) === 'running';
+    const now = new Date();
+    const running = data.tasks.some(t => taskState(t, settings.staleRunningMinutes, now, data.overlays) === 'running');
     if (running && !this.timer) this.timer = setInterval(() => this.render(), 1000);
     if (!running && this.timer) { clearInterval(this.timer); this.timer = undefined; }
   }
@@ -29,48 +29,46 @@ export class StatusBarManager implements vscode.Disposable {
   private render(): void {
     const data = this.data;
     const settings = this.settings;
-    if (!data || !settings || !settings.statusBarEnabled) { this.item.hide(); return; }
-    const p = data.progress;
-    if (!p) { this.item.hide(); return; }
-
+    if (!data || !settings || !settings.statusBar.enabled) { this.item.hide(); return; }
     const now = new Date();
-    const state = taskState(p, settings.staleRunningMinutes, now);
+    const states = data.tasks.map(t => ({ t, s: taskState(t, settings.staleRunningMinutes, now, data.overlays) }));
+    const running = states.filter(x => x.s === 'running');
+    const stalled = states.filter(x => x.s === 'stalled' || x.s === 'exited');
     const md = new vscode.MarkdownString();
-    md.appendMarkdown(`**${p.task}**\n\n`);
+    md.supportThemeIcons = true;
     this.item.backgroundColor = undefined;
 
-    switch (state) {
-      case 'running': {
-        const step = p.totalSteps > 0 ? `${p.step}/${p.totalSteps} ` : '';
-        const eta = liveEta(p, now);
-        this.item.text = `$(sync~spin) ${step}${truncate(p.label, 28)} · ${formatDuration(liveElapsed(p, now))}`;
-        md.appendMarkdown(`${p.label}${p.detail ? ` — ${p.detail}` : ''}\n\nElapsed ${formatDuration(liveElapsed(p, now))}${eta !== null ? ` · ~${formatDuration(eta)} left` : ''}`);
-        if (p.warnings?.length) md.appendMarkdown(`\n\n$(warning) ${p.warnings.length} warning(s)`);
-        break;
+    if (running.length) {
+      const p = running[0].t;
+      const step = p.totalSteps > 0 ? `${p.step}/${p.totalSteps} ` : '';
+      const more = running.length > 1 ? ` +${running.length - 1}` : '';
+      const pct = p.totalSteps > 0 ? ` ${percent(p.step, p.totalSteps, p.substep)}%` : '';
+      this.item.text = `$(sync~spin) ${step}${truncate(p.label, 28)} · ${formatDuration(liveElapsed(p, now))}${pct}${more}`;
+      for (const { t } of running) {
+        const eta = liveEta(t, now);
+        md.appendMarkdown(`**${t.task}** — ${t.label}${t.detail ? ` — ${t.detail}` : ''}\n\nElapsed ${formatDuration(liveElapsed(t, now))}${eta !== null ? ` · ~${formatDuration(eta)} left` : ''}${t.warnings?.length ? ` · $(warning) ${t.warnings.length}` : ''}\n\n`);
       }
-      case 'stalled': {
-        this.item.text = `$(warning) Stalled ${Math.round(minutesSinceUpdate(p, now))}m · ${truncate(p.task, 24)}`;
-        this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
-        md.appendMarkdown(`Still marked running but not updated for ${Math.round(minutesSinceUpdate(p, now))} minutes.\n\nLast step: ${p.label}`);
-        break;
-      }
-      case 'complete': {
-        this.item.text = `$(check) ${truncate(p.task, 24)} ${clockTime(p.updatedAt)}`;
-        md.appendMarkdown(`Completed at ${clockTime(p.updatedAt)} in ${formatDuration(p.elapsed)}${p.detail ? `\n\n${p.detail}` : ''}`);
-        break;
-      }
-      case 'failed': {
+      if (stalled.length) md.appendMarkdown(`$(warning) ${stalled.length} stalled\n\n`);
+    } else if (stalled.length) {
+      const p = stalled[0].t;
+      const label = stalled[0].s === 'exited' ? 'Exited' : 'Stalled';
+      this.item.text = `$(warning) ${label} ${Math.round(minutesSinceUpdate(p, now))}m · ${truncate(p.task, 24)}`;
+      this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+      md.appendMarkdown(`**${p.task}** still marked running but ${stalled[0].s === 'exited' ? 'its process exited' : `not updated for ${Math.round(minutesSinceUpdate(p, now))} minutes`}.\n\nLast step: ${p.label}\n\n`);
+    } else {
+      if (settings.statusBar.idleMode === 'hidden' || !data.progress) { this.item.hide(); return; }
+      const p = data.progress;
+      const state: TaskState = taskState(p, settings.staleRunningMinutes, now, data.overlays);
+      if (state === 'failed') {
         this.item.text = `$(error) FAILED ${truncate(p.task, 22)}`;
         this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
-        md.appendMarkdown(`Failed at ${clockTime(p.updatedAt)} after ${formatDuration(p.elapsed)}${p.detail ? `\n\n${p.detail}` : ''}`);
-        break;
+        md.appendMarkdown(`**${p.task}** failed at ${clockTime(p.updatedAt)} after ${formatDuration(p.elapsed)}${p.detail ? `\n\n${p.detail}` : ''}\n\n`);
+      } else {
+        this.item.text = `$(check) ${truncate(p.task, 24)} ${clockTime(p.updatedAt)}`;
+        md.appendMarkdown(`**${p.task}** completed at ${clockTime(p.updatedAt)} in ${formatDuration(p.elapsed)}${p.detail ? `\n\n${p.detail}` : ''}\n\n`);
       }
-      default:
-        this.item.hide();
-        return;
     }
-    md.appendMarkdown('\n\n_Click to open the dashboard_');
-    md.supportThemeIcons = true;
+    md.appendMarkdown(settings.statusBar.clickAction === 'menu' ? '_Click for actions_' : '_Click to open the dashboard_');
     this.item.tooltip = md;
     this.item.show();
   }

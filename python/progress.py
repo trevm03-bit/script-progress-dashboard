@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Script Progress Dashboard - Python reporter.
+Script Progress Dashboard - Python reporter (v1.1).
 
 Drop this file into your project (for example scripts/lib/progress.py) and call it from any
 long-running script. It writes small JSON files that the VS Code extension watches. Nothing
-here needs the internet or any package outside the standard library.
+here needs the internet or any package outside the standard library (Python 3.10+).
 
 Usage:
     from lib.progress import Progress
@@ -13,18 +13,30 @@ Usage:
         p.step(1, 3, "Reading input file")
         p.access("file", "input/orders.csv")       # optional: feeds the Access Map
         p.detail("Rows: 3,990")
+        p.log("first row looks sane")              # optional: live log tail in the dashboard
         p.step(2, 3, "Loading warehouse table")
+        for i, chunk in enumerate(chunks):
+            p.substep(i / len(chunks))             # optional: progress within a step
         p.access("table", "sales.orders", mode="write")
         p.warn("12 rows had no customer id")
+        p.metric("rows_loaded", 3990)              # optional: metric cards + history + CSV
+        p.artifact("output/load_report.xlsx")      # optional: clickable link in the dashboard
         p.step(3, 3, "Reconciling")
         p.track_delta("reconciliation_delta", 0.0) # optional: feeds the Delta Tracker
         p.complete(success=True, summary="INSERT: 3,990 rows")
 
+Also:
+    @Progress.wrap("Nightly Load")                 # decorator form: wraps a function in a run
+    def main(p): ...
+
+    python progress.py                             # prints the current status (no arguments)
+
 Files written (all in the logs folder, see below):
-    progress.json      the current task - the extension's status bar and Active Task panel
-    run_history.json   one row per completed run (last 100)
-    deltas.json        numeric series for the Delta Tracker (last 50 points per metric)
-    access.json        scripts -> resources graph for the Access Map (last 150 nodes)
+    progress.json            the most recently written task (status bar + Active Task)
+    progress/<slug>.json     one file per task, so concurrent scripts each have a card
+    run_history.json         one row per completed run (last 100), with metrics and warnings
+    deltas.json              numeric series for the Delta Tracker (last 50 points per metric)
+    access.json              scripts -> resources graph for the Access Map (last 150 nodes)
 
 Where the logs folder is, in order of preference:
     1. the logs_dir argument,
@@ -33,15 +45,19 @@ Where the logs folder is, in order of preference:
        plus '/logs'  (so scripts/lib/progress.py -> <project>/logs),
     4. ./logs under the current working directory.
 """
+import functools
 import json
 import os
+import re
 import sys
 import time
 import traceback
-from datetime import datetime
+import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 
 __all__ = ["Progress", "resolve_logs_dir"]
+__version__ = "1.1.0"
 
 # Windows consoles default to cp1252; a stray non-ASCII character in a summary must never
 # crash the script that is doing the real work.
@@ -55,11 +71,19 @@ HISTORY_KEEP = 100
 DELTA_KEEP = 50
 ACCESS_NODE_KEEP = 150
 WARNINGS_IN_PROGRESS = 10
+WARNINGS_IN_HISTORY = 20
+LOG_KEEP = 20
 PRIOR_RUNS_FOR_ETA = 5
+SLOT_PRUNE_DAYS = 2
 
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def _slug(name: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
+    return s[:60] or "task"
 
 
 def resolve_logs_dir(logs_dir=None, module_file=__file__) -> Path:
@@ -77,40 +101,83 @@ def resolve_logs_dir(logs_dir=None, module_file=__file__) -> Path:
 
 
 class Progress:
-    def __init__(self, task_name: str, logs_dir=None):
+    def __init__(self, task_name: str, logs_dir=None, quiet: bool = False):
         self.task_name = task_name
+        self.quiet = quiet
         self.logs_dir = resolve_logs_dir(logs_dir)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
+        self.slots_dir = self.logs_dir / "progress"
         self.progress_file = self.logs_dir / "progress.json"
+        self.slot_file = self.slots_dir / (_slug(task_name) + ".json")
         self.history_file = self.logs_dir / "run_history.json"
         self.deltas_file = self.logs_dir / "deltas.json"
         self.access_file = self.logs_dir / "access.json"
+        self.run_id = datetime.now().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
         self.start_time = time.time()
+        self.started_at = _now_iso()
         self.warnings = []
+        self.log_lines = []
+        self.metrics = {}
+        self.artifacts = []
         self.accessed = []            # node ids touched this run, in order
         self.completed = False
-        self.current = {"step": 0, "total": 0, "label": "Starting", "detail": ""}
+        self.current = {"step": 0, "total": 0, "label": "Starting", "detail": "", "substep": None}
         self._prior_durations = self._get_prior_durations()
+        self._prune_slots()
         self._write()
 
     # ------------------------------------------------------------------ reporting API
     def step(self, step_num: int, total_steps: int, label: str):
         """Move to a new step. Prints it too, so the terminal shows the same story."""
-        self.current = {"step": int(step_num), "total": int(total_steps), "label": str(label), "detail": ""}
+        self.current = {"step": int(step_num), "total": int(total_steps), "label": str(label), "detail": "", "substep": None}
         self._write()
-        print(f"\n[{step_num}/{total_steps}] {label}...")
+        self._say(f"\n[{step_num}/{total_steps}] {label}...")
 
     def detail(self, text: str):
         """Update the detail line under the current step (row counts, file names...)."""
         self.current["detail"] = str(text)
         self._write()
-        print(f"  {text}")
+        self._say(f"  {text}")
+
+    def substep(self, fraction: float):
+        """Progress within the current step, 0.0 - 1.0 (e.g. i / len(chunks)). Cheap to call often."""
+        try:
+            f = max(0.0, min(1.0, float(fraction)))
+        except (TypeError, ValueError):
+            return
+        prev = self.current.get("substep")
+        self.current["substep"] = f
+        # Only write when it moved by at least 1%, so tight loops do not hammer the disk.
+        if prev is None or abs(f - prev) >= 0.01 or f >= 1.0:
+            self._write()
+
+    def log(self, message: str):
+        """A short log line for the dashboard's log tail (last 20 kept). Also printed."""
+        self.log_lines.append({"time": _now_iso(), "msg": str(message)})
+        self.log_lines = self.log_lines[-LOG_KEEP:]
+        self._write()
+        self._say(f"  {message}")
 
     def warn(self, message: str):
         """Record a warning. Shows up in the dashboard and counts in run history."""
         self.warnings.append({"time": _now_iso(), "msg": str(message)})
         self._write()
-        print(f"  WARNING: {message}")
+        self._say(f"  WARNING: {message}")
+
+    def metric(self, name: str, value):
+        """Record a named metric for this run (number or short string). Shown as a card, kept in history."""
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            value = str(value)
+        self.metrics[str(name)] = value
+        self._write()
+
+    def artifact(self, path):
+        """Record a file this run produced; the dashboard shows it as a clickable link."""
+        p = str(path)
+        if p not in self.artifacts:
+            self.artifacts.append(p)
+            self._write()
+        self._say(f"  -> {p}")
 
     def track_delta(self, metric_name: str, value: float):
         """Append one numeric value to a named series for the Delta Tracker sparkline."""
@@ -153,9 +220,8 @@ class Progress:
             edges.append({"from": task_id, "to": res_id, "mode": mode, "count": 1, "lastSeen": now})
 
         # Cap: keep every task node, then the most recently seen resources.
-        node_list = sorted(nodes.values(), key=lambda n: (n.get("type") != "task", n.get("lastSeen", "")), reverse=False)
-        tasks = [n for n in node_list if n.get("type") == "task"]
-        resources = sorted([n for n in node_list if n.get("type") != "task"], key=lambda n: n.get("lastSeen", ""), reverse=True)
+        tasks = [n for n in nodes.values() if n.get("type") == "task"]
+        resources = sorted([n for n in nodes.values() if n.get("type") != "task"], key=lambda n: n.get("lastSeen", ""), reverse=True)
         keep = tasks + resources[: max(0, ACCESS_NODE_KEEP - len(tasks))]
         keep_ids = {n["id"] for n in keep}
         edges = [e for e in edges if e.get("from") in keep_ids and e.get("to") in keep_ids]
@@ -165,22 +231,26 @@ class Progress:
             self.accessed.append(res_id)
             self._write()
 
-    def complete(self, success: bool = True, summary: str = ""):
+    def complete(self, success: bool = True, summary: str = "", metrics: dict = None):
         """Mark the run finished and add it to run history. Called for you by 'with'."""
         if self.completed:
             return
+        if metrics:
+            for k, v in dict(metrics).items():
+                self.metric(k, v)
         self.completed = True
         elapsed = time.time() - self.start_time
         self.current["label"] = "Complete" if success else "FAILED"
         self.current["detail"] = str(summary)
+        self.current["substep"] = None
         self._write(status="complete" if success else "failed")
         self._append_history(bool(success), elapsed, str(summary))
         status = "COMPLETE" if success else "FAILED"
-        print(f"\n=== {status} === ({self._fmt_duration(elapsed)})")
+        self._say(f"\n=== {status} === ({self._fmt_duration(elapsed)})")
         if summary:
-            print(f"  {summary}")
+            self._say(f"  {summary}")
 
-    # ------------------------------------------------------------------ context manager
+    # ------------------------------------------------------------------ context manager / decorator
     def __enter__(self):
         return self
 
@@ -194,7 +264,22 @@ class Progress:
             self.complete(success=True, summary=self.current.get("detail", ""))
         return False  # never swallow the exception
 
+    @classmethod
+    def wrap(cls, task_name: str, logs_dir=None):
+        """Decorator: run the function inside a Progress; it receives the reporter as its first argument."""
+        def deco(fn):
+            @functools.wraps(fn)
+            def inner(*args, **kwargs):
+                with cls(task_name, logs_dir=logs_dir) as p:
+                    return fn(p, *args, **kwargs)
+            return inner
+        return deco
+
     # ------------------------------------------------------------------ internals
+    def _say(self, text):
+        if not self.quiet:
+            print(text)
+
     def _write(self, status="running"):
         elapsed = time.time() - self.start_time
         data = {
@@ -204,13 +289,24 @@ class Progress:
             "totalSteps": self.current["total"],
             "label": self.current["label"],
             "detail": self.current["detail"],
+            "substep": self.current.get("substep"),
             "elapsed": round(elapsed, 1),
             "eta": self._estimate_eta(elapsed) if status == "running" else None,
             "warnings": self.warnings[-WARNINGS_IN_PROGRESS:],
+            "log": self.log_lines[-LOG_KEEP:],
+            "metrics": dict(self.metrics),
+            "artifacts": list(self.artifacts),
             "accessed": list(self.accessed),
+            "runId": self.run_id,
+            "startedAt": self.started_at,
             "updatedAt": _now_iso(),
         }
         self._write_json(self.progress_file, data)
+        try:
+            self.slots_dir.mkdir(parents=True, exist_ok=True)
+            self._write_json(self.slot_file, data)
+        except OSError:
+            pass  # the slot file is a nicety; the main file is the contract
 
     def _estimate_eta(self, elapsed: float):
         """Seconds left, from the average of the last few successful runs of this task."""
@@ -229,28 +325,48 @@ class Progress:
             if isinstance(r, dict) and r.get("task") == self.task_name and r.get("success") and "elapsed" in r
         ][-PRIOR_RUNS_FOR_ETA:]
 
+    def _prune_slots(self):
+        """Drop per-task files of runs that finished days ago, so the folder does not grow forever."""
+        try:
+            if not self.slots_dir.is_dir():
+                return
+            cutoff = time.time() - SLOT_PRUNE_DAYS * 86400
+            for f in self.slots_dir.glob("*.json"):
+                if f != self.slot_file and f.stat().st_mtime < cutoff:
+                    data = self._read_json(f, default={})
+                    if isinstance(data, dict) and data.get("status") != "running":
+                        f.unlink()
+        except OSError:
+            pass
+
     def _append_history(self, success, elapsed, summary):
         # Read-modify-write with a few retries: two scripts finishing in the same instant
         # can still race, which is a documented limit (one row could be lost, never corrupted).
+        row = {
+            "task": self.task_name,
+            "date": _now_iso(),
+            "success": success,
+            "elapsed": round(elapsed, 1),
+            "summary": summary,
+            "warnings": len(self.warnings),
+            "runId": self.run_id,
+            "startedAt": self.started_at,
+            "metrics": dict(self.metrics),
+            "warningItems": self.warnings[-WARNINGS_IN_HISTORY:],
+            "accessed": list(self.accessed),
+            "artifacts": list(self.artifacts),
+        }
         for attempt in range(3):
             history = self._read_json(self.history_file, default=[])
             if not isinstance(history, list):
                 history = []
-            history.append({
-                "task": self.task_name,
-                "date": _now_iso(),
-                "success": success,
-                "elapsed": round(elapsed, 1),
-                "summary": summary,
-                "warnings": len(self.warnings),
-            })
+            history.append(row)
             try:
                 self._write_json(self.history_file, history[-HISTORY_KEEP:])
                 return
             except PermissionError:
                 time.sleep(0.05 * (attempt + 1))
-        # Last resort so the run is never lost silently.
-        print(f"  NOTE: could not update {self.history_file.name} (file busy); run not recorded")
+        self._say(f"  NOTE: could not update {self.history_file.name} (file busy); run not recorded")
 
     def _read_json(self, path: Path, default=None):
         try:
@@ -282,3 +398,34 @@ class Progress:
             return f"{int(seconds)}s"
         m, s = divmod(int(seconds), 60)
         return f"{m}m{s}s"
+
+
+def _print_status(logs_dir=None):
+    """`python progress.py` - show what the dashboard would show, in the terminal."""
+    d = resolve_logs_dir(logs_dir)
+    p = d / "progress.json"
+    if not p.exists():
+        print(f"No progress.json in {d}")
+        return 1
+    data = json.loads(p.read_text(encoding="utf-8"))
+    upd = data.get("updatedAt", "")
+    try:
+        age = datetime.now() - datetime.fromisoformat(upd)
+    except ValueError:
+        age = timedelta(0)
+    state = data.get("status", "?")
+    if state == "running" and age > timedelta(minutes=30):
+        state = "STALLED"
+    print(f"{data.get('task')}  [{state}]  step {data.get('step')}/{data.get('totalSteps')}  {data.get('label')}")
+    if data.get("detail"):
+        print(f"  {data['detail']}")
+    print(f"  elapsed {data.get('elapsed')}s  eta {data.get('eta')}  updated {upd}  ({int(age.total_seconds())}s ago)")
+    for w in data.get("warnings", []):
+        print(f"  WARNING {w.get('time','')} {w.get('msg','')}")
+    for k, v in (data.get("metrics") or {}).items():
+        print(f"  {k} = {v}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(_print_status(sys.argv[1] if len(sys.argv) > 1 else None))

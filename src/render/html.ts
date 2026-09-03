@@ -23,15 +23,46 @@ export function icon(name: string | undefined, extraClass = ''): string {
   return `<i class="codicon codicon-${n}${modClass}${extraClass ? ' ' + extraClass : ''}"></i>`;
 }
 
+export interface SectionOpts {
+  /** Extra classes on the card. */
+  cls?: string;
+  /** Collapsed state (content hidden, title still shown). */
+  collapsed?: boolean;
+  /** Whether the title is a toggle. */
+  collapsible?: boolean;
+  /** Small text on the right of the title (counts, hints). */
+  aside?: string;
+}
+
 /** A dashboard card with an uppercase section title. */
-export function section(id: string, title: string, body: string, extraClass = ''): string {
-  return `<section class="card ${extraClass}" data-section="${esc(id)}">
-  <div class="section-title">${esc(title)}</div>
-  ${body}
+export function section(id: string, title: string, body: string, opts: SectionOpts = {}): string {
+  const collapsed = !!opts.collapsed;
+  const collapsible = opts.collapsible !== false;
+  const classes = ['card', opts.cls, collapsed ? 'collapsed' : ''].filter(Boolean).join(' ');
+  return `<section class="${classes}" data-section="${esc(id)}">
+  <div class="section-title${collapsible ? ' toggle' : ''}" ${collapsible ? `role="button" tabindex="0" aria-expanded="${collapsed ? 'false' : 'true'}"` : ''}>
+    ${collapsible ? `<i class="codicon codicon-chevron-${collapsed ? 'right' : 'down'} chev"></i>` : ''}<span class="section-name">${esc(title)}</span>${opts.aside ? `<span class="section-aside">${opts.aside}</span>` : ''}
+  </div>
+  <div class="section-body"${collapsed ? ' hidden' : ''}>${body}</div>
 </section>`;
 }
 
 /** Small muted line used for "nothing to show" states. */
-export function empty(text: string): string {
-  return `<div class="empty">${esc(text)}</div>`;
+export function empty(text: string, action?: { msg: string; label: string; icon?: string }): string {
+  return `<div class="empty">${esc(text)}${action ? ` <button class="link-btn" data-msg="${esc(action.msg)}">${icon(action.icon)}${esc(action.label)}</button>` : ''}</div>`;
+}
+
+/** A tiny inline metric chip: label + value. */
+export function chip(label: string, value: string, cls = ''): string {
+  return `<span class="chip ${cls}"><span class="chip-k">${esc(label)}</span><span class="chip-v">${esc(value)}</span></span>`;
+}
+
+/** Format a metric value that may be a number or a string. */
+export function metricText(v: number | string): string {
+  if (typeof v === 'number') {
+    if (!isFinite(v)) return '—';
+    if (Number.isInteger(v)) return v.toLocaleString('en-US');
+    return v.toLocaleString('en-US', { maximumFractionDigits: 3 });
+  }
+  return String(v);
 }

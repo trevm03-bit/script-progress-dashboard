@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://trevor-marshall.dev/schemas/script-progress/run_history.schema.json",
+  "title": "Script Progress: run_history.json",
+  "description": "One row per finished run, appended by complete(). The reporter keeps the last 100 rows, oldest first.",
+  "type": "array",
+  "items": { "$ref": "#/definitions/runRecord" },
+  "definitions": {
+    "runRecord": {
+      "type": "object",
+      "description": "A single finished run.",
+      "required": ["task", "date", "success", "elapsed", "summary", "warnings"],
+      "properties": {
+        "task": {
+          "type": "string",
+          "description": "Task name, exactly as passed to Progress(). Process Calendar entries match against the start of this string."
+        },
+        "date": {
+          "type": "string",
+          "description": "ISO timestamp of when the run finished. Sorting, the calendar and the daily summary all read this."
+        },
+        "success": {
+          "type": "boolean",
+          "description": "true when the run completed successfully, false when it failed or crashed."
+        },
+        "elapsed": {
+          "type": "number",
+          "description": "How long the run took, in seconds. Feeds the duration trend sparkline and the ETA of the next run."
+        },
+        "summary": {
+          "type": "string",
+          "description": "One-line result written by the script, e.g. 'INSERT: 3,990 rows'. An unhandled exception becomes 'Unhandled error: ...'."
+        },
+        "warnings": {
+          "type": "number",
+          "description": "How many warnings the run raised. Shown in the table; the text of each is in warningItems."
+        },
+        "runId": {
+          "type": "string",
+          "description": "Optional (v1.1). Unique id for this run, matching the runId in progress.json."
+        },
+        "startedAt": {
+          "type": "string",
+          "description": "Optional (v1.1). ISO timestamp of when the run started."
+        },
+        "metrics": {
+          "type": "object",
+          "description": "Optional (v1.1). Metrics reported during the run. Shown in the expanded detail row and exported to CSV.",
+          "additionalProperties": {
+            "type": ["number", "string"],
+            "description": "Metric value: a number, or a short string."
+          }
+        },
+        "warningItems": {
+          "type": "array",
+          "description": "Optional (v1.1). The warning text itself (the reporter keeps the last 20), so history rows can be expanded without the original run being live.",
+          "items": { "$ref": "#/definitions/warning" }
+        },
+        "accessed": {
+          "type": "array",
+          "description": "Optional (v1.1). Access Map node ids this run touched, in the order they were first touched.",
+          "items": {
+            "type": "string",
+            "description": "Access Map node id, in the form '<type>:<name>', e.g. 'file:input/orders.csv'."
+          }
+        },
+        "artifacts": {
+          "type": "array",
+          "description": "Optional (v1.1). Files this run produced, shown as clickable links in the expanded detail row.",
+          "items": {
+            "type": "string",
+            "description": "Path to a file the run produced, absolute or relative to the workspace folder."
+          }
+        }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "description": "One warning raised during the run.",
+      "required": ["time", "msg"],
+      "properties": {
+        "time": {
+          "type": "string",
+          "description": "ISO timestamp of when the warning was raised."
+        },
+        "msg": {
+          "type": "string",
+          "description": "Warning text."
+        }
+      }
+    }
+  }
+}

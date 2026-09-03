@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://trevor-marshall.dev/schemas/script-progress/deltas.schema.json",
+  "title": "Script Progress: deltas.json",
+  "description": "Numeric series for the Delta Tracker: one property per metric name, each holding its points oldest first. Written by track_delta() / trackDelta(); the reporter keeps the last 50 points per metric.",
+  "type": "object",
+  "additionalProperties": {
+    "type": "array",
+    "description": "Points for one metric, oldest first. The property name is the metric name used in scriptProgress.deltaTracker.metrics, .formats and .thresholds.",
+    "items": { "$ref": "#/definitions/deltaPoint" }
+  },
+  "definitions": {
+    "deltaPoint": {
+      "type": "object",
+      "description": "One recorded value of a tracked metric.",
+      "required": ["date", "value", "task"],
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "ISO timestamp of when the value was recorded. The sparkline plots points in this order."
+        },
+        "value": {
+          "type": "number",
+          "description": "The numeric value. Compared against scriptProgress.deltaTracker.thresholds to decide whether it is out of range."
+        },
+        "task": {
+          "type": "string",
+          "description": "Name of the task that recorded the value, so a metric tracked by several scripts can still be attributed."
+        }
+      }
+    }
+  }
+}

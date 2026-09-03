@@ -6,17 +6,46 @@
     "totalSteps": 7,
     "label": "Looking up customers",
     "detail": "2,410 rows",
+    "substep": 0.5,
     "elapsed": 20.0,
     "eta": 15.0,
     "warnings": [{ "time": "2026-09-02T10:00:15", "msg": "12 rows had no customer id <b>bold?</b>" }],
+    "log": [{ "time": "2026-09-02T10:00:05", "msg": "opened input" }, { "time": "2026-09-02T10:00:18", "msg": "joined 2,410 rows" }],
+    "metrics": { "rows_seen": 2410 },
+    "artifacts": ["output/partial.csv"],
     "accessed": ["file:input/orders.csv", "table:crm.customers"],
+    "runId": "20260902-100000-abc123",
+    "startedAt": "2026-09-02T10:00:00",
     "updatedAt": "2026-09-02T10:00:20"
   },
+  "tasks": [
+    {
+      "task": "Demo Pipeline",
+      "status": "running",
+      "step": 3,
+      "totalSteps": 7,
+      "label": "Looking up customers",
+      "detail": "2,410 rows",
+      "substep": 0.5,
+      "elapsed": 20.0,
+      "eta": 15.0,
+      "warnings": [{ "time": "2026-09-02T10:00:15", "msg": "12 rows had no customer id <b>bold?</b>" }],
+      "log": [{ "time": "2026-09-02T10:00:05", "msg": "opened input" }, { "time": "2026-09-02T10:00:18", "msg": "joined 2,410 rows" }],
+      "metrics": { "rows_seen": 2410 },
+      "artifacts": ["output/partial.csv"],
+      "accessed": ["file:input/orders.csv", "table:crm.customers"],
+      "runId": "20260902-100000-abc123",
+      "startedAt": "2026-09-02T10:00:00",
+      "updatedAt": "2026-09-02T10:00:20"
+    }
+  ],
   "history": [
     { "task": "Demo Pipeline", "date": "2026-09-01T09:00:00", "success": true, "elapsed": 38.2, "summary": "INSERT: 4,001 rows", "warnings": 1 },
     { "task": "Weekly Rollup", "date": "2026-08-31T08:00:00", "success": true, "elapsed": 120.0, "summary": "ok", "warnings": 0 },
     { "task": "Month-End Close", "date": "2026-08-04T08:00:00", "success": false, "elapsed": 12.0, "summary": "Row count mismatch", "warnings": 0 },
-    { "task": "Demo Pipeline", "date": "2026-09-02T09:30:00", "success": true, "elapsed": 35.0, "summary": "INSERT: 3,990 rows & more", "warnings": 0 }
+    { "task": "Demo Pipeline", "date": "2026-09-02T09:30:00", "success": true, "elapsed": 35.0, "summary": "INSERT: 3,990 rows & more", "warnings": 0,
+      "runId": "20260902-092900-def456", "startedAt": "2026-09-02T09:29:25", "metrics": { "rows_loaded": 3990, "total_value": "$16.2M" },
+      "warningItems": [], "accessed": ["file:input/orders.csv", "table:sales.orders_monthly"], "artifacts": ["output/load_report.xlsx"] }
   ],
   "deltas": {
     "rows_loaded": [
@@ -45,6 +74,7 @@
       { "from": "task:Weekly Rollup", "to": "api:Reporting service", "mode": "write", "count": 2, "lastSeen": "2026-08-31T08:01:00" }
     ]
   },
+  "overlays": [],
   "logsDir": "C:\\demo\\logs",
   "logsDirExists": true,
   "readErrors": []

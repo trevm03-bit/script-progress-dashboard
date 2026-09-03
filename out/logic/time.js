@@ -9,9 +9,11 @@ exports.deriveStart = deriveStart;
 exports.liveElapsed = liveElapsed;
 exports.liveEta = liveEta;
 exports.minutesSinceUpdate = minutesSinceUpdate;
+exports.exitOverlayFor = exitOverlayFor;
 exports.taskState = taskState;
 exports.percent = percent;
-/** 45 -> "45s", 125 -> "2m5s", 3600 -> "60m", 7261 -> "2h1m". */
+exports.slug = slug;
+/** 45 -> "45s", 125 -> "2m5s", 3600 -> "1h", 7261 -> "2h1m". */
 function formatDuration(seconds) {
     if (!isFinite(seconds) || seconds < 0)
         seconds = 0;
@@ -66,10 +68,13 @@ function dateTime(iso) {
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 /**
- * The script's start time, derived from the last write: updatedAt minus the elapsed
- * seconds it reported. This lets the dashboard tick elapsed time live between writes.
+ * The script's start time: startedAt when the reporter gave it, else derived from the last
+ * write (updatedAt minus the elapsed seconds it reported). Lets elapsed tick live between writes.
  */
 function deriveStart(progress) {
+    const started = parseIso(progress.startedAt);
+    if (started)
+        return started;
     const updated = parseIso(progress.updatedAt);
     if (!updated)
         return null;
@@ -101,23 +106,47 @@ function minutesSinceUpdate(progress, now) {
         return Infinity;
     return (now.getTime() - updated.getTime()) / 60000;
 }
+/** Does an exit overlay apply to this run? Same task, and the exit happened after the run started. */
+function exitOverlayFor(progress, overlays) {
+    if (!overlays || !overlays.length)
+        return null;
+    const start = deriveStart(progress)?.getTime() ?? 0;
+    for (const o of overlays) {
+        if (o.task !== progress.task)
+            continue;
+        const when = parseIso(o.when)?.getTime() ?? 0;
+        if (when >= start - 1000)
+            return o;
+    }
+    return null;
+}
 /**
  * The state shown to the user. A 'running' file that has not been touched for
  * staleRunningMinutes almost always means the script died without calling complete().
  */
-function taskState(progress, staleRunningMinutes, now) {
+function taskState(progress, staleRunningMinutes, now, overlays) {
     if (!progress)
         return 'idle';
     if (progress.status === 'complete')
         return 'complete';
     if (progress.status === 'failed')
         return 'failed';
+    if (exitOverlayFor(progress, overlays))
+        return 'exited';
     return minutesSinceUpdate(progress, now) > staleRunningMinutes ? 'stalled' : 'running';
 }
-/** 0..100, safe for total = 0. */
-function percent(step, total) {
+/** 0..100, safe for total = 0. Includes the fraction inside the current step when the reporter gave one. */
+function percent(step, total, substep) {
     if (!total || total <= 0)
         return 0;
-    return Math.max(0, Math.min(100, Math.round((step / total) * 100)));
+    const frac = typeof substep === 'number' && isFinite(substep) ? Math.max(0, Math.min(1, substep)) : 0;
+    const done = Math.max(0, step - 1) + (frac > 0 ? frac : step > 0 ? 1 : 0);
+    // When no substep is reported, a step counts as done once it is the current step (matches the spec).
+    const value = frac > 0 ? (done / total) * 100 : (step / total) * 100;
+    return Math.max(0, Math.min(100, Math.round(value)));
+}
+/** A URL-safe slug the reporters use for per-task files: "Nightly Load 2" -> "nightly-load-2". */
+function slug(name) {
+    return (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'task';
 }
 //# sourceMappingURL=time.js.map

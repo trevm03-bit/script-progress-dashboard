@@ -6,6 +6,8 @@ exports.esc = esc;
 exports.icon = icon;
 exports.section = section;
 exports.empty = empty;
+exports.chip = chip;
+exports.metricText = metricText;
 function esc(value) {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -28,14 +30,34 @@ function icon(name, extraClass = '') {
     return `<i class="codicon codicon-${n}${modClass}${extraClass ? ' ' + extraClass : ''}"></i>`;
 }
 /** A dashboard card with an uppercase section title. */
-function section(id, title, body, extraClass = '') {
-    return `<section class="card ${extraClass}" data-section="${esc(id)}">
-  <div class="section-title">${esc(title)}</div>
-  ${body}
+function section(id, title, body, opts = {}) {
+    const collapsed = !!opts.collapsed;
+    const collapsible = opts.collapsible !== false;
+    const classes = ['card', opts.cls, collapsed ? 'collapsed' : ''].filter(Boolean).join(' ');
+    return `<section class="${classes}" data-section="${esc(id)}">
+  <div class="section-title${collapsible ? ' toggle' : ''}" ${collapsible ? `role="button" tabindex="0" aria-expanded="${collapsed ? 'false' : 'true'}"` : ''}>
+    ${collapsible ? `<i class="codicon codicon-chevron-${collapsed ? 'right' : 'down'} chev"></i>` : ''}<span class="section-name">${esc(title)}</span>${opts.aside ? `<span class="section-aside">${opts.aside}</span>` : ''}
+  </div>
+  <div class="section-body"${collapsed ? ' hidden' : ''}>${body}</div>
 </section>`;
 }
 /** Small muted line used for "nothing to show" states. */
-function empty(text) {
-    return `<div class="empty">${esc(text)}</div>`;
+function empty(text, action) {
+    return `<div class="empty">${esc(text)}${action ? ` <button class="link-btn" data-msg="${esc(action.msg)}">${icon(action.icon)}${esc(action.label)}</button>` : ''}</div>`;
+}
+/** A tiny inline metric chip: label + value. */
+function chip(label, value, cls = '') {
+    return `<span class="chip ${cls}"><span class="chip-k">${esc(label)}</span><span class="chip-v">${esc(value)}</span></span>`;
+}
+/** Format a metric value that may be a number or a string. */
+function metricText(v) {
+    if (typeof v === 'number') {
+        if (!isFinite(v))
+            return '—';
+        if (Number.isInteger(v))
+            return v.toLocaleString('en-US');
+        return v.toLocaleString('en-US', { maximumFractionDigits: 3 });
+    }
+    return String(v);
 }
 //# sourceMappingURL=html.js.map

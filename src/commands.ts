@@ -1,0 +1,180 @@
+// Every command the extension registers, in one place. Thin: the logic lives in logic/ and the
+// state comes from the StateProvider so commands never hold data of their own.
+import * as fs from 'fs';
+import * as path from 'path';
+import * as vscode from 'vscode';
+import { ActionRunner, commandForFile } from './actions';
+import { DashboardPanel } from './dashboardPanel';
+import { FILES } from './dataReader';
+import { dailySummaryText, historyCsv } from './logic/summary';
+import { dateTime, formatDuration, parseIso, taskState } from './logic/time';
+import { simulateRun } from './simulate';
+import { ALL_SECTIONS, SECTION_TITLES, SectionId } from './types';
+
+import { StateProvider } from './dashboardHost';
+
+export interface CommandContext extends StateProvider {
+  extensionUri: vscode.Uri;
+  logsDir(): string;
+  refresh(force?: boolean): void;
+  runner: ActionRunner;
+}
+
+let historyChannel: vscode.OutputChannel | undefined;
+
+export function registerCommands(context: vscode.ExtensionContext, cx: CommandContext): void {
+  const reg = (id: string, fn: (...args: unknown[]) => unknown) => context.subscriptions.push(vscode.commands.registerCommand(id, fn));
+
+  reg('scriptProgress.openPanel', () => DashboardPanel.createOrShow(cx.extensionUri, cx, 'panel'));
+  reg('scriptProgress.openMap', () => DashboardPanel.createOrShow(cx.extensionUri, cx, 'map'));
+  reg('scriptProgress.focusSidebar', () => vscode.commands.executeCommand('scriptProgress.dashboard.focus'));
+  reg('scriptProgress.refresh', () => cx.refresh(true));
+  reg('scriptProgress.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', '@ext:trevor-marshall.script-progress-dashboard'));
+  reg('scriptProgress.openWalkthrough', () => vscode.commands.executeCommand('workbench.action.openWalkthrough', 'trevor-marshall.script-progress-dashboard#scriptProgress.gettingStarted', false));
+
+  reg('scriptProgress.openLogsFolder', async () => {
+    const dir = cx.logsDir();
+    if (!fs.existsSync(dir)) {
+      const pick = await vscode.window.showWarningMessage(`Logs folder does not exist yet: ${dir}`, 'Create it', 'Open Settings');
+      if (pick === 'Create it') fs.mkdirSync(dir, { recursive: true });
+      else if (pick === 'Open Settings') await vscode.commands.executeCommand('workbench.action.openSettings', 'scriptProgress.logsPath');
+      else return;
+    }
+    const target = fs.existsSync(path.join(dir, FILES.progress)) ? vscode.Uri.file(path.join(dir, FILES.progress)) : vscode.Uri.file(dir);
+    await vscode.commands.executeCommand('revealFileInOS', target);
+  });
+
+  reg('scriptProgress.showHistory', () => {
+    if (!historyChannel) historyChannel = vscode.window.createOutputChannel('Script Progress History');
+    const ch = historyChannel;
+    ch.clear();
+    const data = cx.getData();
+    const runs = data.history.slice().sort((a, b) => (parseIso(b.date)?.getTime() ?? 0) - (parseIso(a.date)?.getTime() ?? 0));
+    ch.appendLine(`Run history — ${runs.length} run(s) from ${path.join(cx.logsDir(), FILES.history)}`);
+    ch.appendLine('');
+    for (const run of runs) {
+      const tag = run.success ? 'PASS' : 'FAIL';
+      const warn = run.warnings ? ` | ${run.warnings} warning(s)` : '';
+      const metrics = run.metrics && Object.keys(run.metrics).length ? ` | ${Object.entries(run.metrics).map(([k, v]) => `${k}=${v}`).join(', ')}` : '';
+      ch.appendLine(`[${tag}] ${dateTime(run.date)} | ${run.task} | ${formatDuration(run.elapsed)}${warn} | ${run.summary ?? ''}${metrics}`);
+    }
+    ch.show(true);
+  });
+
+  reg('scriptProgress.runQuickAction', async (arg?: unknown) => {
+    const s = cx.getSettings();
+    if (!s.buttons.length) {
+      const pick = await vscode.window.showInformationMessage('No Quick Actions configured yet.', 'Open Settings');
+      if (pick) await vscode.commands.executeCommand('workbench.action.openSettings', 'scriptProgress.quickActions.buttons');
+      return;
+    }
+    let button = typeof arg === 'string' ? s.buttons.find(b => b.label === arg) : undefined;
+    if (!button) {
+      const items = s.buttons.map(b => ({ label: `$(${b.icon || 'play'}) ${b.label}`, description: b.group, detail: b.command, b }));
+      const pick = await vscode.window.showQuickPick(items, { title: 'Script Progress: Run Quick Action', placeHolder: 'Choose a button to run', matchOnDetail: true });
+      button = pick?.b;
+    }
+    if (button) await cx.runner.runButton(button);
+  });
+
+  reg('scriptProgress.runFile', async (arg?: unknown) => {
+    const uri = arg instanceof vscode.Uri ? arg : undefined;
+    const file = uri?.fsPath ?? vscode.window.activeTextEditor?.document.uri.fsPath;
+    if (!file) { void vscode.window.showInformationMessage('Open or select a script file first.'); return; }
+    const cmd = commandForFile(file, cx.getSettings().quickActions.interpreters);
+    if (!cmd) { void vscode.window.showInformationMessage(`No interpreter configured for ${path.extname(file)} — see scriptProgress.quickActions.interpreters.`); return; }
+    await cx.runner.runCommand(cmd, path.basename(file));
+  });
+
+  reg('scriptProgress.copyDailySummary', async () => {
+    const text = dailySummaryText(cx.getData(), cx.getSettings(), new Date());
+    await vscode.env.clipboard.writeText(text);
+    const pick = await vscode.window.showInformationMessage('Daily summary copied to the clipboard.', 'Show it');
+    if (pick) {
+      const doc = await vscode.workspace.openTextDocument({ content: text, language: 'plaintext' });
+      await vscode.window.showTextDocument(doc, { preview: true });
+    }
+  });
+
+  reg('scriptProgress.exportHistoryCsv', async () => {
+    const data = cx.getData();
+    if (!data.history.length) { void vscode.window.showInformationMessage('No run history to export yet.'); return; }
+    const stamp = new Date().toISOString().slice(0, 10);
+    const target = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file(path.join(cx.logsDir(), `run_history-${stamp}.csv`)),
+      filters: { CSV: ['csv'] }, title: 'Export run history',
+    });
+    if (!target) return;
+    await vscode.workspace.fs.writeFile(target, Buffer.from(historyCsv(data.history), 'utf-8'));
+    const pick = await vscode.window.showInformationMessage(`Exported ${data.history.length} runs to ${path.basename(target.fsPath)}.`, 'Open');
+    if (pick) await vscode.window.showTextDocument(target);
+  });
+
+  reg('scriptProgress.archiveHistory', async () => {
+    const file = path.join(cx.logsDir(), FILES.history);
+    if (!fs.existsSync(file)) { void vscode.window.showInformationMessage('No run history file to archive.'); return; }
+    const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
+    const dest = path.join(cx.logsDir(), `run_history-${stamp}.json`);
+    fs.copyFileSync(file, dest);
+    void vscode.window.showInformationMessage(`Copied run history to ${path.basename(dest)}. The live file is unchanged.`);
+  });
+
+  reg('scriptProgress.clearHistory', async () => {
+    const file = path.join(cx.logsDir(), FILES.history);
+    const n = cx.getData().history.length;
+    const pick = await vscode.window.showWarningMessage(`Clear all ${n} run(s) from run_history.json? A backup copy is written first.`, { modal: true }, 'Archive and clear');
+    if (pick !== 'Archive and clear') return;
+    if (fs.existsSync(file)) {
+      const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
+      fs.copyFileSync(file, path.join(cx.logsDir(), `run_history-${stamp}.json`));
+      fs.writeFileSync(file, '[]\n', 'utf-8');
+    }
+    cx.refresh(true);
+  });
+
+  reg('scriptProgress.toggleSections', async () => {
+    const s = cx.getSettings();
+    const items = ALL_SECTIONS.map(id => ({ label: SECTION_TITLES[id], id, picked: s.sections[id] }));
+    const picked = await vscode.window.showQuickPick(items, { canPickMany: true, title: 'Script Progress: dashboard sections', placeHolder: 'Tick the sections to show' });
+    if (!picked) return;
+    const on = new Set(picked.map(p => p.id));
+    const cfg = vscode.workspace.getConfiguration('scriptProgress');
+    const target = vscode.workspace.workspaceFolders ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+    for (const id of ALL_SECTIONS as SectionId[]) {
+      if (s.sections[id] !== on.has(id)) await cfg.update(`sections.${id}`, on.has(id), target);
+    }
+  });
+
+  reg('scriptProgress.simulateRun', async (mode?: unknown) => {
+    const dir = cx.logsDir();
+    try {
+      await simulateRun(dir, cx.getData(), cx.getSettings().staleRunningMinutes, mode === 'fail' ? 'fail' : 'ok');
+    } catch (e) {
+      void vscode.window.showErrorMessage(`Simulation could not write to ${dir}: ${(e as Error).message}`);
+    }
+  });
+
+  reg('scriptProgress.statusMenu', async () => {
+    const data = cx.getData();
+    const s = cx.getSettings();
+    const now = new Date();
+    const running = data.tasks.filter(t => taskState(t, s.staleRunningMinutes, now, data.overlays) === 'running');
+    const items: (vscode.QuickPickItem & { run?: () => unknown })[] = [];
+    for (const t of running) items.push({ label: `$(sync~spin) ${t.task}`, description: `${t.step}/${t.totalSteps} ${t.label}`, detail: t.detail });
+    if (running.length) items.push({ label: '', kind: vscode.QuickPickItemKind.Separator });
+    items.push({ label: '$(dashboard) Open Dashboard', run: () => vscode.commands.executeCommand('scriptProgress.openPanel') });
+    items.push({ label: '$(graph) Open Access Map', run: () => vscode.commands.executeCommand('scriptProgress.openMap') });
+    if (s.buttons.length) items.push({ label: '$(play) Run Quick Action…', run: () => vscode.commands.executeCommand('scriptProgress.runQuickAction') });
+    items.push({ label: '$(clippy) Copy Daily Summary', run: () => vscode.commands.executeCommand('scriptProgress.copyDailySummary') });
+    items.push({ label: '$(history) Show Run History', run: () => vscode.commands.executeCommand('scriptProgress.showHistory') });
+    items.push({ label: '$(folder-opened) Open Logs Folder', run: () => vscode.commands.executeCommand('scriptProgress.openLogsFolder') });
+    items.push({ label: '$(settings-gear) Settings', run: () => vscode.commands.executeCommand('scriptProgress.openSettings') });
+    const pick = await vscode.window.showQuickPick(items, { title: 'Script Progress', placeHolder: running.length ? `${running.length} running` : 'Nothing running' });
+    if (pick?.run) await pick.run();
+  });
+}
+
+export function disposeCommands(): void {
+  historyChannel?.dispose();
+  historyChannel = undefined;
+}

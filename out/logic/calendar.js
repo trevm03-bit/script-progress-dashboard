@@ -3,8 +3,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.matchesProcess = matchesProcess;
 exports.runsFor = runsFor;
 exports.startOfIsoWeek = startOfIsoWeek;
+exports.dueDate = dueDate;
+exports.nextPeriodDue = nextPeriodDue;
 exports.processStatus = processStatus;
 exports.calendarRows = calendarRows;
+exports.monthGrid = monthGrid;
+exports.dueText = dueText;
 const time_1 = require("./time");
 /** A run belongs to a process when its task name STARTS WITH the process name (case-insensitive). */
 function matchesProcess(taskName, process) {
@@ -32,6 +36,43 @@ function startOfIsoWeek(d) {
     out.setDate(out.getDate() - diff);
     return out;
 }
+function endOfDay(d) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
+}
+function daysInMonth(y, m) {
+    return new Date(y, m + 1, 0).getDate();
+}
+/** The local date on which the process is due in the period containing `now`. */
+function dueDate(process, now) {
+    switch (process.frequency) {
+        case 'daily': {
+            const h = process.dueHour ?? 12;
+            return new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, 0, 0);
+        }
+        case 'weekly': {
+            const start = startOfIsoWeek(now);
+            const dow = Math.min(7, Math.max(1, process.dayOfWeek ?? 7));
+            const d = new Date(start);
+            d.setDate(start.getDate() + dow - 1);
+            return endOfDay(d);
+        }
+        case 'monthly':
+        default: {
+            const dim = daysInMonth(now.getFullYear(), now.getMonth());
+            const day = Math.min(dim, Math.max(1, process.dayOfMonth ?? dim));
+            return endOfDay(new Date(now.getFullYear(), now.getMonth(), day));
+        }
+    }
+}
+/** The due date of the NEXT period after `now`. */
+function nextPeriodDue(process, now) {
+    switch (process.frequency) {
+        case 'daily': return dueDate(process, new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
+        case 'weekly': return dueDate(process, new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7));
+        case 'monthly':
+        default: return dueDate(process, new Date(now.getFullYear(), now.getMonth() + 1, 1));
+    }
+}
 function processStatus(process, history, now) {
     const runs = runsFor(process, history);
     const lastRun = runs[0] ?? null;
@@ -39,30 +80,35 @@ function processStatus(process, history, now) {
     const lastSuccessDate = lastSuccess ? (0, time_1.parseIso)(lastSuccess.date) : null;
     let status = 'pending';
     let note = '';
+    let donePeriod = false;
     switch (process.frequency) {
         case 'daily': {
-            if (lastSuccessDate && sameLocalDay(lastSuccessDate, now)) {
+            donePeriod = !!lastSuccessDate && sameLocalDay(lastSuccessDate, now);
+            if (donePeriod) {
                 status = 'done';
                 note = 'ran today';
             }
-            else if (now.getHours() >= 12) {
+            else if (now >= dueDate(process, now)) {
                 status = 'overdue';
                 note = 'not run today';
             }
             else {
                 status = 'pending';
-                note = 'due today';
+                note = `due today by ${String(process.dueHour ?? 12).padStart(2, '0')}:00`;
             }
             break;
         }
         case 'weekly': {
-            // done = ran this ISO week; pending = ran last week (this week's run still due);
-            // overdue = missed a whole week or never ran.
             const weekStart = startOfIsoWeek(now);
             const prevWeekStart = new Date(weekStart.getTime() - 7 * 86400000);
-            if (lastSuccessDate && lastSuccessDate >= weekStart) {
+            donePeriod = !!lastSuccessDate && lastSuccessDate >= weekStart;
+            if (donePeriod) {
                 status = 'done';
                 note = 'ran this week';
+            }
+            else if (now > dueDate(process, now)) {
+                status = 'overdue';
+                note = 'missed this week';
             }
             else if (lastSuccessDate && lastSuccessDate >= prevWeekStart) {
                 status = 'pending';
@@ -76,13 +122,14 @@ function processStatus(process, history, now) {
         }
         case 'monthly':
         default: {
-            if (lastSuccessDate && sameLocalMonth(lastSuccessDate, now)) {
+            donePeriod = !!lastSuccessDate && sameLocalMonth(lastSuccessDate, now);
+            if (donePeriod) {
                 status = 'done';
                 note = 'ran this month';
             }
-            else if (process.dayOfMonth !== undefined && now.getDate() > process.dayOfMonth) {
+            else if (now > dueDate(process, now)) {
                 status = 'overdue';
-                note = `was due by day ${process.dayOfMonth}`;
+                note = `was due by day ${process.dayOfMonth ?? daysInMonth(now.getFullYear(), now.getMonth())}`;
             }
             else {
                 status = 'pending';
@@ -97,9 +144,48 @@ function processStatus(process, history, now) {
         if (lr && (!lastSuccessDate || lr > lastSuccessDate))
             note += (note ? ' · ' : '') + 'last attempt failed';
     }
-    return { process, status, lastRun, lastSuccess, note };
+    const nextDue = donePeriod ? nextPeriodDue(process, now) : dueDate(process, now);
+    return { process, status, lastRun, lastSuccess, note, nextDue };
 }
 function calendarRows(processes, history, now) {
     return processes.map(p => processStatus(p, history, now));
+}
+/** Day-by-day cells for the month containing `now`, for one process. */
+function monthGrid(process, history, now) {
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const dim = daysInMonth(y, m);
+    const cells = [];
+    const runs = runsFor(process, history).filter(r => {
+        const d = (0, time_1.parseIso)(r.date);
+        return d && d.getFullYear() === y && d.getMonth() === m;
+    });
+    const dueDay = process.frequency === 'monthly' ? Math.min(dim, process.dayOfMonth ?? dim) : 0;
+    for (let day = 1; day <= dim; day++) {
+        const dayRuns = runs.filter(r => (0, time_1.parseIso)(r.date).getDate() === day);
+        let state = 'none';
+        if (day > now.getDate())
+            state = 'future';
+        else if (dayRuns.length)
+            state = dayRuns.some(r => r.success) ? 'ok' : 'fail';
+        cells.push({ day, state, runs: dayRuns.length, today: day === now.getDate(), due: day === dueDay });
+    }
+    return cells;
+}
+/** Short "due in 3h" / "due tomorrow" / "due 5 Sep" text. */
+function dueText(nextDue, now) {
+    const ms = nextDue.getTime() - now.getTime();
+    if (ms < 0)
+        return 'overdue';
+    const h = ms / 3600000;
+    if (h < 1)
+        return `due in ${Math.max(1, Math.round(ms / 60000))}m`;
+    if (h < 24 && sameLocalDay(nextDue, now))
+        return `due in ${Math.round(h)}h`;
+    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    if (sameLocalDay(nextDue, tomorrow))
+        return 'due tomorrow';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `due ${nextDue.getDate()} ${months[nextDue.getMonth()]}`;
 }
 //# sourceMappingURL=calendar.js.map

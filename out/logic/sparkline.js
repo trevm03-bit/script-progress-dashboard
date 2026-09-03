@@ -1,9 +1,10 @@
 "use strict";
-// Delta Tracker maths: turn a series of numbers into an SVG path and a few stats.
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.seriesStats = seriesStats;
 exports.sparklinePath = sparklinePath;
+exports.sparklineY = sparklineY;
 exports.formatMetric = formatMetric;
+exports.outOfRange = outOfRange;
 function seriesStats(values) {
     const v = values.filter(n => typeof n === 'number' && isFinite(n));
     if (v.length === 0)
@@ -42,19 +43,50 @@ function sparklinePath(values, w, h, pad = 2) {
     }
     return `M ${pts[0]} L ${pts.slice(1).join(' ')}`;
 }
+/** y coordinate (same scaling as sparklinePath) for a horizontal guide line, or null when off-chart. */
+function sparklineY(values, value, h, pad = 2) {
+    const v = values.filter(n => typeof n === 'number' && isFinite(n));
+    if (v.length === 0 || !isFinite(value))
+        return null;
+    const min = Math.min(...v, value);
+    const max = Math.max(...v, value);
+    const span = max - min || 1;
+    const innerH = h - pad * 2;
+    return pad + innerH - ((value - min) / span) * innerH;
+}
 /** Compact number for a metric card: 1234.5 -> "1,234.5", 0.00 -> "0", 15200000 -> "15.2M". */
-function formatMetric(n) {
-    if (!isFinite(n))
+function formatMetric(n, fmt) {
+    if (typeof n !== 'number' || !isFinite(n))
         return '—';
-    const abs = Math.abs(n);
-    if (abs >= 1e9)
-        return (n / 1e9).toFixed(1).replace(/\.0$/, '') + 'B';
-    if (abs >= 1e6)
-        return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
-    if (abs >= 1e4)
-        return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
-    if (Number.isInteger(n))
-        return n.toLocaleString('en-US');
-    return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+    let s;
+    if (fmt && typeof fmt.decimals === 'number') {
+        s = n.toLocaleString('en-US', { minimumFractionDigits: fmt.decimals, maximumFractionDigits: fmt.decimals });
+    }
+    else {
+        const abs = Math.abs(n);
+        if (abs >= 1e9)
+            s = (n / 1e9).toFixed(1).replace(/\.0$/, '') + 'B';
+        else if (abs >= 1e6)
+            s = (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+        else if (abs >= 1e4)
+            s = (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+        else if (Number.isInteger(n))
+            s = n.toLocaleString('en-US');
+        else
+            s = n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+    }
+    if (fmt?.unit)
+        s = fmt.unit === '%' || fmt.unit.length <= 1 ? s + fmt.unit : `${s} ${fmt.unit}`;
+    return s;
+}
+/** true when the value breaks a configured threshold. */
+function outOfRange(value, t) {
+    if (!t || typeof value !== 'number' || !isFinite(value))
+        return false;
+    if (typeof t.min === 'number' && value < t.min)
+        return true;
+    if (typeof t.max === 'number' && value > t.max)
+        return true;
+    return false;
 }
 //# sourceMappingURL=sparkline.js.map

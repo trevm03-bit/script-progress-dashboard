@@ -1,25 +1,41 @@
 {
   "scriptProgress.logsPath": "logs",
   "scriptProgress.staleRunningMinutes": 1,
+
   "scriptProgress.sections.processCalendar": true,
   "scriptProgress.processCalendar.processes": [
-    { "name": "Demo Pipeline", "label": "Demo Pipeline", "frequency": "daily" },
-    { "name": "Weekly Rollup", "label": "Weekly Rollup", "frequency": "weekly" },
+    { "name": "Demo Pipeline", "label": "Demo Pipeline", "frequency": "daily", "dueHour": 12 },
+    { "name": "Weekly Rollup", "label": "Weekly Rollup", "frequency": "weekly", "dayOfWeek": 5 },
     { "name": "Month-End Close", "label": "Month-End Close", "frequency": "monthly", "dayOfMonth": 5 }
   ],
+  "scriptProgress.processCalendar.view": "both",
+
   "scriptProgress.sections.quickActions": true,
   "scriptProgress.quickActions.buttons": [
-    { "label": "Run demo", "command": "python fake_run.py --fast", "icon": "play", "confirm": false, "group": "Demo" },
-    { "label": "Run demo (slow)", "command": "python fake_run.py", "icon": "play", "group": "Demo" },
-    { "label": "Weekly Rollup", "command": "python fake_run.py --fast --task \"Weekly Rollup\" --steps 4", "icon": "calendar", "confirm": false, "group": "Demo" },
+    { "label": "Run demo", "command": "python fake_run.py --fast", "icon": "play", "confirm": false, "group": "Demo", "task": "Demo Pipeline" },
+    { "label": "Run demo (slow)", "command": "python fake_run.py", "icon": "play", "group": "Demo", "task": "Demo Pipeline" },
+    { "label": "Weekly Rollup", "command": "python fake_run.py --fast --parallel", "icon": "calendar", "confirm": false, "group": "Demo", "task": "Weekly Rollup" },
     { "label": "Custom steps", "command": "python fake_run.py --fast --steps ${prompt:How many steps (1-7)?}", "icon": "settings-gear", "group": "Demo" },
-    { "label": "Simulate failure", "command": "python fake_run.py --fast --fail", "icon": "error", "group": "Failure modes" },
-    { "label": "Simulate crash", "command": "python fake_run.py --fast --crash", "icon": "debug", "group": "Failure modes" },
-    { "label": "Simulate stall", "command": "python fake_run.py --fast --stall", "icon": "warning", "group": "Failure modes" }
+    { "label": "Simulate failure", "command": "python fake_run.py --fast --fail", "icon": "error", "group": "Failure modes", "task": "Demo Pipeline" },
+    { "label": "Simulate crash", "command": "python fake_run.py --fast --crash", "icon": "debug", "group": "Failure modes", "task": "Demo Pipeline" },
+    { "label": "Simulate stall", "command": "python fake_run.py --fast --stall", "icon": "warning", "group": "Failure modes", "task": "Demo Pipeline" },
+    { "label": "Simulate kill (exit 3)", "command": "python fake_run.py --fast --kill", "icon": "debug-disconnect", "confirm": false, "group": "Failure modes", "task": "Demo Pipeline" }
   ],
+  "scriptProgress.quickActions.runVia": "task",
+
   "scriptProgress.sections.deltaTracker": true,
   "scriptProgress.deltaTracker.metrics": ["rows_loaded", "reconciliation_delta"],
+  "scriptProgress.deltaTracker.formats": {
+    "rows_loaded": { "label": "Rows loaded", "unit": "rows" },
+    "reconciliation_delta": { "label": "Reconciliation Δ", "unit": "%", "decimals": 2 }
+  },
+  "scriptProgress.deltaTracker.thresholds": {
+    "reconciliation_delta": { "min": -0.35, "max": 0.35 }
+  },
+
   "scriptProgress.sections.scriptHealth": true,
   "scriptProgress.scriptHealth.staleHours": 24,
-  "scriptProgress.sections.accessMap": true
+
+  "scriptProgress.sections.accessMap": true,
+  "scriptProgress.notifications.onComplete": true
 }

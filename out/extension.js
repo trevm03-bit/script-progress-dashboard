@@ -36,54 +36,84 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.resolveLogsDir = resolveLogsDir;
 exports.deactivate = deactivate;
-// Entry point. Wires settings, the file reader, the watcher + poll, the status bar,
-// the sidebar view, the editor panel and the commands together.
-const fs = __importStar(require("fs"));
+// Entry point. Wires settings, the file reader, the watcher + tick, the status bar, the sidebar
+// view, the editor panels, notifications, tasks and the commands together.
 const path = __importStar(require("path"));
 const vscode = __importStar(require("vscode"));
+const actions_1 = require("./actions");
+const commands_1 = require("./commands");
+const dashboardPanel_1 = require("./dashboardPanel");
+const dashboardView_1 = require("./dashboardView");
 const dataReader_1 = require("./dataReader");
+const notifications_1 = require("./notifications");
 const settings_1 = require("./settings");
 const statusBar_1 = require("./statusBar");
-const dashboardView_1 = require("./dashboardView");
-const dashboardPanel_1 = require("./dashboardPanel");
-const time_1 = require("./logic/time");
+const types_1 = require("./types");
+const COLLAPSED_KEY = 'scriptProgress.collapsedSections';
 function activate(context) {
     let settings = (0, settings_1.readSettings)();
     const reader = new dataReader_1.DataReader(resolveLogsDir(settings));
     let data = reader.readAll();
+    const notifier = new notifications_1.Notifier();
+    const statusBar = new statusBar_1.StatusBarManager();
+    const runner = new actions_1.ActionRunner(() => settings, {
+        onExit: (overlay, label) => {
+            // Attribute the exit to whichever task is still 'running' if the button did not name one.
+            if (!overlay.task || !data.tasks.some(t => t.task === overlay.task)) {
+                const running = data.tasks.find(t => t.status === 'running');
+                if (running)
+                    overlay = { ...overlay, task: running.task };
+                else if (settings.notifications.onExit) {
+                    void vscode.window.showErrorMessage(`✗ "${label}" exited with code ${overlay.exitCode}`, 'Open Dashboard').then(p => p && vscode.commands.executeCommand('scriptProgress.openPanel'));
+                    return;
+                }
+            }
+            reader.addOverlay(overlay);
+            refresh(true);
+        },
+    });
     const state = {
         getData: () => data,
         getSettings: () => settings,
+        runner,
+        getCollapsed: () => (context.globalState.get(COLLAPSED_KEY, []) || []).filter((s) => types_1.ALL_SECTIONS.includes(s)),
+        setCollapsed: ids => { void context.globalState.update(COLLAPSED_KEY, ids); dashboardPanel_1.DashboardPanel.refreshAll(true); view.refresh(true); },
     };
-    const statusBar = new statusBar_1.StatusBarManager();
     const view = new dashboardView_1.DashboardViewProvider(context.extensionUri, state);
-    context.subscriptions.push(statusBar, vscode.window.registerWebviewViewProvider(dashboardView_1.DashboardViewProvider.viewId, view));
+    context.subscriptions.push(statusBar, notifier, runner, vscode.window.registerWebviewViewProvider(dashboardView_1.DashboardViewProvider.viewId, view), vscode.tasks.registerTaskProvider(actions_1.TASK_TYPE, { provideTasks: () => runner.provideTasks(), resolveTask: t => runner.resolveTask(t) }));
     // ---- refresh pipeline -------------------------------------------------------------
     let refreshTimer;
     const refresh = (force = false) => {
         data = reader.readAll();
         statusBar.update(data, settings);
+        notifier.update(data, settings);
         view.refresh(force);
-        dashboardPanel_1.DashboardPanel.current?.refresh(force);
+        dashboardPanel_1.DashboardPanel.refreshAll(force);
     };
-    // Many watcher events can land within a few ms of each other (four files, tmp+rename);
+    // Many watcher events can land within a few ms of each other (files + slot files, tmp+rename);
     // coalesce them so we read once.
     const scheduleRefresh = () => {
         if (refreshTimer)
             return;
         refreshTimer = setTimeout(() => { refreshTimer = undefined; refresh(); }, 60);
     };
-    // ---- file watcher (immediate) + poll (safety net) ---------------------------------
-    let watcher;
-    const startWatcher = () => {
-        watcher?.dispose();
-        watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(reader.logsDir), '*.json'));
-        watcher.onDidChange(scheduleRefresh);
-        watcher.onDidCreate(scheduleRefresh);
-        watcher.onDidDelete(scheduleRefresh);
-        context.subscriptions.push(watcher);
+    // ---- file watchers (immediate) + tick (safety net) ------------------------------
+    let watchers = [];
+    const startWatchers = () => {
+        for (const w of watchers)
+            w.dispose();
+        watchers = [
+            vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(reader.logsDir), '*.json')),
+            vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(path.join(reader.logsDir, 'progress')), '*.json')),
+        ];
+        for (const w of watchers) {
+            w.onDidChange(scheduleRefresh);
+            w.onDidCreate(scheduleRefresh);
+            w.onDidDelete(scheduleRefresh);
+            context.subscriptions.push(w);
+        }
     };
-    startWatcher();
+    startWatchers();
     let pollTimer;
     let lastMtime = reader.latestMtime();
     let lastPoll = 0;
@@ -107,7 +137,7 @@ function activate(context) {
                     return;
                 }
             }
-            const running = data.progress?.status === 'running';
+            const running = data.tasks.some(t => t.status === 'running');
             if (running || now - lastFullRefresh >= 60000) {
                 lastFullRefresh = now;
                 refresh();
@@ -118,61 +148,31 @@ function activate(context) {
     context.subscriptions.push({ dispose: () => { if (pollTimer)
             clearInterval(pollTimer); if (refreshTimer)
             clearTimeout(refreshTimer); } });
-    // ---- settings changes -------------------------------------------------------------
-    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
-        if (!e.affectsConfiguration('scriptProgress'))
-            return;
+    // ---- settings / workspace changes -------------------------------------------------
+    const reconfigure = () => {
         settings = (0, settings_1.readSettings)();
         const dir = resolveLogsDir(settings);
         if (dir !== reader.logsDir) {
             reader.setLogsDir(dir);
-            startWatcher();
+            startWatchers();
         }
         startPoll();
         refresh(true);
-    }), vscode.workspace.onDidChangeWorkspaceFolders(() => {
-        settings = (0, settings_1.readSettings)();
-        reader.setLogsDir(resolveLogsDir(settings));
-        startWatcher();
-        refresh(true);
-    }), vscode.workspace.onDidGrantWorkspaceTrust(() => refresh(true)));
+    };
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('scriptProgress'))
+        reconfigure(); }), vscode.workspace.onDidChangeWorkspaceFolders(reconfigure), vscode.workspace.onDidGrantWorkspaceTrust(() => refresh(true)));
     // ---- commands ---------------------------------------------------------------------
-    context.subscriptions.push(vscode.commands.registerCommand('scriptProgress.openPanel', () => {
-        dashboardPanel_1.DashboardPanel.createOrShow(context.extensionUri, state);
-    }), vscode.commands.registerCommand('scriptProgress.refresh', () => refresh(true)), vscode.commands.registerCommand('scriptProgress.openLogsFolder', async () => {
-        if (!fs.existsSync(reader.logsDir)) {
-            const pick = await vscode.window.showWarningMessage(`Logs folder does not exist yet: ${reader.logsDir}`, 'Create it', 'Open Settings');
-            if (pick === 'Create it')
-                fs.mkdirSync(reader.logsDir, { recursive: true });
-            else if (pick === 'Open Settings')
-                await vscode.commands.executeCommand('workbench.action.openSettings', 'scriptProgress.logsPath');
-            else
-                return;
-        }
-        const target = fs.existsSync(path.join(reader.logsDir, dataReader_1.FILES.progress))
-            ? vscode.Uri.file(path.join(reader.logsDir, dataReader_1.FILES.progress))
-            : vscode.Uri.file(reader.logsDir);
-        await vscode.commands.executeCommand('revealFileInOS', target);
-    }), vscode.commands.registerCommand('scriptProgress.showHistory', () => {
-        const channel = getHistoryChannel();
-        channel.clear();
-        const runs = data.history.slice().sort((a, b) => ((0, time_1.parseIso)(b.date)?.getTime() ?? 0) - ((0, time_1.parseIso)(a.date)?.getTime() ?? 0));
-        channel.appendLine(`Run history — ${runs.length} run(s) from ${path.join(reader.logsDir, dataReader_1.FILES.history)}`);
-        channel.appendLine('');
-        for (const run of runs) {
-            const tag = run.success ? 'PASS' : 'FAIL';
-            const warn = run.warnings ? ` | ${run.warnings} warning(s)` : '';
-            channel.appendLine(`[${tag}] ${(0, time_1.dateTime)(run.date)} | ${run.task} | ${(0, time_1.formatDuration)(run.elapsed)}${warn} | ${run.summary ?? ''}`);
-        }
-        channel.show(true);
-    }));
+    (0, commands_1.registerCommands)(context, {
+        extensionUri: context.extensionUri,
+        getData: () => data,
+        getSettings: () => settings,
+        logsDir: () => reader.logsDir,
+        refresh,
+        runner,
+        getCollapsed: state.getCollapsed,
+        setCollapsed: state.setCollapsed,
+    });
     refresh(true);
-}
-let historyChannel;
-function getHistoryChannel() {
-    if (!historyChannel)
-        historyChannel = vscode.window.createOutputChannel('Script Progress History');
-    return historyChannel;
 }
 /** Absolute paths are used as-is; relative ones resolve against the first workspace folder. */
 function resolveLogsDir(settings) {
@@ -186,7 +186,6 @@ function resolveLogsDir(settings) {
     return path.normalize(path.join(process.env.USERPROFILE || process.env.HOME || process.cwd(), p));
 }
 function deactivate() {
-    historyChannel?.dispose();
-    historyChannel = undefined;
+    (0, commands_1.disposeCommands)();
 }
 //# sourceMappingURL=extension.js.map

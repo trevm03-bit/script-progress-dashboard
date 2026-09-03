@@ -5,6 +5,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -41,6 +42,7 @@ class ProgressTests(unittest.TestCase):
             self.assertEqual(len(prog["warnings"]), 1)
             self.assertIsNone(prog["eta"])          # no prior runs
             self.assertIn("updatedAt", prog)
+            self.assertTrue(prog["runId"] and prog["startedAt"])
             p.complete(success=True, summary="done")
         prog = self.read("progress.json")
         self.assertEqual(prog["status"], "complete")
@@ -50,9 +52,56 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(hist[0]["task"], "Demo Task")
         self.assertTrue(hist[0]["success"])
         self.assertEqual(hist[0]["warnings"], 1)
+        self.assertEqual(hist[0]["warningItems"][0]["msg"], "one warning")
         self.assertEqual(hist[0]["summary"], "done")
+        self.assertEqual(hist[0]["runId"], prog["runId"])
         self.assertIn("[1/3] Reading", self.out.getvalue())
         self.assertIn("=== COMPLETE ===", self.out.getvalue())
+
+    def test_slot_file_per_task_and_pruning(self):
+        with redirect_stdout(self.out):
+            Progress("Alpha Job", logs_dir=self.logs).complete()
+            Progress("Beta Job", logs_dir=self.logs).complete()
+        slots = sorted(f.name for f in (self.logs / "progress").iterdir())
+        self.assertEqual(slots, ["alpha-job.json", "beta-job.json"])
+        self.assertEqual(self.read("progress/alpha-job.json")["task"], "Alpha Job")
+        # An old finished slot is pruned when a new run starts; an old RUNNING one is kept.
+        old_done = self.logs / "progress" / "old-done.json"
+        old_run = self.logs / "progress" / "old-run.json"
+        old_done.write_text(json.dumps({"task": "Old", "status": "complete"}), encoding="utf-8")
+        old_run.write_text(json.dumps({"task": "Old2", "status": "running"}), encoding="utf-8")
+        past = 10 * 86400
+        os.utime(old_done, (os.path.getatime(old_done) - past, os.path.getmtime(old_done) - past))
+        os.utime(old_run, (os.path.getatime(old_run) - past, os.path.getmtime(old_run) - past))
+        with redirect_stdout(self.out):
+            Progress("Gamma Job", logs_dir=self.logs).complete()
+        self.assertFalse(old_done.exists())
+        self.assertTrue(old_run.exists())
+
+    def test_metric_log_substep_artifact(self):
+        with redirect_stdout(self.out):
+            p = Progress("Rich", logs_dir=self.logs, quiet=True)
+            p.step(1, 1, "Work")
+            p.metric("rows", 42)
+            p.metric("note", "fine")
+            p.metric("flag", True)          # bools become strings, never numbers
+            p.log("hello")
+            p.artifact("out/report.xlsx")
+            p.artifact("out/report.xlsx")   # de-duplicated
+            for i in range(0, 101):
+                p.substep(i / 100)
+            prog = self.read("progress.json")
+            self.assertEqual(prog["metrics"], {"rows": 42, "note": "fine", "flag": "True"})
+            self.assertEqual(prog["log"][0]["msg"], "hello")
+            self.assertEqual(prog["artifacts"], ["out/report.xlsx"])
+            self.assertEqual(prog["substep"], 1.0)
+            p.complete(True, "ok", metrics={"total": 7})
+        hist = self.read("run_history.json")[0]
+        self.assertEqual(hist["metrics"]["total"], 7)
+        self.assertEqual(hist["metrics"]["rows"], 42)
+        self.assertEqual(hist["artifacts"], ["out/report.xlsx"])
+        self.assertIsNone(self.read("progress.json")["substep"])
+        self.assertEqual(self.out.getvalue(), "")   # quiet=True prints nothing
 
     def test_eta_uses_prior_successful_runs_of_same_task(self):
         hist = [
@@ -64,10 +113,8 @@ class ProgressTests(unittest.TestCase):
         self.logs.mkdir(parents=True)
         (self.logs / "run_history.json").write_text(json.dumps(hist), encoding="utf-8")
         with redirect_stdout(self.out):
-            p = Progress("A", logs_dir=self.logs)
-        prog = self.read("progress.json")
-        # avg of 100 and 200 = 150, minus ~0 elapsed
-        self.assertAlmostEqual(prog["eta"], 150.0, delta=1.0)
+            Progress("A", logs_dir=self.logs)
+        self.assertAlmostEqual(self.read("progress.json")["eta"], 150.0, delta=1.0)
 
     def test_context_manager_reports_crash_as_failure(self):
         with redirect_stdout(self.out):
@@ -90,10 +137,19 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(self.read("progress.json")["status"], "complete")
         self.assertEqual(self.read("run_history.json")[0]["summary"], "all good")
 
+    def test_wrap_decorator(self):
+        @Progress.wrap("Wrapped", logs_dir=self.logs)
+        def job(p, n):
+            p.step(1, 1, "go")
+            return n * 2
+        with redirect_stdout(self.out):
+            self.assertEqual(job(21), 42)
+        self.assertEqual(self.read("run_history.json")[0]["task"], "Wrapped")
+
     def test_history_is_capped(self):
         with redirect_stdout(self.out):
             for i in range(105):
-                Progress("Loop", logs_dir=self.logs).complete(True, str(i))
+                Progress("Loop", logs_dir=self.logs, quiet=True).complete(True, str(i))
         hist = self.read("run_history.json")
         self.assertEqual(len(hist), 100)
         self.assertEqual(hist[-1]["summary"], "104")
@@ -118,32 +174,34 @@ class ProgressTests(unittest.TestCase):
             p.access("table", "sales.orders", mode="write")
             p.access("table", "sales.orders", mode="write")   # same edge: count -> 2
             p.access("weird-kind", "thing")                    # unknown kind -> other
+            p.complete()
         g = self.read("access.json")
         ids = {n["id"] for n in g["nodes"]}
         self.assertEqual(ids, {"task:Loader", "file:input/orders.csv", "table:sales.orders", "other:thing"})
         write_edge = [e for e in g["edges"] if e["to"] == "table:sales.orders"][0]
         self.assertEqual(write_edge["count"], 2)
         self.assertEqual(write_edge["mode"], "write")
-        prog = self.read("progress.json")
-        self.assertEqual(prog["accessed"], ["file:input/orders.csv", "table:sales.orders", "other:thing"])
+        self.assertEqual(self.read("progress.json")["accessed"], ["file:input/orders.csv", "table:sales.orders", "other:thing"])
+        self.assertEqual(self.read("run_history.json")[0]["accessed"], ["file:input/orders.csv", "table:sales.orders", "other:thing"])
 
     def test_access_caps_resource_nodes_but_keeps_tasks(self):
         with redirect_stdout(self.out):
-            p = Progress("Big", logs_dir=self.logs)
+            p = Progress("Big", logs_dir=self.logs, quiet=True)
             for i in range(160):
                 p.access("file", f"f{i}")
         g = self.read("access.json")
         self.assertEqual(len(g["nodes"]), 150)
         self.assertIn("task:Big", {n["id"] for n in g["nodes"]})
+        ids = {n["id"] for n in g["nodes"]}
         for e in g["edges"]:
-            self.assertIn(e["to"], {n["id"] for n in g["nodes"]})
+            self.assertIn(e["to"], ids)
 
     def test_writes_are_atomic_and_leave_no_tmp(self):
         with redirect_stdout(self.out):
             p = Progress("Atomic", logs_dir=self.logs)
             p.step(1, 1, "x")
             p.complete()
-        leftovers = [f.name for f in self.logs.iterdir() if f.name.endswith(".tmp")]
+        leftovers = [f.name for f in self.logs.rglob("*.tmp")]
         self.assertEqual(leftovers, [])
 
     def test_bad_existing_files_are_tolerated(self):
@@ -165,6 +223,19 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(self.read("progress.json")["warnings"][0]["msg"], "café ✓")
         self.assertEqual(self.read("run_history.json")[0]["summary"], "Σ = 3")
 
+    def test_status_printer_cli(self):
+        with redirect_stdout(self.out):
+            p = Progress("CLI Job", logs_dir=self.logs)
+            p.step(2, 5, "Halfway")
+            p.metric("rows", 9)
+        r = subprocess.run([sys.executable, str(HERE / "progress.py"), str(self.logs)], capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("CLI Job", r.stdout)
+        self.assertIn("step 2/5", r.stdout)
+        self.assertIn("rows = 9", r.stdout)
+        r2 = subprocess.run([sys.executable, str(HERE / "progress.py"), str(self.tmp / "nowhere")], capture_output=True, text=True, timeout=30)
+        self.assertEqual(r2.returncode, 1)
+
     # ---- logs folder resolution --------------------------------------------------------
     def test_resolve_explicit_arg_wins(self):
         self.assertEqual(resolve_logs_dir("C:/x/logs"), Path("C:/x/logs"))
@@ -181,7 +252,6 @@ class ProgressTests(unittest.TestCase):
                 os.environ["PROGRESS_LOGS_DIR"] = old
 
     def test_resolve_walks_up_from_scripts_lib_to_project_logs(self):
-        """The spec's original default pointed at scripts/logs; the real logs folder is one level up."""
         old = os.environ.pop("PROGRESS_LOGS_DIR", None)
         try:
             project = self.tmp / "project"
@@ -191,7 +261,6 @@ class ProgressTests(unittest.TestCase):
             module_file = lib / "progress.py"
             shutil.copy(HERE / "progress.py", module_file)
             self.assertEqual(resolve_logs_dir(None, module_file=str(module_file)), project / "logs")
-            # and via .git when logs/ does not exist yet
             project2 = self.tmp / "project2"
             (project2 / ".git").mkdir(parents=True)
             lib2 = project2 / "scripts" / "lib"
@@ -202,7 +271,6 @@ class ProgressTests(unittest.TestCase):
                 os.environ["PROGRESS_LOGS_DIR"] = old
 
     def test_module_imports_from_copied_location(self):
-        """Simulates the real install: copy to <project>/scripts/lib and import it from there."""
         project = self.tmp / "proj"
         lib = project / "scripts" / "lib"
         lib.mkdir(parents=True)
@@ -223,4 +291,4 @@ class ProgressTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    unittest.main(verbosity=1)

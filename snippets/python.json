@@ -1,0 +1,48 @@
+{
+  "Script Progress: reported run": {
+    "prefix": "progress",
+    "description": "Wrap a job in a Progress block. A crash inside the block is reported as FAILED automatically.",
+    "body": [
+      "from lib.progress import Progress",
+      "",
+      "with Progress(\"${1:Nightly Load}\") as p:",
+      "    p.step(1, ${2:3}, \"${3:Reading input file}\")",
+      "    p.detail(\"${4:Rows: 0}\")",
+      "",
+      "    p.step(2, ${2:3}, \"${5:Loading warehouse table}\")",
+      "    p.warn(\"${6:12 rows had no customer id}\")",
+      "    p.metric(\"${7:rows_loaded}\", ${8:0})",
+      "",
+      "    p.step(3, ${2:3}, \"${9:Reconciling}\")",
+      "    $0",
+      "    p.complete(success=True, summary=\"${10:INSERT: 0 rows}\")"
+    ]
+  },
+  "Script Progress: step": {
+    "prefix": "progress-step",
+    "description": "Move to a new step and set its label.",
+    "body": [
+      "p.step(${1:1}, ${2:3}, \"${3:What this step does}\")",
+      "$0"
+    ]
+  },
+  "Script Progress: access": {
+    "prefix": "progress-access",
+    "description": "Record that this task touched a file, table, API or other resource, for the Access Map.",
+    "body": [
+      "p.access(\"${1|file,table,api,other|}\", \"${2:input/orders.csv}\", mode=\"${3|read,write|}\")",
+      "$0"
+    ]
+  },
+  "Script Progress: wrap a function": {
+    "prefix": "progress-wrap",
+    "description": "Decorator form: run a function inside a Progress, which is passed as its first argument.",
+    "body": [
+      "@Progress.wrap(\"${1:Nightly Load}\")",
+      "def ${2:main}(p):",
+      "    p.step(1, ${3:1}, \"${4:Working}\")",
+      "    $0",
+      "    p.complete(success=True, summary=\"${5:done}\")"
+    ]
+  }
+}

@@ -37,34 +37,94 @@ exports.readSettings = readSettings;
 // One typed snapshot of every scriptProgress.* setting. Read it fresh on each refresh so
 // changes in Settings apply without a reload.
 const vscode = __importStar(require("vscode"));
+const types_1 = require("./types");
 function readSettings() {
     const c = vscode.workspace.getConfiguration('scriptProgress');
-    const num = (key, def, min) => {
+    const num = (key, def, min, max = Infinity) => {
         const v = c.get(key, def);
-        return typeof v === 'number' && isFinite(v) && v >= min ? v : def;
+        return typeof v === 'number' && isFinite(v) && v >= min && v <= max ? v : def;
     };
+    const str = (key, def, allowed) => {
+        const v = c.get(key, def);
+        return allowed.includes(v) ? v : def;
+    };
+    const bool = (key, def) => c.get(key, def) !== false && (c.get(key, def) === true || def);
+    const sectionList = (key) => (c.get(key, []) || []).filter((s) => types_1.ALL_SECTIONS.includes(s));
+    const sections = {};
+    const defaults = {
+        summary: true, activeTask: true, warnings: true, lastCompleted: true, runHistory: true,
+        quickActions: false, processCalendar: false, deltaTracker: false, scriptHealth: false, accessMap: false,
+    };
+    for (const s of types_1.ALL_SECTIONS)
+        sections[s] = c.get(`sections.${s}`, defaults[s]);
+    const order = sectionList('dashboard.sectionOrder');
+    const sectionOrder = [...order, ...types_1.ALL_SECTIONS.filter(s => !order.includes(s))];
     return {
         logsPath: c.get('logsPath', 'logs') || 'logs',
         refreshInterval: num('refreshInterval', 2000, 500),
         staleRunningMinutes: num('staleRunningMinutes', 30, 1),
-        statusBarEnabled: c.get('statusBar.enabled', true),
-        sections: {
-            activeTask: c.get('sections.activeTask', true),
-            warnings: c.get('sections.warnings', true),
-            lastCompleted: c.get('sections.lastCompleted', true),
-            runHistory: c.get('sections.runHistory', true),
-            processCalendar: c.get('sections.processCalendar', false),
-            quickActions: c.get('sections.quickActions', false),
-            deltaTracker: c.get('sections.deltaTracker', false),
-            scriptHealth: c.get('sections.scriptHealth', false),
-            accessMap: c.get('sections.accessMap', false),
+        sections,
+        sectionOrder,
+        sidebarSections: sectionList('dashboard.sidebarSections'),
+        dashboard: {
+            collapsible: bool('dashboard.collapsible', true),
+            density: str('dashboard.density', 'comfortable', ['comfortable', 'compact']),
         },
-        runHistoryMaxRows: num('runHistory.maxRows', 15, 1),
+        activeTask: {
+            showLog: bool('activeTask.showLog', true),
+            logLines: num('activeTask.logLines', 6, 1, 50),
+            showMetrics: bool('activeTask.showMetrics', true),
+            showArtifacts: bool('activeTask.showArtifacts', true),
+        },
+        runHistory: {
+            maxRows: num('runHistory.maxRows', 15, 1),
+            filters: bool('runHistory.filters', true),
+            detail: bool('runHistory.detail', true),
+            trend: bool('runHistory.trend', true),
+        },
         processes: (c.get('processCalendar.processes', []) || []).filter(p => p && p.name),
+        calendar: {
+            view: str('processCalendar.view', 'both', ['list', 'grid', 'both']),
+            upcoming: bool('processCalendar.upcoming', true),
+        },
         buttons: (c.get('quickActions.buttons', []) || []).filter(b => b && b.label && b.command),
+        quickActions: {
+            runVia: str('quickActions.runVia', 'terminal', ['terminal', 'task']),
+            asTasks: bool('quickActions.asTasks', true),
+            contextMenu: bool('quickActions.contextMenu', true),
+            disableWhileRunning: bool('quickActions.disableWhileRunning', true),
+            interpreters: c.get('quickActions.interpreters', {}) || {},
+        },
         deltaMetrics: (c.get('deltaTracker.metrics', []) || []).filter(m => typeof m === 'string' && m),
+        deltas: {
+            formats: c.get('deltaTracker.formats', {}) || {},
+            thresholds: c.get('deltaTracker.thresholds', {}) || {},
+            points: num('deltaTracker.points', 50, 2),
+        },
         staleHours: num('scriptHealth.staleHours', 168, 1),
-        accessMapMaxNodes: num('accessMap.maxNodes', 150, 10),
+        health: { resultDots: num('scriptHealth.resultDots', 5, 0, 20) },
+        accessMap: {
+            maxNodes: num('accessMap.maxNodes', 150, 10),
+            layout: str('accessMap.layout', 'force', ['force', 'radial']),
+            timeWindowDays: num('accessMap.timeWindowDays', 0, 0),
+            labels: str('accessMap.labels', 'auto', ['auto', 'all', 'scripts']),
+            sidebarPreview: bool('accessMap.sidebarPreview', true),
+            replay: bool('accessMap.replay', true),
+        },
+        notifications: {
+            onComplete: bool('notifications.onComplete', false),
+            onFail: bool('notifications.onFail', true),
+            onStall: bool('notifications.onStall', true),
+            onWarning: bool('notifications.onWarning', false),
+            onExit: bool('notifications.onExit', true),
+            mirrorProgress: bool('notifications.mirrorProgress', false),
+        },
+        statusBar: {
+            enabled: bool('statusBar.enabled', true),
+            idleMode: str('statusBar.idleMode', 'last', ['last', 'hidden']),
+            clickAction: str('statusBar.clickAction', 'menu', ['menu', 'dashboard']),
+        },
+        badge: str('badge', 'running', ['running', 'failures', 'off']),
     };
 }
 //# sourceMappingURL=settings.js.map

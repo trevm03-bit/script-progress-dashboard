@@ -34,17 +34,25 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DashboardPanel = void 0;
-// The editor-tab panel. One instance at a time; re-running the command reveals it.
+// Editor-tab panels: the full dashboard, and the Access Map on its own. One instance of each;
+// re-running the command reveals it.
 const vscode = __importStar(require("vscode"));
 const dashboardHost_1 = require("./dashboardHost");
 class DashboardPanel {
-    static createOrShow(extensionUri, state) {
-        if (DashboardPanel.current) {
-            DashboardPanel.current.panel.reveal(undefined, true);
-            DashboardPanel.current.host.refresh(true);
-            return DashboardPanel.current;
+    static get current() { return DashboardPanel.open.get('panel'); }
+    static get map() { return DashboardPanel.open.get('map'); }
+    static refreshAll(force = false) {
+        for (const p of DashboardPanel.open.values())
+            p.refresh(force);
+    }
+    static createOrShow(extensionUri, state, surface) {
+        const existing = DashboardPanel.open.get(surface);
+        if (existing) {
+            existing.panel.reveal(undefined, true);
+            existing.host.refresh(true);
+            return existing;
         }
-        const panel = vscode.window.createWebviewPanel('scriptProgress.panel', 'Script Progress Dashboard', { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, {
+        const panel = vscode.window.createWebviewPanel(surface === 'map' ? 'scriptProgress.map' : 'scriptProgress.panel', surface === 'map' ? 'Access Map' : 'Script Progress Dashboard', { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }, {
             enableScripts: true,
             // The Access Map keeps its layout in the page; rebuilding it on every tab switch would
             // make the constellation jump. This is the one place the memory cost is worth it.
@@ -52,17 +60,18 @@ class DashboardPanel {
             localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'media')],
         });
         panel.iconPath = vscode.Uri.joinPath(extensionUri, 'media', 'icon.svg');
-        DashboardPanel.current = new DashboardPanel(panel, extensionUri, state);
-        return DashboardPanel.current;
+        const inst = new DashboardPanel(panel, extensionUri, state, surface);
+        DashboardPanel.open.set(surface, inst);
+        return inst;
     }
-    constructor(panel, extensionUri, state) {
+    constructor(panel, extensionUri, state, surface) {
         this.panel = panel;
-        this.host = new dashboardHost_1.DashboardHost(extensionUri, 'panel', state);
+        this.host = new dashboardHost_1.DashboardHost(extensionUri, surface, state);
         this.host.attach(panel.webview);
         panel.onDidChangeViewState(() => this.host.setVisible(panel.visible));
         panel.onDidDispose(() => {
             this.host.dispose();
-            DashboardPanel.current = undefined;
+            DashboardPanel.open.delete(surface);
         });
     }
     refresh(force = false) {
@@ -70,4 +79,5 @@ class DashboardPanel {
     }
 }
 exports.DashboardPanel = DashboardPanel;
+DashboardPanel.open = new Map();
 //# sourceMappingURL=dashboardPanel.js.map

@@ -1,0 +1,139 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://trevor-marshall.dev/schemas/script-progress/progress.schema.json",
+  "title": "Script Progress: progress.json",
+  "description": "The current (or most recent) state of one task, rewritten by the reporter on every call. The same shape is written to progress/<slug>.json, one file per task.",
+  "type": "object",
+  "required": [
+    "task",
+    "status",
+    "step",
+    "totalSteps",
+    "label",
+    "detail",
+    "elapsed",
+    "eta",
+    "warnings",
+    "updatedAt"
+  ],
+  "properties": {
+    "task": {
+      "type": "string",
+      "description": "Task name, exactly as passed to Progress(). Process Calendar entries match against the start of this string."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["running", "complete", "failed"],
+      "description": "What the reporter last said. 'running' plus a stale updatedAt is what the dashboard shows as STALLED."
+    },
+    "step": {
+      "type": "number",
+      "description": "Current step number, 1-based. 0 before the first step() call."
+    },
+    "totalSteps": {
+      "type": "number",
+      "description": "Total number of steps in this run, as declared by the last step() call."
+    },
+    "label": {
+      "type": "string",
+      "description": "Short label for the current step, e.g. 'Loading warehouse table'. Set to 'Complete' or 'FAILED' when the run ends."
+    },
+    "detail": {
+      "type": "string",
+      "description": "Detail line under the step label: row counts, file names, anything cheap to update."
+    },
+    "elapsed": {
+      "type": "number",
+      "description": "Seconds elapsed at the moment this file was written."
+    },
+    "eta": {
+      "type": ["number", "null"],
+      "description": "Estimated seconds remaining, averaged from the last few successful runs of this task. null when there is no prior run to estimate from, and always null once the run ends."
+    },
+    "warnings": {
+      "type": "array",
+      "description": "Warnings raised so far (the reporter keeps the last 10 here; run history keeps up to 20).",
+      "items": { "$ref": "#/definitions/warning" }
+    },
+    "updatedAt": {
+      "type": "string",
+      "description": "ISO timestamp of this write. Drives the live elapsed clock and stall detection (see scriptProgress.staleRunningMinutes)."
+    },
+    "runId": {
+      "type": "string",
+      "description": "Optional (v1.1). Unique id for this run, e.g. '20260902-081500-9fa31c'. Ties progress.json to its run history row."
+    },
+    "startedAt": {
+      "type": "string",
+      "description": "Optional (v1.1). ISO timestamp of when the run started."
+    },
+    "substep": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Optional (v1.1). Progress within the current step, 0..1, from substep(). null when the step has no sub-progress.",
+      "default": null
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Optional (v1.1). Named values reported with metric(). Numbers are charted and formatted; strings are shown as-is.",
+      "additionalProperties": {
+        "type": ["number", "string"],
+        "description": "Metric value: a number, or a short string."
+      }
+    },
+    "log": {
+      "type": "array",
+      "description": "Optional (v1.1). Recent log lines from log(), newest last (the reporter keeps the last 20). Shown as the log tail in the Active Task section.",
+      "items": { "$ref": "#/definitions/logLine" }
+    },
+    "artifacts": {
+      "type": "array",
+      "description": "Optional (v1.1). Files this run produced, from artifact(). The dashboard shows each as a clickable link.",
+      "items": {
+        "type": "string",
+        "description": "Path to a file the run produced, absolute or relative to the workspace folder."
+      }
+    },
+    "accessed": {
+      "type": "array",
+      "description": "Optional (v1.1). Access Map node ids touched during this run, in the order they were first touched. Used to replay the run's path through the map.",
+      "items": {
+        "type": "string",
+        "description": "Access Map node id, in the form '<type>:<name>', e.g. 'table:sales.orders'."
+      }
+    }
+  },
+  "definitions": {
+    "warning": {
+      "type": "object",
+      "description": "One warning raised by the script.",
+      "required": ["time", "msg"],
+      "properties": {
+        "time": {
+          "type": "string",
+          "description": "ISO timestamp of when the warning was raised."
+        },
+        "msg": {
+          "type": "string",
+          "description": "Warning text, e.g. '12 rows had no customer id'."
+        }
+      }
+    },
+    "logLine": {
+      "type": "object",
+      "description": "One line of the live log tail.",
+      "required": ["time", "msg"],
+      "properties": {
+        "time": {
+          "type": "string",
+          "description": "ISO timestamp of when the line was logged."
+        },
+        "msg": {
+          "type": "string",
+          "description": "Log text."
+        }
+      }
+    }
+  }
+}
