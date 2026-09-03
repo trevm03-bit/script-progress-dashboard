@@ -68,6 +68,14 @@ test('percent with and without substep; slug', () => {
   assert.equal(time.percent(3, 7, 0.5), 36);   // 2.5 of 7
   assert.equal(time.percent(0, 0), 0);
   assert.equal(time.percent(9, 7), 100);
+  // A substep must never move the bar backwards relative to the previous step's "done" value.
+  const seq = [time.percent(1, 4, null), time.percent(2, 4, 0), time.percent(2, 4, 0.25), time.percent(2, 4, 1), time.percent(2, 4, null), time.percent(3, 4, null)];
+  for (let i = 1; i < seq.length; i++) assert.ok(seq[i] >= seq[i - 1], `non-monotonic at ${i}: ${seq.join(',')}`);
+  assert.equal(time.taskMatches('Nightly Load Phase 2', 'nightly load'), true);
+  assert.equal(time.taskMatches('Other', 'Nightly'), false);
+  const p = fixture.progress;
+  assert.ok(time.exitOverlayFor(p, [{ task: 'demo', exitCode: 1, when: '2026-09-02T10:00:25' }]));        // prefix, case-insensitive
+  assert.equal(time.exitOverlayFor(p, [{ task: 'Pipeline', exitCode: 1, when: '2026-09-02T10:00:25' }]), null);
   assert.equal(time.slug('Nightly Load 2'), 'nightly-load-2');
   assert.equal(time.slug('  '), 'task');
 });
@@ -225,4 +233,13 @@ test('summary facts, daily text and CSV', () => {
   assert.equal(lines[0], 'date,task,success,elapsed_seconds,warnings,summary,run_id,started_at,rows_loaded,total_value');
   assert.equal(lines.length, 5);
   assert.match(lines[4], /"INSERT: 3,990 rows & more"/);
+  // Formula injection is neutralised; negative numbers are not.
+  const evil = summary.historyCsv([{ task: '=HYPERLINK("x")', date: '2026-01-01T00:00:00', success: true, elapsed: -1, summary: '+1', warnings: 0, metrics: { d: -0.5 } }]);
+  assert.match(evil, /'=HYPERLINK\(""x""\)/);
+  assert.match(evil, /,-1,0,'\+1,/);
+  assert.match(evil, /,-0\.5\r\n$/);
+  // The exited task counts in the summary when an overlay applies.
+  const exited = summary.summaryFacts({ ...fixture, overlays: [{ task: 'Demo Pipeline', exitCode: 1, when: '2026-09-02T10:00:25' }] }, s, NOW);
+  assert.equal(exited.runningCount, 0);
+  assert.equal(exited.stalledCount, 1);
 });

@@ -29,10 +29,10 @@ function renderQuickActions(data, settings, now, trusted, opts) {
         body += `<div class="btn-row">`;
         for (const index of indexes) {
             const b = settings.buttons[index];
-            const taskKey = (b.task || '').toLowerCase();
-            const isRunning = !!taskKey && [...running].some(t => t.startsWith(taskKey));
+            const taskKey = b.task || '';
+            const isRunning = !!taskKey && [...running].some(t => (0, time_1.taskMatches)(t, taskKey));
             const disabled = !trusted || (settings.quickActions.disableWhileRunning && isRunning);
-            const last = taskKey ? [...lastByTask.entries()].filter(([k]) => k.startsWith(taskKey)).map(([, v]) => v).sort((a, b2) => ((0, time_1.parseIso)(b2.date)?.getTime() ?? 0) - ((0, time_1.parseIso)(a.date)?.getTime() ?? 0))[0] : undefined;
+            const last = taskKey ? [...lastByTask.entries()].filter(([k]) => (0, time_1.taskMatches)(k, taskKey)).map(([, v]) => v).sort((a, b2) => ((0, time_1.parseIso)(b2.date)?.getTime() ?? 0) - ((0, time_1.parseIso)(a.date)?.getTime() ?? 0))[0] : undefined;
             const status = isRunning
                 ? `<span class="btn-status">${(0, html_1.icon)('sync~spin')} running</span>`
                 : last ? `<span class="btn-status ${last.success ? 'status-pass' : 'status-fail'}" title="Last run">${(0, html_1.icon)(last.success ? 'check' : 'error')} ${(0, html_1.esc)((0, time_1.relativeTime)(last.date, now))}</span>` : '';

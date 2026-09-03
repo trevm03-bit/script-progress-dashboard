@@ -22,7 +22,7 @@ function renderLastCompleted(data, settings, now, opts) {
   <div class="metrics">
     <div class="metric"><div class="metric-value ${statusCls}">${(0, html_1.icon)(statusIcon)} ${statusText}</div><div class="metric-label">Status</div></div>
     <div class="metric"><div class="metric-value">${(0, html_1.esc)((0, time_1.formatDuration)(last.elapsed))}</div><div class="metric-label">Duration</div></div>
-    <div class="metric"><div class="metric-value ${last.warnings ? 'status-warn' : ''}">${last.warnings ?? 0}</div><div class="metric-label">Warnings</div></div>
+    <div class="metric"><div class="metric-value ${last.warnings ? 'status-warn' : ''}">${Number(last.warnings) || 0}</div><div class="metric-label">Warnings</div></div>
     ${metricCards}
   </div>
   <div class="last-name" title="${(0, html_1.esc)(last.task)}">${(0, html_1.esc)(last.task)} <span class="muted">· ${(0, html_1.esc)((0, time_1.relativeTime)(last.date, now))}</span></div>

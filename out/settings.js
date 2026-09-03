@@ -48,7 +48,7 @@ function readSettings() {
         const v = c.get(key, def);
         return allowed.includes(v) ? v : def;
     };
-    const bool = (key, def) => c.get(key, def) !== false && (c.get(key, def) === true || def);
+    const bool = (key, def) => { const v = c.get(key, def); return typeof v === 'boolean' ? v : def; };
     const sectionList = (key) => (c.get(key, []) || []).filter((s) => types_1.ALL_SECTIONS.includes(s));
     const sections = {};
     const defaults = {

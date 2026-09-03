@@ -49,6 +49,7 @@ const notifications_1 = require("./notifications");
 const settings_1 = require("./settings");
 const statusBar_1 = require("./statusBar");
 const types_1 = require("./types");
+const time_1 = require("./logic/time");
 const COLLAPSED_KEY = 'scriptProgress.collapsedSections';
 function activate(context) {
     let settings = (0, settings_1.readSettings)();
@@ -58,18 +59,18 @@ function activate(context) {
     const statusBar = new statusBar_1.StatusBarManager();
     const runner = new actions_1.ActionRunner(() => settings, {
         onExit: (overlay, label) => {
-            // Attribute the exit to whichever task is still 'running' if the button did not name one.
-            if (!overlay.task || !data.tasks.some(t => t.task === overlay.task)) {
-                const running = data.tasks.find(t => t.status === 'running');
-                if (running)
-                    overlay = { ...overlay, task: running.task };
-                else if (settings.notifications.onExit) {
-                    void vscode.window.showErrorMessage(`✗ "${label}" exited with code ${overlay.exitCode}`, 'Open Dashboard').then(p => p && vscode.commands.executeCommand('scriptProgress.openPanel'));
-                    return;
-                }
+            // Attach the exit ONLY to the task the button named (prefix match, like the calendar and
+            // the buttons themselves). An unnamed button's exit is reported against its label alone —
+            // never pinned to "whatever happens to be running".
+            const named = overlay.task && data.tasks.some(t => (0, time_1.taskMatches)(t.task, overlay.task) && t.status === 'running');
+            if (named) {
+                reader.addOverlay(overlay);
+                refresh(true); // the notifier sees the 'exited' transition and reports it
             }
-            reader.addOverlay(overlay);
-            refresh(true);
+            else if (settings.notifications.onExit) {
+                void vscode.window.showErrorMessage(`✗ "${label}" exited with code ${overlay.exitCode}`, 'Open Dashboard')
+                    .then(p => p && vscode.commands.executeCommand('scriptProgress.openPanel'));
+            }
         },
     });
     const state = {
@@ -110,10 +111,11 @@ function activate(context) {
             w.onDidChange(scheduleRefresh);
             w.onDidCreate(scheduleRefresh);
             w.onDidDelete(scheduleRefresh);
-            context.subscriptions.push(w);
         }
     };
     startWatchers();
+    context.subscriptions.push({ dispose: () => { for (const w of watchers)
+            w.dispose(); watchers = []; } });
     let pollTimer;
     let lastMtime = reader.latestMtime();
     let lastPoll = 0;

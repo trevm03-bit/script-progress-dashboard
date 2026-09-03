@@ -70,13 +70,18 @@ class ProgressTests(unittest.TestCase):
         old_run = self.logs / "progress" / "old-run.json"
         old_done.write_text(json.dumps({"task": "Old", "status": "complete"}), encoding="utf-8")
         old_run.write_text(json.dumps({"task": "Old2", "status": "running"}), encoding="utf-8")
-        past = 10 * 86400
+        past = 4 * 86400        # 4 days: finished slot goes (2-day rule), running slot stays (7-day rule)
         os.utime(old_done, (os.path.getatime(old_done) - past, os.path.getmtime(old_done) - past))
         os.utime(old_run, (os.path.getatime(old_run) - past, os.path.getmtime(old_run) - past))
         with redirect_stdout(self.out):
             Progress("Gamma Job", logs_dir=self.logs).complete()
         self.assertFalse(old_done.exists())
         self.assertTrue(old_run.exists())
+        past = 10 * 86400       # 10 days: even a 'running' slot (a killed process) is swept
+        os.utime(old_run, (os.path.getatime(old_run) - past, os.path.getmtime(old_run) - past))
+        with redirect_stdout(self.out):
+            Progress("Delta Job", logs_dir=self.logs).complete()
+        self.assertFalse(old_run.exists())
 
     def test_metric_log_substep_artifact(self):
         with redirect_stdout(self.out):
@@ -102,6 +107,27 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(hist["artifacts"], ["out/report.xlsx"])
         self.assertIsNone(self.read("progress.json")["substep"])
         self.assertEqual(self.out.getvalue(), "")   # quiet=True prints nothing
+
+    def test_nan_metric_and_delta_never_break_the_files(self):
+        with redirect_stdout(self.out):
+            p = Progress("NaN", logs_dir=self.logs, quiet=True)
+            p.metric("ratio", float("nan"))
+            p.metric("big", float("inf"))
+            p.track_delta("ratio", float("nan"))   # dropped, not written
+            p.track_delta("ratio", 1.5)
+            p.complete()
+        prog = self.read("progress.json")                      # parses -> not poisoned
+        self.assertEqual(prog["metrics"], {"ratio": "nan", "big": "inf"})
+        self.assertEqual([pt["value"] for pt in self.read("deltas.json")["ratio"]], [1.5])
+        self.assertEqual(self.read("run_history.json")[0]["metrics"]["ratio"], "nan")
+
+    def test_temp_files_are_per_process(self):
+        with redirect_stdout(self.out):
+            p = Progress("Tmp", logs_dir=self.logs, quiet=True)
+            tmp = p.progress_file.with_name(f"progress.json.{os.getpid()}.tmp")
+            self.assertIn(str(os.getpid()), tmp.name)
+            p.complete()
+        self.assertEqual([f.name for f in self.logs.rglob("*.tmp")], [])
 
     def test_eta_uses_prior_successful_runs_of_same_task(self):
         hist = [

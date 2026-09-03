@@ -44,8 +44,8 @@ function historyRow(r, settings) {
   <td class="col-status ${r.success ? 'status-pass' : 'status-fail'}" data-sort="${r.success ? 1 : 0}">${(0, html_1.icon)(r.success ? 'check' : 'error')}</td>
   <td class="col-task" data-sort="${(0, html_1.esc)(r.task.toLowerCase())}" title="${(0, html_1.esc)(r.task)}">${expandable ? (0, html_1.icon)('chevron-right', 'row-chev') : ''}${(0, html_1.esc)(r.task)}</td>
   <td class="col-date" data-sort="${t}">${(0, html_1.esc)((0, time_1.dateTime)(r.date))}</td>
-  <td class="col-dur" data-sort="${r.elapsed}">${(0, html_1.esc)((0, time_1.formatDuration)(r.elapsed))}</td>
-  <td class="col-warn ${r.warnings ? 'status-warn' : ''}" data-sort="${r.warnings ?? 0}">${r.warnings ?? 0}</td>
+  <td class="col-dur" data-sort="${Number(r.elapsed) || 0}">${(0, html_1.esc)((0, time_1.formatDuration)(Number(r.elapsed) || 0))}</td>
+  <td class="col-warn ${r.warnings ? 'status-warn' : ''}" data-sort="${Number(r.warnings) || 0}">${Number(r.warnings) || 0}</td>
   <td class="col-summary" title="${(0, html_1.esc)(r.summary)}">${(0, html_1.esc)(r.summary)}</td>
 </tr>`;
     if (!expandable)

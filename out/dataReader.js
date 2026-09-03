@@ -74,10 +74,11 @@ class DataReader {
         const access = this.readJson(exports.FILES.access, readErrors);
         const main = isProgress(progress) ? progress : null;
         const tasks = this.readSlots(readErrors, main);
-        // Drop overlays that no longer apply (the task reported a final state since).
+        // Drop overlays that no longer apply: the task reported a final state since, or no task
+        // matches at all (an overlay with nothing to attach to must not live forever).
         this.overlays = this.overlays.filter(o => {
-            const t = tasks.find(x => x.task === o.task) ?? (main && main.task === o.task ? main : null);
-            return !t || t.status === 'running';
+            const t = tasks.find(x => x.task.toLowerCase().startsWith(o.task.toLowerCase()));
+            return !!t && t.status === 'running';
         });
         return {
             progress: main,
@@ -111,10 +112,15 @@ class DataReader {
         catch { /* no slots */ }
         return latest;
     }
-    /** progress/<slug>.json files + the main file, de-duplicated by runId/task; running first, then newest. */
+    /**
+     * progress/<slug>.json files + the main file, de-duplicated by TASK NAME (one card per task; a
+     * task cannot run twice at once in this contract), keeping the newest copy; running first.
+     */
     readSlots(errors, main) {
         const out = new Map();
-        const key = (p) => p.runId ? `run:${p.runId}` : `task:${p.task}`;
+        const newer = (a, b) => !b || ((0, time_1.parseIso)(a.updatedAt)?.getTime() ?? 0) >= ((0, time_1.parseIso)(b.updatedAt)?.getTime() ?? 0);
+        const put = (p) => { const k = p.task.toLowerCase(); if (newer(p, out.get(k)))
+            out.set(k, p); };
         const slots = path.join(this.logsDir, exports.SLOTS_DIR);
         let names = [];
         try {
@@ -126,15 +132,10 @@ class DataReader {
         for (const f of names) {
             const p = this.readJson(`${exports.SLOTS_DIR}/${f}`, errors);
             if (isProgress(p))
-                out.set(key(p), p);
+                put(p);
         }
-        if (main) {
-            const k = key(main);
-            const existing = out.get(k);
-            // The main file is the most recently written; prefer whichever is newer.
-            if (!existing || ((0, time_1.parseIso)(main.updatedAt)?.getTime() ?? 0) >= ((0, time_1.parseIso)(existing.updatedAt)?.getTime() ?? 0))
-                out.set(k, main);
-        }
+        if (main)
+            put(main);
         const rank = (p) => (p.status === 'running' ? 0 : 1);
         return [...out.values()].sort((a, b) => rank(a) - rank(b) || ((0, time_1.parseIso)(b.updatedAt)?.getTime() ?? 0) - ((0, time_1.parseIso)(a.updatedAt)?.getTime() ?? 0));
     }

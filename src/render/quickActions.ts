@@ -3,7 +3,7 @@
 // text, so a compromised page cannot run anything not in settings). A button that names its
 // task shows that task's last result and is disabled while it runs.
 import { DashboardData, Settings } from '../types';
-import { parseIso, relativeTime, taskState } from '../logic/time';
+import { parseIso, relativeTime, taskMatches, taskState } from '../logic/time';
 import { esc, icon, section, empty, SectionOpts } from './html';
 
 export function renderQuickActions(data: DashboardData, settings: Settings, now: Date, trusted: boolean, opts: SectionOpts): string {
@@ -31,10 +31,10 @@ export function renderQuickActions(data: DashboardData, settings: Settings, now:
     body += `<div class="btn-row">`;
     for (const index of indexes) {
       const b = settings.buttons[index];
-      const taskKey = (b.task || '').toLowerCase();
-      const isRunning = !!taskKey && [...running].some(t => t.startsWith(taskKey));
+      const taskKey = b.task || '';
+      const isRunning = !!taskKey && [...running].some(t => taskMatches(t, taskKey));
       const disabled = !trusted || (settings.quickActions.disableWhileRunning && isRunning);
-      const last = taskKey ? [...lastByTask.entries()].filter(([k]) => k.startsWith(taskKey)).map(([, v]) => v).sort((a, b2) => (parseIso(b2.date)?.getTime() ?? 0) - (parseIso(a.date)?.getTime() ?? 0))[0] : undefined;
+      const last = taskKey ? [...lastByTask.entries()].filter(([k]) => taskMatches(k, taskKey)).map(([, v]) => v).sort((a, b2) => (parseIso(b2.date)?.getTime() ?? 0) - (parseIso(a.date)?.getTime() ?? 0))[0] : undefined;
       const status = isRunning
         ? `<span class="btn-status">${icon('sync~spin')} running</span>`
         : last ? `<span class="btn-status ${last.success ? 'status-pass' : 'status-fail'}" title="Last run">${icon(last.success ? 'check' : 'error')} ${esc(relativeTime(last.date, now))}</span>` : '';

@@ -111,8 +111,8 @@ class ActionRunner {
     resolveTask(task) {
         const label = task.definition.action;
         const b = label ? this.getSettings().buttons.find(x => x.label === label) : undefined;
-        if (!b)
-            return undefined;
+        if (!b || (0, prompts_1.promptLabels)(b.command).length)
+            return undefined; // prompts need the button, not the task runner
         const t = this.makeTask(b, b.command, task.definition);
         return t;
     }
@@ -167,6 +167,8 @@ class ActionRunner {
         const terminal = vscode.window.terminals.find(t => t.name === TERMINAL_NAME && t.exitStatus === undefined)
             ?? vscode.window.createTerminal({ name: TERMINAL_NAME, cwd: this.cwdFor(button) });
         terminal.show(true);
+        if (this.started.size > 50)
+            this.started.clear(); // no shell integration → entries would never be consumed
         this.started.set(`term:${command}`, { label, task: button.task, at: new Date().toISOString() });
         const si = terminal.shellIntegration;
         if (si && typeof si.executeCommand === 'function')

@@ -5,7 +5,8 @@ import * as crypto from 'crypto';
 import * as vscode from 'vscode';
 import { DashboardData, RunRecord, Settings, Surface, SectionId } from './types';
 import { renderSections } from './render/dashboard';
-import { buildGraph } from './logic/graph';
+import { mapMarkup } from './render/map';
+import { buildGraph, DrawGraph } from './logic/graph';
 import { parseIso, taskState } from './logic/time';
 import { ActionRunner } from './actions';
 
@@ -23,6 +24,8 @@ export class DashboardHost {
   private lastSections = '';
   private lastGraphKey = '';
   private lastReplayId = '';
+  /** False until the first refresh: whatever is in history at startup is never replayed. */
+  private replayPrimed = false;
   private visible = true;
   private disposables: vscode.Disposable[] = [];
 
@@ -57,30 +60,32 @@ export class DashboardHost {
     const settings = this.state.getSettings();
     const now = new Date();
     const collapsed = this.state.getCollapsed();
-    const sections = this.surface === 'map'
-      ? ''
-      : renderSections(data, settings, { now, surface: this.surface, trusted: vscode.workspace.isTrusted, collapsed });
 
-    // The graph travels to the panel and the map tab, and to the sidebar when the preview is on.
-    let graph = null;
+    // Build the graph once per refresh; the renderer's summary line and the canvas both use it.
+    let graph: DrawGraph | null = null;
     let graphKey = '';
     const wantGraph = settings.sections.accessMap && (this.surface !== 'sidebar' || settings.accessMap.sidebarPreview);
-    if (wantGraph) {
+    if (settings.sections.accessMap) {
       graph = buildGraph(data.access, data.tasks, settings.accessMap.maxNodes, settings.accessMap.timeWindowDays, now);
-      graphKey = JSON.stringify(graph);
+      if (wantGraph) graphKey = JSON.stringify(graph);
     }
 
-    // Replay: the newest completed run with an access path, once.
+    const sections = this.surface === 'map'
+      ? ''
+      : renderSections(data, settings, { now, surface: this.surface, trusted: vscode.workspace.isTrusted, collapsed, graph: graph ?? undefined });
+
+    // Replay: the newest completed run with an access path, once, and never the one already
+    // there when the view opened.
     let replay: { runId: string; task: string; accessed: string[] } | null = null;
     if (settings.accessMap.replay && wantGraph) {
       const last = data.history.slice().sort((a, b) => (parseIso(b.date)?.getTime() ?? 0) - (parseIso(a.date)?.getTime() ?? 0))[0] as RunRecord | undefined;
       const id = last ? (last.runId ?? `${last.task}|${last.date}`) : '';
-      if (last && id && id !== this.lastReplayId && (last.accessed?.length ?? 0) > 0) {
-        // Only replay runs that finished while we were watching (not the one already there at startup).
-        if (this.lastReplayId !== '') replay = { runId: id, task: last.task, accessed: last.accessed ?? [] };
+      if (id !== this.lastReplayId) {
+        if (this.replayPrimed && last && (last.accessed?.length ?? 0) > 0) replay = { runId: id, task: last.task, accessed: last.accessed ?? [] };
         this.lastReplayId = id;
       }
     }
+    this.replayPrimed = true;
 
     const sectionsChanged = force || sections !== this.lastSections;
     const graphChanged = force || graphKey !== this.lastGraphKey;
@@ -91,7 +96,7 @@ export class DashboardHost {
     void this.webview.postMessage({
       type: 'update',
       sections: sectionsChanged ? sections : undefined,
-      graph: graphChanged ? graph : undefined,
+      graph: graphChanged ? (wantGraph ? graph : null) : undefined,
       replay,
       collapsed,
       state: taskState(data.progress, settings.staleRunningMinutes, now, data.overlays),
@@ -136,6 +141,7 @@ export class DashboardHost {
         }
         break;
       }
+      case 'exportCsv': await vscode.commands.executeCommand('scriptProgress.exportHistoryCsv'); break;
       case 'openPanel': await vscode.commands.executeCommand('scriptProgress.openPanel'); break;
       case 'openMap': await vscode.commands.executeCommand('scriptProgress.openMap'); break;
       case 'openLogs': await vscode.commands.executeCommand('scriptProgress.openLogsFolder'); break;
@@ -150,8 +156,12 @@ export class DashboardHost {
   private shell(webview: vscode.Webview): string {
     const nonce = crypto.randomBytes(16).toString('base64');
     const uri = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', ...p));
+    // style-src needs 'unsafe-inline' for the progress-bar width and legend swatch colours, which
+    // are per-value inline styles; every value is a number or a theme colour, never user text.
     const csp = [
       `default-src 'none'`,
+      `base-uri 'none'`,
+      `form-action 'none'`,
       `style-src ${webview.cspSource} 'unsafe-inline'`,
       `font-src ${webview.cspSource}`,
       `img-src ${webview.cspSource} data:`,
@@ -202,28 +212,19 @@ export class DashboardHost {
   }
 }
 
-/** The map's DOM (toolbar, canvas, detail card). Shared by the panel section and the map tab. */
-export function mapMarkup(large: boolean): string {
-  return `
-<div class="map-toolbar">
-  <input type="search" class="map-search" placeholder="Search nodes…" aria-label="Search nodes" spellcheck="false">
-  <select class="map-layout" title="Layout"><option value="force">Force</option><option value="radial">Radial</option></select>
-  <select class="map-window" title="Time window"><option value="0">All time</option><option value="1">24 hours</option><option value="7">7 days</option><option value="30">30 days</option></select>
-  <select class="map-labels" title="Labels"><option value="auto">Labels: auto</option><option value="all">Labels: all</option><option value="scripts">Labels: scripts</option></select>
-  <button class="icon-btn map-fit" title="Fit to view"><i class="codicon codicon-screen-full"></i></button>
-  <button class="icon-btn map-reset" title="Re-run the layout"><i class="codicon codicon-debug-restart"></i></button>
-  ${large ? '' : '<button class="icon-btn" data-msg="openMap" title="Open as its own tab"><i class="codicon codicon-link-external"></i></button>'}
-</div>
-<div class="map-legend"></div>
-<div class="map-host ${large ? 'map-host-large' : ''}">
-  <canvas class="map-canvas" aria-label="Access map"></canvas>
-  <div class="map-tip" hidden></div>
-  <aside class="map-detail" hidden></aside>
-  <div class="map-hint">drag to pan · wheel to zoom · drag a node · click for detail · double-click to reset</div>
-</div>`;
-}
+/**
+ * Open a file a script reported with Progress.artifact(). Text opens in the editor; office and
+ * PDF documents open in their app after a confirmation. Never executables, and never in an
+ * untrusted workspace — the path comes from a data file the workspace controls.
+ */
+const EXTERNAL_DOCS = new Set(['xlsx', 'xls', 'xlsm', 'docx', 'doc', 'pptx', 'ppt', 'pdf', 'csv']);
+const NEVER_OPEN = new Set(['exe', 'msi', 'bat', 'cmd', 'com', 'scr', 'ps1', 'vbs', 'js', 'jar', 'lnk', 'zip', '7z', 'rar']);
 
 async function openArtifact(p: string): Promise<void> {
+  if (!vscode.workspace.isTrusted) {
+    void vscode.window.showWarningMessage('Script Progress: opening artifacts is disabled in an untrusted workspace.');
+    return;
+  }
   const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const candidates = [p];
   if (ws && !/^[a-zA-Z]:[\\/]|^\//.test(p)) candidates.unshift(vscode.Uri.joinPath(vscode.Uri.file(ws), p).fsPath);
@@ -232,8 +233,16 @@ async function openArtifact(p: string): Promise<void> {
       const uri = vscode.Uri.file(c);
       await vscode.workspace.fs.stat(uri);
       const ext = c.toLowerCase().split('.').pop() ?? '';
-      if (['xlsx', 'xls', 'docx', 'pptx', 'pdf', 'zip', 'exe'].includes(ext)) await vscode.env.openExternal(uri);
-      else await vscode.window.showTextDocument(uri, { preview: true });
+      if (NEVER_OPEN.has(ext)) {
+        await vscode.commands.executeCommand('revealFileInOS', uri);   // show it; never run it
+        return;
+      }
+      if (EXTERNAL_DOCS.has(ext) && ext !== 'csv') {
+        const ok = await vscode.window.showInformationMessage(`Open ${c} in its application?`, { modal: true }, 'Open');
+        if (ok === 'Open') await vscode.env.openExternal(uri);
+        return;
+      }
+      await vscode.window.showTextDocument(uri, { preview: true });
       return;
     } catch { /* try next */ }
   }

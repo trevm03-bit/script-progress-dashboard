@@ -2,13 +2,13 @@
 // gets a summary line, a live mini preview and an "Open map" button. media/accessMap.js draws
 // from the graph posted alongside the HTML.
 import { DashboardData, Settings, Surface } from '../types';
-import { buildGraph, graphSummary } from '../logic/graph';
+import { buildGraph, DrawGraph, graphSummary } from '../logic/graph';
 import { relativeTime } from '../logic/time';
 import { esc, icon, section, empty, SectionOpts } from './html';
 import { mapMarkup, miniMapMarkup } from './map';
 
-export function renderAccessMap(data: DashboardData, settings: Settings, now: Date, surface: Surface, opts: SectionOpts): string {
-  const g = buildGraph(data.access, data.tasks, settings.accessMap.maxNodes, settings.accessMap.timeWindowDays, now);
+export function renderAccessMap(data: DashboardData, settings: Settings, now: Date, surface: Surface, opts: SectionOpts, prebuilt?: DrawGraph): string {
+  const g = prebuilt ?? buildGraph(data.access, data.tasks, settings.accessMap.maxNodes, settings.accessMap.timeWindowDays, now);
   if (g.nodes.length === 0) {
     return section('accessMap', 'Access Map', empty('No access.json yet. Scripts add nodes with Progress.access(kind, name, mode).', { msg: 'simulate', label: 'Simulate a demo run', icon: 'beaker' }), opts);
   }

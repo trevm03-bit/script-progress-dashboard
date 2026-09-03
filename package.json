@@ -91,6 +91,7 @@
     ],
     "jsonValidation": [
       { "fileMatch": "progress.json", "url": "./schemas/progress.schema.json" },
+      { "fileMatch": "progress/*.json", "url": "./schemas/progress.schema.json" },
       { "fileMatch": "run_history.json", "url": "./schemas/run_history.schema.json" },
       { "fileMatch": "deltas.json", "url": "./schemas/deltas.schema.json" },
       { "fileMatch": "access.json", "url": "./schemas/access.schema.json" }

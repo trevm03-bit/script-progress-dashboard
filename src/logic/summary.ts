@@ -27,7 +27,7 @@ function isToday(iso: string, now: Date): boolean {
 }
 
 export function summaryFacts(data: DashboardData, settings: Settings, now: Date): SummaryFacts {
-  const states = data.tasks.map(t => taskState(t, settings.staleRunningMinutes, now));
+  const states = data.tasks.map(t => taskState(t, settings.staleRunningMinutes, now, data.overlays));
   const today = data.history.filter(r => isToday(r.date, now));
   const rows = calendarRows(settings.processes, data.history, now);
   const overdue = rows.filter(r => r.status === 'overdue').map(r => r.process.label || r.process.name);
@@ -87,7 +87,9 @@ export function dailySummaryText(data: DashboardData, settings: Settings, now: D
 /** CSV of run history (RFC 4180 quoting). */
 export function historyCsv(history: RunRecord[]): string {
   const q = (v: unknown) => {
-    const s = v === undefined || v === null ? '' : String(v);
+    let s = v === undefined || v === null ? '' : String(v);
+    // A leading = + - @ (or tab/CR) would be executed as a formula by spreadsheets; neutralise it.
+    if (/^[=+\-@\t\r]/.test(s) && !(typeof v === 'number')) s = `'${s}`;
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const rows = history

@@ -47,6 +47,7 @@ Where the logs folder is, in order of preference:
 """
 import functools
 import json
+import math
 import os
 import re
 import sys
@@ -75,6 +76,7 @@ WARNINGS_IN_HISTORY = 20
 LOG_KEEP = 20
 PRIOR_RUNS_FOR_ETA = 5
 SLOT_PRUNE_DAYS = 2
+SLOT_PRUNE_RUNNING_DAYS = 7
 
 
 def _now_iso() -> str:
@@ -168,6 +170,8 @@ class Progress:
         """Record a named metric for this run (number or short string). Shown as a card, kept in history."""
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             value = str(value)
+        elif isinstance(value, float) and not math.isfinite(value):
+            value = str(value)          # NaN / inf are not JSON; keep them as text, never poison the file
         self.metrics[str(name)] = value
         self._write()
 
@@ -181,13 +185,19 @@ class Progress:
 
     def track_delta(self, metric_name: str, value: float):
         """Append one numeric value to a named series for the Delta Tracker sparkline."""
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return
+        if not math.isfinite(v):
+            return
         deltas = self._read_json(self.deltas_file, default={})
         if not isinstance(deltas, dict):
             deltas = {}
         series = deltas.setdefault(metric_name, [])
-        series.append({"date": _now_iso(), "value": float(value), "task": self.task_name})
+        series.append({"date": _now_iso(), "value": v, "task": self.task_name})
         deltas[metric_name] = series[-DELTA_KEEP:]
-        self._write_json(self.deltas_file, deltas)
+        self._safe_write(self.deltas_file, deltas)
 
     def access(self, kind: str, name: str, mode: str = "read"):
         """
@@ -226,7 +236,7 @@ class Progress:
         keep_ids = {n["id"] for n in keep}
         edges = [e for e in edges if e.get("from") in keep_ids and e.get("to") in keep_ids]
 
-        self._write_json(self.access_file, {"nodes": keep, "edges": edges})
+        self._safe_write(self.access_file, {"nodes": keep, "edges": edges})
         if res_id not in self.accessed:
             self.accessed.append(res_id)
             self._write()
@@ -301,7 +311,7 @@ class Progress:
             "startedAt": self.started_at,
             "updatedAt": _now_iso(),
         }
-        self._write_json(self.progress_file, data)
+        self._safe_write(self.progress_file, data)
         try:
             self.slots_dir.mkdir(parents=True, exist_ok=True)
             self._write_json(self.slot_file, data)
@@ -326,18 +336,27 @@ class Progress:
         ][-PRIOR_RUNS_FOR_ETA:]
 
     def _prune_slots(self):
-        """Drop per-task files of runs that finished days ago, so the folder does not grow forever."""
+        """Drop per-task files of runs that finished days ago (or were killed and left 'running'
+        for over a week), so the folder does not grow forever. One bad file never stops the sweep."""
+        if not self.slots_dir.is_dir():
+            return
+        finished_cutoff = time.time() - SLOT_PRUNE_DAYS * 86400
+        running_cutoff = time.time() - SLOT_PRUNE_RUNNING_DAYS * 86400
         try:
-            if not self.slots_dir.is_dir():
-                return
-            cutoff = time.time() - SLOT_PRUNE_DAYS * 86400
-            for f in self.slots_dir.glob("*.json"):
-                if f != self.slot_file and f.stat().st_mtime < cutoff:
-                    data = self._read_json(f, default={})
-                    if isinstance(data, dict) and data.get("status") != "running":
-                        f.unlink()
+            files = list(self.slots_dir.glob("*.json"))
         except OSError:
-            pass
+            return
+        for f in files:
+            try:
+                if f == self.slot_file:
+                    continue
+                mtime = f.stat().st_mtime
+                data = self._read_json(f, default={})
+                running = isinstance(data, dict) and data.get("status") == "running"
+                if (not running and mtime < finished_cutoff) or (running and mtime < running_cutoff):
+                    f.unlink()
+            except OSError:
+                continue
 
     def _append_history(self, success, elapsed, summary):
         # Read-modify-write with a few retries: two scripts finishing in the same instant
@@ -374,16 +393,25 @@ class Progress:
         except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError, PermissionError):
             return default if default is not None else {}
 
+    def _safe_write(self, path: Path, data):
+        """Write, and if the disk refuses for longer than the retries, say so and carry on.
+        The reporter must never be the reason the real job dies."""
+        try:
+            self._write_json(path, data)
+        except OSError as e:
+            self._say(f"  NOTE: could not update {path.name} ({e.__class__.__name__}); continuing")
+
     def _write_json(self, path: Path, data):
-        """Atomic write: the dashboard never sees a half-written file."""
-        tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        """Atomic write: the dashboard never sees a half-written file. The temp name carries the
+        process id, so two scripts writing the same file at once never swap each other's bytes."""
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False, allow_nan=False), encoding="utf-8")
         last_error = None
         for attempt in range(5):
             try:
                 os.replace(tmp, path)
                 return
-            except PermissionError as e:  # Windows: the reader has the file open for a moment
+            except OSError as e:  # Windows: the reader (or another writer) has the file for a moment
                 last_error = e
                 time.sleep(0.03 * (attempt + 1))
         try:

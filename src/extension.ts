@@ -12,6 +12,7 @@ import { Notifier } from './notifications';
 import { readSettings } from './settings';
 import { StatusBarManager } from './statusBar';
 import { ALL_SECTIONS, DashboardData, SectionId, Settings } from './types';
+import { taskMatches } from './logic/time';
 
 const COLLAPSED_KEY = 'scriptProgress.collapsedSections';
 
@@ -24,14 +25,17 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const runner = new ActionRunner(() => settings, {
     onExit: (overlay, label) => {
-      // Attribute the exit to whichever task is still 'running' if the button did not name one.
-      if (!overlay.task || !data.tasks.some(t => t.task === overlay.task)) {
-        const running = data.tasks.find(t => t.status === 'running');
-        if (running) overlay = { ...overlay, task: running.task };
-        else if (settings.notifications.onExit) { void vscode.window.showErrorMessage(`✗ "${label}" exited with code ${overlay.exitCode}`, 'Open Dashboard').then(p => p && vscode.commands.executeCommand('scriptProgress.openPanel')); return; }
+      // Attach the exit ONLY to the task the button named (prefix match, like the calendar and
+      // the buttons themselves). An unnamed button's exit is reported against its label alone —
+      // never pinned to "whatever happens to be running".
+      const named = overlay.task && data.tasks.some(t => taskMatches(t.task, overlay.task) && t.status === 'running');
+      if (named) {
+        reader.addOverlay(overlay);
+        refresh(true);           // the notifier sees the 'exited' transition and reports it
+      } else if (settings.notifications.onExit) {
+        void vscode.window.showErrorMessage(`✗ "${label}" exited with code ${overlay.exitCode}`, 'Open Dashboard')
+          .then(p => p && vscode.commands.executeCommand('scriptProgress.openPanel'));
       }
-      reader.addOverlay(overlay);
-      refresh(true);
     },
   });
 
@@ -78,10 +82,10 @@ export function activate(context: vscode.ExtensionContext): void {
       w.onDidChange(scheduleRefresh);
       w.onDidCreate(scheduleRefresh);
       w.onDidDelete(scheduleRefresh);
-      context.subscriptions.push(w);
     }
   };
   startWatchers();
+  context.subscriptions.push({ dispose: () => { for (const w of watchers) w.dispose(); watchers = []; } });
 
   let pollTimer: NodeJS.Timeout | undefined;
   let lastMtime = reader.latestMtime();

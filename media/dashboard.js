@@ -91,9 +91,7 @@
       if (t.disabled) return;
       vscode.postMessage({ type: 'runAction', index: Number(t.getAttribute('data-action')) });
     } else if (t.hasAttribute('data-msg')) {
-      const m = t.getAttribute('data-msg');
-      if (m === 'exportCsv') vscode.postMessage({ type: 'exportCsv' });
-      else vscode.postMessage({ type: m });
+      vscode.postMessage({ type: t.getAttribute('data-msg') });
     } else if (t.hasAttribute('data-open')) {
       vscode.postMessage({ type: 'openFile', path: t.getAttribute('data-open') });
     } else if (t.matches('th[data-col]')) {

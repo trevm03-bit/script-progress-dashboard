@@ -1,7 +1,8 @@
 /* Script Progress Dashboard — every colour is a VS Code theme variable, so the page follows any
    theme including High Contrast. The four --vscode-scriptProgress-* variables are the extension's
    own contributed colours (overridable in workbench.colorCustomizations); each has a fallback
-   chain to built-in colours. No hard-coded colours anywhere in this file. */
+   chain to built-in colours. The only literals are two translucent black drop shadows and the
+   progress-bar shimmer, which is derived from the bar's own colour. */
 
 :root {
   --sp-running: var(--vscode-scriptProgress-running, var(--vscode-progressBar-background, var(--vscode-focusBorder)));
@@ -118,7 +119,7 @@ code { font-family: var(--vscode-editor-font-family); font-size: 11px; backgroun
 .surface-sidebar .task-name { font-size: 13px; }
 .progress-bar { height: 6px; background: var(--sp-border); border-radius: 3px; overflow: hidden; margin: 10px 0 6px; }
 .progress-fill { height: 100%; background: var(--sp-running); border-radius: 3px; transition: width 0.4s ease; }
-.progress-fill.state-running { background-image: linear-gradient(90deg, transparent 0, transparent 40%, rgba(255,255,255,0.18) 50%, transparent 60%); background-size: 200% 100%; animation: shimmer 1.6s linear infinite; }
+.progress-fill.state-running { background-image: linear-gradient(90deg, transparent 0, transparent 40%, color-mix(in srgb, var(--sp-running) 60%, var(--vscode-foreground)) 50%, transparent 60%); background-size: 200% 100%; animation: shimmer 1.6s linear infinite; }
 .progress-fill.state-complete { background: var(--sp-complete); }
 .progress-fill.state-failed, .progress-fill.state-exited { background: var(--sp-failed); }
 .progress-fill.state-stalled { background: var(--sp-stalled); }
@@ -279,7 +280,6 @@ tr.detail td { padding: 0 8px 8px 24px; background: var(--vscode-editor-backgrou
 .map-host { position: relative; height: 460px; min-height: 260px; border: 1px solid var(--sp-border); border-radius: 4px; overflow: hidden; background: var(--vscode-editor-background); resize: vertical; }
 .map-host-large { flex: 1; height: auto; min-height: 300px; resize: none; }
 .card.map-only { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.card.map-only .section-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .map-host-mini { height: 150px; min-height: 120px; resize: none; cursor: pointer; margin-bottom: 8px; }
 .map-host-mini:hover { border-color: var(--vscode-focusBorder); }
 .map-canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }

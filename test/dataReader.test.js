@@ -59,7 +59,16 @@ test('reads all files and keeps the last good copy through a half-written file',
   assert.deepEqual(d.tasks, []);
 });
 
-test('slot files: concurrent tasks, running first, de-duplicated with the main file by runId', () => {
+test('slot files: one card per task even when only one copy carries a runId', () => {
+  const dir = tmpDir();
+  write(dir, 'progress.json', { ...fixture.progress, runId: undefined, updatedAt: '2026-09-02T10:00:10' });
+  write(dir, 'progress/demo-pipeline.json', { ...fixture.progress, runId: 'r1', updatedAt: '2026-09-02T10:00:20' });
+  const d = new DataReader(dir).readAll();
+  assert.equal(d.tasks.length, 1);
+  assert.equal(d.tasks[0].runId, 'r1');                       // the newer copy won
+});
+
+test('slot files: concurrent tasks, running first, de-duplicated with the main file', () => {
   const dir = tmpDir();
   const a = { ...fixture.progress, task: 'A', runId: 'ra', updatedAt: '2026-09-02T10:00:20' };
   const b = { ...fixture.progress, task: 'B', runId: 'rb', updatedAt: '2026-09-02T10:00:22' };
@@ -87,6 +96,9 @@ test('overlays attach and are dropped when the task reports a final state', () =
   write(dir, 'progress.json', { ...fixture.progress, status: 'failed' });
   d = r.readAll();
   assert.deepEqual(d.overlays, []);
+  // An overlay that matches no task is dropped rather than kept forever.
+  r.addOverlay({ task: 'Nobody', exitCode: 1, when: '2026-09-02T10:00:25' });
+  assert.deepEqual(r.readAll().overlays, []);
 });
 
 test('malformed rows are filtered; wrong shapes are ignored', () => {

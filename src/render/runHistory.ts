@@ -49,8 +49,8 @@ function historyRow(r: RunRecord, settings: Settings): string {
   <td class="col-status ${r.success ? 'status-pass' : 'status-fail'}" data-sort="${r.success ? 1 : 0}">${icon(r.success ? 'check' : 'error')}</td>
   <td class="col-task" data-sort="${esc(r.task.toLowerCase())}" title="${esc(r.task)}">${expandable ? icon('chevron-right', 'row-chev') : ''}${esc(r.task)}</td>
   <td class="col-date" data-sort="${t}">${esc(dateTime(r.date))}</td>
-  <td class="col-dur" data-sort="${r.elapsed}">${esc(formatDuration(r.elapsed))}</td>
-  <td class="col-warn ${r.warnings ? 'status-warn' : ''}" data-sort="${r.warnings ?? 0}">${r.warnings ?? 0}</td>
+  <td class="col-dur" data-sort="${Number(r.elapsed) || 0}">${esc(formatDuration(Number(r.elapsed) || 0))}</td>
+  <td class="col-warn ${r.warnings ? 'status-warn' : ''}" data-sort="${Number(r.warnings) || 0}">${Number(r.warnings) || 0}</td>
   <td class="col-summary" title="${esc(r.summary)}">${esc(r.summary)}</td>
 </tr>`;
   if (!expandable) return main;

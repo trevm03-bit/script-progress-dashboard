@@ -25,7 +25,7 @@ export function renderLastCompleted(data: DashboardData, settings: Settings, now
   <div class="metrics">
     <div class="metric"><div class="metric-value ${statusCls}">${icon(statusIcon)} ${statusText}</div><div class="metric-label">Status</div></div>
     <div class="metric"><div class="metric-value">${esc(formatDuration(last.elapsed))}</div><div class="metric-label">Duration</div></div>
-    <div class="metric"><div class="metric-value ${last.warnings ? 'status-warn' : ''}">${last.warnings ?? 0}</div><div class="metric-label">Warnings</div></div>
+    <div class="metric"><div class="metric-value ${last.warnings ? 'status-warn' : ''}">${Number(last.warnings) || 0}</div><div class="metric-label">Warnings</div></div>
     ${metricCards}
   </div>
   <div class="last-name" title="${esc(last.task)}">${esc(last.task)} <span class="muted">· ${esc(relativeTime(last.date, now))}</span></div>

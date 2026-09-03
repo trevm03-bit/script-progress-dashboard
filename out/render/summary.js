@@ -9,9 +9,9 @@ function renderSummary(data, settings, now) {
     const tiles = [];
     const tile = (value, label, cls = '', title = '') => tiles.push(`<div class="tile ${cls}" title="${(0, html_1.esc)(title)}"><div class="tile-v">${value}</div><div class="tile-l">${(0, html_1.esc)(label)}</div></div>`);
     if (f.runningCount)
-        tile(`${(0, html_1.icon)('sync~spin')} ${f.runningCount}`, f.runningCount === 1 ? 'running' : 'running', 'tile-running');
+        tile(`${(0, html_1.icon)('sync~spin')} ${f.runningCount}`, 'running', 'tile-running');
     if (f.stalledCount)
-        tile(`${(0, html_1.icon)('warning')} ${f.stalledCount}`, 'stalled', 'tile-warn');
+        tile(`${(0, html_1.icon)('warning')} ${f.stalledCount}`, f.stalledCount === 1 ? 'stalled or exited' : 'stalled / exited', 'tile-warn');
     tile(String(f.runsToday), 'runs today');
     tile(String(f.failedToday), 'failed today', f.failedToday ? 'tile-bad' : '');
     tile(String(f.warningsToday), 'warnings today', f.warningsToday ? 'tile-warn' : '');

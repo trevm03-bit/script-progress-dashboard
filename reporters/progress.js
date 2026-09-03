@@ -36,7 +36,7 @@ function readJson(file, def) {
 }
 
 function writeJson(file, data) {
-  const tmp = file + '.tmp';
+  const tmp = `${file}.${process.pid}.tmp`;   // per-process, so concurrent writers never swap bytes
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
   for (let i = 0; i < 5; i++) {
     try { fs.renameSync(tmp, file); return; } catch (e) { if (i === 4) { try { fs.unlinkSync(tmp); } catch {} throw e; } Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 30 * (i + 1)); }
@@ -63,7 +63,24 @@ class Progress {
     this.current = { step: 0, total: 0, label: 'Starting', detail: '', substep: null };
     const hist = readJson(this.historyFile, []);
     this.prior = (Array.isArray(hist) ? hist : []).filter(r => r && r.task === taskName && r.success && typeof r.elapsed === 'number').map(r => r.elapsed).slice(-PRIOR_RUNS);
+    this._pruneSlots();
     this._write();
+  }
+  _pruneSlots() {
+    // Finished slots older than 2 days, or 'running' slots older than 7 (a killed process), are dropped.
+    let names = [];
+    try { names = fs.readdirSync(this.slotsDir).filter(f => f.endsWith('.json')); } catch { return; }
+    const now = Date.now();
+    for (const f of names) {
+      const p = path.join(this.slotsDir, f);
+      if (p === this.slotFile) continue;
+      try {
+        const age = now - fs.statSync(p).mtimeMs;
+        const data = readJson(p, {});
+        const running = data && data.status === 'running';
+        if ((!running && age > 2 * 86400000) || (running && age > 7 * 86400000)) fs.unlinkSync(p);
+      } catch { /* one bad file never stops the sweep */ }
+    }
   }
   _say(t) { if (!this.quiet) console.log(t); }
   step(n, total, label) { this.current = { step: n, total, label: String(label), detail: '', substep: null }; this._write(); this._say(`\n[${n}/${total}] ${label}...`); }
@@ -71,7 +88,7 @@ class Progress {
   substep(f) { f = Math.max(0, Math.min(1, Number(f) || 0)); const prev = this.current.substep; this.current.substep = f; if (prev === null || Math.abs(f - prev) >= 0.01 || f >= 1) this._write(); }
   log(msg) { this.logLines.push({ time: nowIso(), msg: String(msg) }); this.logLines = this.logLines.slice(-LOG_KEEP); this._write(); this._say(`  ${msg}`); }
   warn(msg) { this.warnings.push({ time: nowIso(), msg: String(msg) }); this._write(); this._say(`  WARNING: ${msg}`); }
-  metric(name, value) { this.metrics[String(name)] = typeof value === 'number' ? value : String(value); this._write(); }
+  metric(name, value) { this.metrics[String(name)] = typeof value === 'number' && Number.isFinite(value) ? value : String(value); this._write(); }
   artifact(p) { p = String(p); if (!this.artifacts.includes(p)) { this.artifacts.push(p); this._write(); } this._say(`  -> ${p}`); }
   trackDelta(name, value) {
     let d = readJson(this.deltasFile, {}); if (!d || typeof d !== 'object' || Array.isArray(d)) d = {};

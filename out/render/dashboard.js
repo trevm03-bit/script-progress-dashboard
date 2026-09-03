@@ -53,12 +53,16 @@ function renderSections(data, settings, ctx) {
                 parts.push((0, scriptHealth_1.renderScriptHealth)(data, settings, ctx.now, o(id)));
                 break;
             case 'accessMap':
-                parts.push((0, accessMapSummary_1.renderAccessMap)(data, settings, ctx.now, ctx.surface, o(id)));
+                parts.push((0, accessMapSummary_1.renderAccessMap)(data, settings, ctx.now, ctx.surface, o(id), ctx.graph));
                 break;
         }
     }
-    if (parts.filter(Boolean).length === 0) {
+    const attempted = settings.sectionOrder.some(enabled);
+    if (!attempted) {
         parts.push(`<div class="empty">Every section is switched off. <button class="link-btn" data-msg="sections">${(0, html_1.icon)('checklist')}Choose sections</button></div>`);
+    }
+    else if (parts.filter(Boolean).length === 0) {
+        parts.push(`<div class="empty">Nothing to show yet — the enabled sections are empty.</div>`);
     }
     return parts.filter(Boolean).join('\n');
 }

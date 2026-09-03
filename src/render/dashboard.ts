@@ -14,11 +14,15 @@ import { renderScriptHealth } from './scriptHealth';
 import { renderAccessMap } from './accessMapSummary';
 import { esc, icon, SectionOpts } from './html';
 
+import { DrawGraph } from '../logic/graph';
+
 export interface RenderContext {
   now: Date;
   surface: Surface;
   trusted: boolean;
   collapsed?: SectionId[];
+  /** Pre-built access graph (the host builds it once per refresh); the section builds its own if absent. */
+  graph?: DrawGraph;
 }
 
 export function renderSections(data: DashboardData, settings: Settings, ctx: RenderContext): string {
@@ -44,12 +48,15 @@ export function renderSections(data: DashboardData, settings: Settings, ctx: Ren
       case 'deltaTracker': parts.push(renderDeltaTracker(data, settings, ctx.now, o(id))); break;
       case 'runHistory': parts.push(renderRunHistory(data, settings, o(id))); break;
       case 'scriptHealth': parts.push(renderScriptHealth(data, settings, ctx.now, o(id))); break;
-      case 'accessMap': parts.push(renderAccessMap(data, settings, ctx.now, ctx.surface, o(id))); break;
+      case 'accessMap': parts.push(renderAccessMap(data, settings, ctx.now, ctx.surface, o(id), ctx.graph)); break;
     }
   }
 
-  if (parts.filter(Boolean).length === 0) {
+  const attempted = settings.sectionOrder.some(enabled);
+  if (!attempted) {
     parts.push(`<div class="empty">Every section is switched off. <button class="link-btn" data-msg="sections">${icon('checklist')}Choose sections</button></div>`);
+  } else if (parts.filter(Boolean).length === 0) {
+    parts.push(`<div class="empty">Nothing to show yet — the enabled sections are empty.</div>`);
   }
   return parts.filter(Boolean).join('\n');
 }

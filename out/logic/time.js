@@ -9,6 +9,7 @@ exports.deriveStart = deriveStart;
 exports.liveElapsed = liveElapsed;
 exports.liveEta = liveEta;
 exports.minutesSinceUpdate = minutesSinceUpdate;
+exports.taskMatches = taskMatches;
 exports.exitOverlayFor = exitOverlayFor;
 exports.taskState = taskState;
 exports.percent = percent;
@@ -107,12 +108,18 @@ function minutesSinceUpdate(progress, now) {
     return (now.getTime() - updated.getTime()) / 60000;
 }
 /** Does an exit overlay apply to this run? Same task, and the exit happened after the run started. */
+/** The one task-name match used everywhere: the run's task name starts with the configured name. */
+function taskMatches(runTask, configured) {
+    if (!configured)
+        return false;
+    return (runTask || '').toLowerCase().startsWith(configured.toLowerCase());
+}
 function exitOverlayFor(progress, overlays) {
     if (!overlays || !overlays.length)
         return null;
     const start = deriveStart(progress)?.getTime() ?? 0;
     for (const o of overlays) {
-        if (o.task !== progress.task)
+        if (!taskMatches(progress.task, o.task))
             continue;
         const when = parseIso(o.when)?.getTime() ?? 0;
         if (when >= start - 1000)
@@ -139,10 +146,13 @@ function taskState(progress, staleRunningMinutes, now, overlays) {
 function percent(step, total, substep) {
     if (!total || total <= 0)
         return 0;
-    const frac = typeof substep === 'number' && isFinite(substep) ? Math.max(0, Math.min(1, substep)) : 0;
-    const done = Math.max(0, step - 1) + (frac > 0 ? frac : step > 0 ? 1 : 0);
-    // When no substep is reported, a step counts as done once it is the current step (matches the spec).
-    const value = frac > 0 ? (done / total) * 100 : (step / total) * 100;
+    // Without a substep the current step counts as done (the spec's behaviour). With one, the bar
+    // sits inside the current step and never moves backwards: step-1 done steps plus the fraction,
+    // but never below what "no substep" would show for the previous step.
+    const hasSub = typeof substep === 'number' && isFinite(substep);
+    const value = hasSub
+        ? ((Math.max(0, step - 1) + Math.max(0, Math.min(1, substep))) / total) * 100
+        : (step / total) * 100;
     return Math.max(0, Math.min(100, Math.round(value)));
 }
 /** A URL-safe slug the reporters use for per-task files: "Nightly Load 2" -> "nightly-load-2". */

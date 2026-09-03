@@ -87,11 +87,17 @@ export function minutesSinceUpdate(progress: ProgressData, now: Date): number {
 }
 
 /** Does an exit overlay apply to this run? Same task, and the exit happened after the run started. */
+/** The one task-name match used everywhere: the run's task name starts with the configured name. */
+export function taskMatches(runTask: string, configured: string): boolean {
+  if (!configured) return false;
+  return (runTask || '').toLowerCase().startsWith(configured.toLowerCase());
+}
+
 export function exitOverlayFor(progress: ProgressData, overlays: RunOverlay[] | undefined): RunOverlay | null {
   if (!overlays || !overlays.length) return null;
   const start = deriveStart(progress)?.getTime() ?? 0;
   for (const o of overlays) {
-    if (o.task !== progress.task) continue;
+    if (!taskMatches(progress.task, o.task)) continue;
     const when = parseIso(o.when)?.getTime() ?? 0;
     if (when >= start - 1000) return o;
   }
@@ -113,10 +119,13 @@ export function taskState(progress: ProgressData | null, staleRunningMinutes: nu
 /** 0..100, safe for total = 0. Includes the fraction inside the current step when the reporter gave one. */
 export function percent(step: number, total: number, substep?: number | null): number {
   if (!total || total <= 0) return 0;
-  const frac = typeof substep === 'number' && isFinite(substep) ? Math.max(0, Math.min(1, substep)) : 0;
-  const done = Math.max(0, step - 1) + (frac > 0 ? frac : step > 0 ? 1 : 0);
-  // When no substep is reported, a step counts as done once it is the current step (matches the spec).
-  const value = frac > 0 ? (done / total) * 100 : (step / total) * 100;
+  // Without a substep the current step counts as done (the spec's behaviour). With one, the bar
+  // sits inside the current step and never moves backwards: step-1 done steps plus the fraction,
+  // but never below what "no substep" would show for the previous step.
+  const hasSub = typeof substep === 'number' && isFinite(substep);
+  const value = hasSub
+    ? ((Math.max(0, step - 1) + Math.max(0, Math.min(1, substep as number))) / total) * 100
+    : (step / total) * 100;
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 

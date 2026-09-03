@@ -608,7 +608,7 @@
     showTip(n, e) {
       if (!this.tip) return;
       if (!n || this.drag) { this.tip.hidden = true; return; }
-      this.tip.innerHTML = `<div class="tip-type">${TYPE_LABEL[n.type] || n.type}${n.live ? ' · live' : ''}</div><div>${escapeHtml(n.label || n.id)}</div><div class="tip-type">${n.degree} link${n.degree === 1 ? '' : 's'} · ${n.reads || 0} read · ${n.writes || 0} write · last ${escapeHtml(relTime(n.lastSeen))}</div>`;
+      this.tip.innerHTML = `<div class="tip-type">${escapeHtml(TYPE_LABEL[n.type] || n.type)}${n.live ? ' · live' : ''}</div><div>${escapeHtml(n.label || n.id)}</div><div class="tip-type">${Number(n.degree) || 0} link${n.degree === 1 ? '' : 's'} · ${Number(n.reads) || 0} read · ${Number(n.writes) || 0} write · last ${escapeHtml(relTime(n.lastSeen))}</div>`;
       const rect = this.host.getBoundingClientRect();
       let x = e.clientX - rect.left + 14, y = e.clientY - rect.top + 14;
       this.tip.hidden = false;
@@ -624,12 +624,12 @@
         const other = this.nodes.get(e.from === id ? e.to : e.from);
         return other ? { other, e } : null;
       }).filter(Boolean).sort((a, b) => (b.e.count || 0) - (a.e.count || 0));
-      const rows = links.slice(0, 40).map(({ other, e }) => `<button class="det-row" data-node="${escapeHtml(other.id)}"><i class="sw" style="background:${css(TYPE_VAR[other.type], FALLBACK[other.type])}"></i><span class="det-name">${escapeHtml(other.label || other.id)}</span><span class="det-meta">${e.mode} ×${e.count || 1} · ${escapeHtml(relTime(e.lastSeen))}</span></button>`).join('');
-      this.detail.innerHTML = `<div class="det-head"><span class="tip-type">${TYPE_LABEL[n.type] || n.type}${n.live ? ' · live' : ''}</span><button class="icon-btn det-close" title="Close"><i class="codicon codicon-close"></i></button></div>
+      const rows = links.slice(0, 40).map(({ other, e }) => `<button class="det-row" data-node="${escapeHtml(other.id)}"><i class="sw" style="background:${css(TYPE_VAR[other.type] || TYPE_VAR.other, FALLBACK[other.type] || FALLBACK.other)}"></i><span class="det-name">${escapeHtml(other.label || other.id)}</span><span class="det-meta">${escapeHtml(e.mode)} ×${Number(e.count) || 1} · ${escapeHtml(relTime(e.lastSeen))}</span></button>`).join('');
+      this.detail.innerHTML = `<div class="det-head"><span class="tip-type">${escapeHtml(TYPE_LABEL[n.type] || n.type)}${n.live ? ' · live' : ''}</span><button class="icon-btn det-close" title="Close"><i class="codicon codicon-close"></i></button></div>
         <div class="det-title">${escapeHtml(n.label || n.id)}</div>
-        <div class="tip-type">${n.degree} link${n.degree === 1 ? '' : 's'} · ${n.reads || 0} read · ${n.writes || 0} write · last ${escapeHtml(relTime(n.lastSeen))}</div>
+        <div class="tip-type">${Number(n.degree) || 0} link${n.degree === 1 ? '' : 's'} · ${Number(n.reads) || 0} read · ${Number(n.writes) || 0} write · last ${escapeHtml(relTime(n.lastSeen))}</div>
         <div class="det-links">${rows || '<div class="tip-type">no links</div>'}${links.length > 40 ? `<div class="tip-type">+${links.length - 40} more</div>` : ''}</div>
-        <div class="det-actions"><button class="link-btn det-center">Center</button><button class="link-btn det-hide">Hide ${TYPE_LABEL[n.type] || n.type}s</button></div>`;
+        <div class="det-actions"><button class="link-btn det-center">Center</button><button class="link-btn det-hide">Hide ${escapeHtml(TYPE_LABEL[n.type] || n.type)}s</button></div>`;
       this.detail.hidden = false;
       this.detail.querySelector('.det-close').addEventListener('click', () => { this.focus = null; this.hideDetail(); this.persist(); this.requestFrame(); });
       this.detail.querySelector('.det-center').addEventListener('click', () => this.centerOn(n));
@@ -658,23 +658,29 @@
     }
   }
 
+  // Instances are keyed on the .map-host element, which dashboard.js carries across section
+  // re-renders (the section element itself is replaced), so listeners and layout survive.
+  function hostOf(section) { return section.classList && section.classList.contains('map-host') ? section : section.querySelector('.map-host'); }
   window.AccessMap = {
     attach(section, api) {
-      let inst = instances.get(section);
-      if (!inst) { inst = new AccessMap(section, api, false); instances.set(section, inst); }
+      const host = hostOf(section);
+      if (!host) return null;
+      let inst = instances.get(host);
+      if (!inst) { inst = new AccessMap(section, api, false); instances.set(host, inst); }
+      else { inst.section = section; inst.legend = section.querySelector('.map-legend') || inst.legend; inst.toolbar = section.querySelector('.map-toolbar') || inst.toolbar; }
       return inst;
     },
     update(section, graph, options) {
       const inst = window.AccessMap.attach(section, options && options.api);
-      inst.update(graph, options);
+      if (inst) inst.update(graph, options);
     },
-    replay(section, rp) { const inst = instances.get(section); if (inst) inst.replay(rp); },
+    replay(section, rp) { const host = hostOf(section); const inst = host && instances.get(host); if (inst) inst.replay(rp); },
     mini(host, graph, api) {
       let inst = instances.get(host);
       if (!inst) { inst = new AccessMap(host, api, true); instances.set(host, inst); }
       inst.update(graph, {});
       inst.fit(true);
     },
-    has(section) { return instances.has(section); },
+    has(section) { const host = hostOf(section); return !!host && instances.has(host); },
   };
 })();

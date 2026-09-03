@@ -9,8 +9,8 @@ export function renderSummary(data: DashboardData, settings: Settings, now: Date
   const tiles: string[] = [];
   const tile = (value: string, label: string, cls = '', title = '') => tiles.push(`<div class="tile ${cls}" title="${esc(title)}"><div class="tile-v">${value}</div><div class="tile-l">${esc(label)}</div></div>`);
 
-  if (f.runningCount) tile(`${icon('sync~spin')} ${f.runningCount}`, f.runningCount === 1 ? 'running' : 'running', 'tile-running');
-  if (f.stalledCount) tile(`${icon('warning')} ${f.stalledCount}`, 'stalled', 'tile-warn');
+  if (f.runningCount) tile(`${icon('sync~spin')} ${f.runningCount}`, 'running', 'tile-running');
+  if (f.stalledCount) tile(`${icon('warning')} ${f.stalledCount}`, f.stalledCount === 1 ? 'stalled or exited' : 'stalled / exited', 'tile-warn');
   tile(String(f.runsToday), 'runs today');
   tile(String(f.failedToday), 'failed today', f.failedToday ? 'tile-bad' : '');
   tile(String(f.warningsToday), 'warnings today', f.warningsToday ? 'tile-warn' : '');

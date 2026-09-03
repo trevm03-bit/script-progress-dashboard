@@ -13,7 +13,7 @@ export function readSettings(): Settings {
     const v = c.get<T>(key, def);
     return allowed.includes(v) ? v : def;
   };
-  const bool = (key: string, def: boolean) => c.get<boolean>(key, def) !== false && (c.get<boolean>(key, def) === true || def);
+  const bool = (key: string, def: boolean) => { const v = c.get<unknown>(key, def); return typeof v === 'boolean' ? v : def; };
   const sectionList = (key: string): SectionId[] =>
     (c.get<string[]>(key, []) || []).filter((s): s is SectionId => (ALL_SECTIONS as string[]).includes(s));
 

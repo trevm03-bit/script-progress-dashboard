@@ -5,8 +5,8 @@ const graph_1 = require("../logic/graph");
 const time_1 = require("../logic/time");
 const html_1 = require("./html");
 const map_1 = require("./map");
-function renderAccessMap(data, settings, now, surface, opts) {
-    const g = (0, graph_1.buildGraph)(data.access, data.tasks, settings.accessMap.maxNodes, settings.accessMap.timeWindowDays, now);
+function renderAccessMap(data, settings, now, surface, opts, prebuilt) {
+    const g = prebuilt ?? (0, graph_1.buildGraph)(data.access, data.tasks, settings.accessMap.maxNodes, settings.accessMap.timeWindowDays, now);
     if (g.nodes.length === 0) {
         return (0, html_1.section)('accessMap', 'Access Map', (0, html_1.empty)('No access.json yet. Scripts add nodes with Progress.access(kind, name, mode).', { msg: 'simulate', label: 'Simulate a demo run', icon: 'beaker' }), opts);
     }

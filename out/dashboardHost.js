@@ -34,13 +34,13 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DashboardHost = void 0;
-exports.mapMarkup = mapMarkup;
 // The one renderer behind the sidebar view, the editor-tab dashboard and the full-size map tab.
 // It owns the page shell (CSP, CSS, scripts) and pushes updates by postMessage so the page is
 // never reloaded — that is what keeps scroll position, filters and the map's layout intact.
 const crypto = __importStar(require("crypto"));
 const vscode = __importStar(require("vscode"));
 const dashboard_1 = require("./render/dashboard");
+const map_1 = require("./render/map");
 const graph_1 = require("./logic/graph");
 const time_1 = require("./logic/time");
 class DashboardHost {
@@ -51,6 +51,8 @@ class DashboardHost {
         this.lastSections = '';
         this.lastGraphKey = '';
         this.lastReplayId = '';
+        /** False until the first refresh: whatever is in history at startup is never replayed. */
+        this.replayPrimed = false;
         this.visible = true;
         this.disposables = [];
     }
@@ -79,29 +81,31 @@ class DashboardHost {
         const settings = this.state.getSettings();
         const now = new Date();
         const collapsed = this.state.getCollapsed();
-        const sections = this.surface === 'map'
-            ? ''
-            : (0, dashboard_1.renderSections)(data, settings, { now, surface: this.surface, trusted: vscode.workspace.isTrusted, collapsed });
-        // The graph travels to the panel and the map tab, and to the sidebar when the preview is on.
+        // Build the graph once per refresh; the renderer's summary line and the canvas both use it.
         let graph = null;
         let graphKey = '';
         const wantGraph = settings.sections.accessMap && (this.surface !== 'sidebar' || settings.accessMap.sidebarPreview);
-        if (wantGraph) {
+        if (settings.sections.accessMap) {
             graph = (0, graph_1.buildGraph)(data.access, data.tasks, settings.accessMap.maxNodes, settings.accessMap.timeWindowDays, now);
-            graphKey = JSON.stringify(graph);
+            if (wantGraph)
+                graphKey = JSON.stringify(graph);
         }
-        // Replay: the newest completed run with an access path, once.
+        const sections = this.surface === 'map'
+            ? ''
+            : (0, dashboard_1.renderSections)(data, settings, { now, surface: this.surface, trusted: vscode.workspace.isTrusted, collapsed, graph: graph ?? undefined });
+        // Replay: the newest completed run with an access path, once, and never the one already
+        // there when the view opened.
         let replay = null;
         if (settings.accessMap.replay && wantGraph) {
             const last = data.history.slice().sort((a, b) => ((0, time_1.parseIso)(b.date)?.getTime() ?? 0) - ((0, time_1.parseIso)(a.date)?.getTime() ?? 0))[0];
             const id = last ? (last.runId ?? `${last.task}|${last.date}`) : '';
-            if (last && id && id !== this.lastReplayId && (last.accessed?.length ?? 0) > 0) {
-                // Only replay runs that finished while we were watching (not the one already there at startup).
-                if (this.lastReplayId !== '')
+            if (id !== this.lastReplayId) {
+                if (this.replayPrimed && last && (last.accessed?.length ?? 0) > 0)
                     replay = { runId: id, task: last.task, accessed: last.accessed ?? [] };
                 this.lastReplayId = id;
             }
         }
+        this.replayPrimed = true;
         const sectionsChanged = force || sections !== this.lastSections;
         const graphChanged = force || graphKey !== this.lastGraphKey;
         if (!sectionsChanged && !graphChanged && !replay)
@@ -111,7 +115,7 @@ class DashboardHost {
         void this.webview.postMessage({
             type: 'update',
             sections: sectionsChanged ? sections : undefined,
-            graph: graphChanged ? graph : undefined,
+            graph: graphChanged ? (wantGraph ? graph : null) : undefined,
             replay,
             collapsed,
             state: (0, time_1.taskState)(data.progress, settings.staleRunningMinutes, now, data.overlays),
@@ -162,6 +166,9 @@ class DashboardHost {
                 }
                 break;
             }
+            case 'exportCsv':
+                await vscode.commands.executeCommand('scriptProgress.exportHistoryCsv');
+                break;
             case 'openPanel':
                 await vscode.commands.executeCommand('scriptProgress.openPanel');
                 break;
@@ -191,8 +198,12 @@ class DashboardHost {
     shell(webview) {
         const nonce = crypto.randomBytes(16).toString('base64');
         const uri = (...p) => webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', ...p));
+        // style-src needs 'unsafe-inline' for the progress-bar width and legend swatch colours, which
+        // are per-value inline styles; every value is a number or a theme colour, never user text.
         const csp = [
             `default-src 'none'`,
+            `base-uri 'none'`,
+            `form-action 'none'`,
             `style-src ${webview.cspSource} 'unsafe-inline'`,
             `font-src ${webview.cspSource}`,
             `img-src ${webview.cspSource} data:`,
@@ -213,7 +224,7 @@ class DashboardHost {
            <button class="icon-btn" data-msg="settings" title="Settings"><i class="codicon codicon-settings-gear"></i></button>`
                 : `<button class="icon-btn" data-msg="openPanel" title="Open the dashboard"><i class="codicon codicon-dashboard"></i></button>
            <button class="icon-btn" data-msg="settings" title="Settings"><i class="codicon codicon-settings-gear"></i></button>`;
-        const mapShell = this.surface === 'map' ? `<section class="card card-map map-only" data-section="accessMap">${mapMarkup(true)}</section>` : '';
+        const mapShell = this.surface === 'map' ? `<section class="card card-map map-only" data-section="accessMap">${(0, map_1.mapMarkup)(true)}</section>` : '';
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -243,27 +254,18 @@ class DashboardHost {
     }
 }
 exports.DashboardHost = DashboardHost;
-/** The map's DOM (toolbar, canvas, detail card). Shared by the panel section and the map tab. */
-function mapMarkup(large) {
-    return `
-<div class="map-toolbar">
-  <input type="search" class="map-search" placeholder="Search nodes…" aria-label="Search nodes" spellcheck="false">
-  <select class="map-layout" title="Layout"><option value="force">Force</option><option value="radial">Radial</option></select>
-  <select class="map-window" title="Time window"><option value="0">All time</option><option value="1">24 hours</option><option value="7">7 days</option><option value="30">30 days</option></select>
-  <select class="map-labels" title="Labels"><option value="auto">Labels: auto</option><option value="all">Labels: all</option><option value="scripts">Labels: scripts</option></select>
-  <button class="icon-btn map-fit" title="Fit to view"><i class="codicon codicon-screen-full"></i></button>
-  <button class="icon-btn map-reset" title="Re-run the layout"><i class="codicon codicon-debug-restart"></i></button>
-  ${large ? '' : '<button class="icon-btn" data-msg="openMap" title="Open as its own tab"><i class="codicon codicon-link-external"></i></button>'}
-</div>
-<div class="map-legend"></div>
-<div class="map-host ${large ? 'map-host-large' : ''}">
-  <canvas class="map-canvas" aria-label="Access map"></canvas>
-  <div class="map-tip" hidden></div>
-  <aside class="map-detail" hidden></aside>
-  <div class="map-hint">drag to pan · wheel to zoom · drag a node · click for detail · double-click to reset</div>
-</div>`;
-}
+/**
+ * Open a file a script reported with Progress.artifact(). Text opens in the editor; office and
+ * PDF documents open in their app after a confirmation. Never executables, and never in an
+ * untrusted workspace — the path comes from a data file the workspace controls.
+ */
+const EXTERNAL_DOCS = new Set(['xlsx', 'xls', 'xlsm', 'docx', 'doc', 'pptx', 'ppt', 'pdf', 'csv']);
+const NEVER_OPEN = new Set(['exe', 'msi', 'bat', 'cmd', 'com', 'scr', 'ps1', 'vbs', 'js', 'jar', 'lnk', 'zip', '7z', 'rar']);
 async function openArtifact(p) {
+    if (!vscode.workspace.isTrusted) {
+        void vscode.window.showWarningMessage('Script Progress: opening artifacts is disabled in an untrusted workspace.');
+        return;
+    }
     const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const candidates = [p];
     if (ws && !/^[a-zA-Z]:[\\/]|^\//.test(p))
@@ -273,10 +275,17 @@ async function openArtifact(p) {
             const uri = vscode.Uri.file(c);
             await vscode.workspace.fs.stat(uri);
             const ext = c.toLowerCase().split('.').pop() ?? '';
-            if (['xlsx', 'xls', 'docx', 'pptx', 'pdf', 'zip', 'exe'].includes(ext))
-                await vscode.env.openExternal(uri);
-            else
-                await vscode.window.showTextDocument(uri, { preview: true });
+            if (NEVER_OPEN.has(ext)) {
+                await vscode.commands.executeCommand('revealFileInOS', uri); // show it; never run it
+                return;
+            }
+            if (EXTERNAL_DOCS.has(ext) && ext !== 'csv') {
+                const ok = await vscode.window.showInformationMessage(`Open ${c} in its application?`, { modal: true }, 'Open');
+                if (ok === 'Open')
+                    await vscode.env.openExternal(uri);
+                return;
+            }
+            await vscode.window.showTextDocument(uri, { preview: true });
             return;
         }
         catch { /* try next */ }

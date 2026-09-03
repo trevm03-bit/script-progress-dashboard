@@ -31,9 +31,8 @@ export function renderDeltaTracker(data: DashboardData, settings: Settings, now:
     const guideVals = [thr?.min, thr?.max].filter((v): v is number => typeof v === 'number');
     const scaleVals = values.concat(guideVals);
     const guides = guideVals.map(v => { const y = sparklineY(scaleVals, v, H, 3); return y === null ? '' : `<line class="guide" x1="0" x2="${W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}"/>`; }).join('');
-    const path = sparklinePath(scaleVals.length > values.length ? values.concat() : values, W, H, 3);
-    // When guides extend the scale, rescale the path against the combined range so both agree.
-    const pathScaled = guideVals.length ? rescaledPath(values, scaleVals, W, H, 3) : path;
+    // When guides extend the scale, draw the path against the combined range so both agree.
+    const pathScaled = guideVals.length ? rescaledPath(values, scaleVals, W, H, 3) : sparklinePath(values, W, H, 3);
     const lastX = values.length === 1 ? W / 2 : W - 3;
     const lastY = sparklineY(guideVals.length ? scaleVals : values, stats.current, H, 3) ?? H / 2;
     return `<div class="delta ${bad ? 'delta-bad' : ''}">

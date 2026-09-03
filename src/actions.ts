@@ -81,7 +81,7 @@ export class ActionRunner implements vscode.Disposable {
   resolveTask(task: vscode.Task): vscode.Task | undefined {
     const label = task.definition.action as string | undefined;
     const b = label ? this.getSettings().buttons.find(x => x.label === label) : undefined;
-    if (!b) return undefined;
+    if (!b || promptLabels(b.command).length) return undefined; // prompts need the button, not the task runner
     const t = this.makeTask(b, b.command, task.definition);
     return t;
   }
@@ -138,6 +138,7 @@ export class ActionRunner implements vscode.Disposable {
     const terminal = vscode.window.terminals.find(t => t.name === TERMINAL_NAME && t.exitStatus === undefined)
       ?? vscode.window.createTerminal({ name: TERMINAL_NAME, cwd: this.cwdFor(button) });
     terminal.show(true);
+    if (this.started.size > 50) this.started.clear(); // no shell integration → entries would never be consumed
     this.started.set(`term:${command}`, { label, task: button.task, at: new Date().toISOString() });
     const si = (terminal as unknown as { shellIntegration?: { executeCommand: (c: string) => unknown } }).shellIntegration;
     if (si && typeof si.executeCommand === 'function') si.executeCommand(command);
