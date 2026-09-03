@@ -32,6 +32,8 @@ export interface SectionOpts {
   collapsible?: boolean;
   /** Small text on the right of the title (counts, hints). */
   aside?: string;
+  /** Codicon shown before the title. */
+  icon?: string;
 }
 
 /** A dashboard card with an uppercase section title. */
@@ -41,7 +43,7 @@ export function section(id: string, title: string, body: string, opts: SectionOp
   const classes = ['card', opts.cls, collapsed ? 'collapsed' : ''].filter(Boolean).join(' ');
   return `<section class="${classes}" data-section="${esc(id)}">
   <div class="section-title${collapsible ? ' toggle' : ''}" ${collapsible ? `role="button" tabindex="0" aria-expanded="${collapsed ? 'false' : 'true'}"` : ''}>
-    ${collapsible ? `<i class="codicon codicon-chevron-${collapsed ? 'right' : 'down'} chev"></i>` : ''}<span class="section-name">${esc(title)}</span>${opts.aside ? `<span class="section-aside">${opts.aside}</span>` : ''}
+    ${collapsible ? `<i class="codicon codicon-chevron-${collapsed ? 'right' : 'down'} chev"></i>` : ''}${opts.icon ? icon(opts.icon, 'section-icon') : ''}<span class="section-name">${esc(title)}</span>${opts.aside ? `<span class="section-aside">${opts.aside}</span>` : ''}
   </div>
   <div class="section-body"${collapsed ? ' hidden' : ''}>${body}</div>
 </section>`;

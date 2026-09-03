@@ -1,0 +1,41 @@
+{
+  "progress": null,
+  "tasks": [],
+  "history": [
+    { "task": "Demo Pipeline", "date": "2026-09-02T09:30:00", "success": true, "elapsed": 35.0, "summary": "ok", "warnings": 3,
+      "warningItems": [
+        { "time": "2026-09-02T09:31:00", "msg": "12 rows had no customer id" },
+        { "time": "2026-09-02T09:32:00", "msg": "Timeout on   API  call <b>x</b>" },
+        { "time": "2026-09-02T00:10:00", "msg": "late night sync 2" }
+      ] },
+    { "task": "Demo Pipeline", "date": "2026-09-01T09:00:00", "success": true, "elapsed": 33.0, "summary": "ok", "warnings": 2,
+      "warningItems": [
+        { "time": "2026-09-01T09:05:00", "msg": "28 rows had no customer id" },
+        { "time": "2026-09-01T23:50:00", "msg": "late night sync 1" }
+      ] },
+    { "task": "Demo Pipeline", "date": "2026-08-31T09:00:00", "success": false, "elapsed": 12.0, "summary": "failed", "warnings": 1,
+      "warningItems": [{ "time": "2026-08-31T09:05:00", "msg": "3 rows had no customer id" }] },
+    { "task": "Weekly Rollup", "date": "2026-08-31T08:00:00", "success": true, "elapsed": 120.0, "summary": "ok", "warnings": 1,
+      "warningItems": [{ "time": "2026-08-31T08:02:00", "msg": "  12 ROWS  had no   customer id  " }] },
+    { "task": "Weekly Rollup", "date": "2026-08-30T08:00:00", "success": true, "elapsed": 110.0, "summary": "ok", "warnings": 1,
+      "warningItems": [{ "time": "2026-08-30T10:00:00", "msg": "cache miss for key 77" }] },
+    { "task": "Weekly Rollup", "date": "2026-08-22T08:00:00", "success": true, "elapsed": 100.0, "summary": "ok", "warnings": 2,
+      "warningItems": [
+        { "time": "2026-08-22T10:00:00", "msg": "cache miss for key 12" },
+        { "time": "2026-08-22T09:00:00", "msg": "disk usage at 91%" }
+      ] },
+    { "task": "Month-End Close", "date": "2026-08-21T09:00:00", "success": true, "elapsed": 60.0, "summary": "ok", "warnings": 1,
+      "warningItems": [{ "time": "2026-08-21T09:10:00", "msg": "disk usage at 88%" }] },
+    { "task": "Month-End Close", "date": "2026-08-01T09:00:00", "success": true, "elapsed": 60.0, "summary": "before the window", "warnings": 1,
+      "warningItems": [{ "time": "2026-08-01T09:10:00", "msg": "ancient warning 1" }] },
+    { "task": "Month-End Close", "date": "2026-09-02T08:00:00", "success": true, "elapsed": 60.0, "summary": "count only, no items", "warnings": 5 },
+    { "task": "No Time", "date": "2026-09-02T07:00:00", "success": true, "elapsed": 4.0, "summary": "item without a usable time", "warnings": 1,
+      "warningItems": [{ "time": "", "msg": "clock was missing" }] }
+  ],
+  "deltas": {},
+  "access": null,
+  "overlays": [],
+  "logsDir": "C:\\demo\\logs",
+  "logsDirExists": true,
+  "readErrors": []
+}

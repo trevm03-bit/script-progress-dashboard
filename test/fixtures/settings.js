@@ -1,6 +1,6 @@
 // A complete Settings object for tests, mirroring src/settings.ts defaults, with overrides.
 'use strict';
-const ALL = ['summary', 'activeTask', 'warnings', 'lastCompleted', 'quickActions', 'processCalendar', 'deltaTracker', 'runHistory', 'scriptHealth', 'accessMap'];
+const ALL = ['summary', 'activeTask', 'warnings', 'lastCompleted', 'quickActions', 'processCalendar', 'timeline', 'deltaTracker', 'metrics', 'runHistory', 'warningTrends', 'scriptHealth', 'accessMap'];
 
 function settings(o = {}) {
   const sections = Object.fromEntries(ALL.map(id => [id, true]));
@@ -15,7 +15,10 @@ function settings(o = {}) {
     sidebarSections: o.sidebarSections || [],
     dashboard: { collapsible: true, density: 'comfortable', ...(o.dashboard || {}) },
     activeTask: { showLog: true, logLines: 6, showMetrics: true, showArtifacts: true, ...(o.activeTask || {}) },
-    runHistory: { maxRows: 15, filters: true, detail: true, trend: true, ...(o.runHistory || {}) },
+    runHistory: { maxRows: 15, filters: true, detail: true, trend: true, anomalies: true, anomalyFactor: 2, ...(o.runHistory || {}) },
+    timeline: { windowHours: 24, showFailed: true, ...(o.timeline || {}) },
+    metricsExplorer: { maxRuns: 12, metrics: [], ...(o.metricsExplorer || {}) },
+    warningTrends: { days: 14, top: 8, ...(o.warningTrends || {}) },
     processes: o.processes || [
       { name: 'Demo Pipeline', label: 'Demo', frequency: 'daily' },
       { name: 'Weekly Rollup', label: 'Weekly', frequency: 'weekly' },
@@ -31,8 +34,8 @@ function settings(o = {}) {
     deltas: { formats: {}, thresholds: {}, points: 50, ...(o.deltas || {}) },
     staleHours: o.staleHours || 24,
     health: { resultDots: 5, ...(o.health || {}) },
-    accessMap: { maxNodes: 150, layout: 'force', timeWindowDays: 0, labels: 'auto', sidebarPreview: true, replay: true, ...(o.accessMap || {}) },
-    notifications: { onComplete: false, onFail: true, onStall: true, onWarning: false, onExit: true, mirrorProgress: false },
+    accessMap: { maxNodes: 150, layout: 'force', timeWindowDays: 0, labels: 'auto', sidebarPreview: true, replay: true, ambient: true, halos: true, glyphs: true, minimap: true, starfield: true, ...(o.accessMap || {}) },
+    notifications: { onComplete: false, onFail: true, onStall: true, onWarning: false, onExit: true, onSlow: true, mirrorProgress: false, ...(o.notifications || {}) },
     statusBar: { enabled: true, idleMode: 'last', clickAction: 'menu' },
     badge: 'running',
   };

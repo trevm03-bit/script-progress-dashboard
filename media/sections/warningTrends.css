@@ -1,0 +1,87 @@
+/* ---- warning trends ----
+   Colours are theme variables only (the --sp-* set from dashboard.css plus --vscode-*), so the
+   chart follows the editor theme, High Contrast included. */
+
+.wt-chart {
+  width: 100%;
+  height: 44px;
+  display: block;
+  margin: 2px 0 0;
+}
+.wt-bar {
+  fill: var(--sp-stalled);
+  opacity: 0.65;
+}
+.wt-bar:hover { opacity: 1; }
+.wt-bar-last {
+  fill: var(--sp-failed);
+  opacity: 1;
+}
+.wt-bar-zero { fill: var(--sp-border); opacity: 1; }
+
+.wt-days {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wt-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.wt-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--sp-border);
+}
+.wt-group:first-child { border-top: none; }
+
+.wt-count {
+  flex: 0 0 auto;
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.wt-body { min-width: 0; flex: 1 1 auto; }
+.wt-msg {
+  font-size: 12px;
+  font-family: var(--vscode-editor-font-family);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wt-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 3px;
+}
+.wt-tasks { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+/* chip() always emits a key span; these chips are just a task name. */
+.wt-task .chip-k { display: none; }
+.wt-when { white-space: nowrap; }
+
+.wt-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+.wt-trend .codicon { font-size: 12px; }
+.wt-rising { color: var(--sp-failed); }
+.wt-falling { color: var(--sp-complete); }
+.wt-flat { color: var(--sp-muted); }
+
+.surface-sidebar .wt-when { display: none; }

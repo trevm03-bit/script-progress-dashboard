@@ -1,0 +1,64 @@
+{
+  "progress": {
+    "task": "Nightly Sync",
+    "status": "running",
+    "step": 2,
+    "totalSteps": 5,
+    "label": "Syncing",
+    "detail": "",
+    "elapsed": 320.0,
+    "eta": 200.0,
+    "warnings": [],
+    "runId": "20260902-095500-run1",
+    "startedAt": "2026-09-02T09:55:00",
+    "updatedAt": "2026-09-02T10:00:20"
+  },
+  "tasks": [
+    {
+      "task": "Nightly Sync",
+      "status": "running",
+      "step": 2,
+      "totalSteps": 5,
+      "label": "Syncing",
+      "detail": "",
+      "elapsed": 320.0,
+      "eta": 200.0,
+      "warnings": [],
+      "runId": "20260902-095500-run1",
+      "startedAt": "2026-09-02T09:55:00",
+      "updatedAt": "2026-09-02T10:00:20"
+    },
+    {
+      "task": "Demo Pipeline",
+      "status": "complete",
+      "step": 4,
+      "totalSteps": 4,
+      "label": "done",
+      "detail": "",
+      "elapsed": 120.0,
+      "eta": null,
+      "warnings": [],
+      "startedAt": "2026-09-02T07:58:00",
+      "updatedAt": "2026-09-02T08:00:00"
+    }
+  ],
+  "history": [
+    { "task": "Weekly Rollup", "date": "2026-09-01T09:00:00", "success": true, "elapsed": 60.0, "summary": "before the window", "warnings": 0 },
+    { "task": "Edge Job", "date": "2026-09-01T11:00:00", "startedAt": "2026-09-01T09:30:00", "success": true, "elapsed": 5400.0, "summary": "straddles the window start", "warnings": 0 },
+    { "task": "Nightly Sync", "date": "2026-09-01T23:00:00", "success": false, "elapsed": 15.0, "summary": "connection reset", "warnings": 0 },
+    { "task": "Demo Pipeline", "date": "2026-09-01T20:00:00", "success": true, "elapsed": 30.0, "summary": "ok", "warnings": 0 },
+    { "task": "Demo Pipeline", "date": "2026-09-01T22:00:00", "success": true, "elapsed": 30.0, "summary": "ok", "warnings": 0 },
+    { "task": "Demo Pipeline", "date": "2026-09-02T00:00:00", "success": true, "elapsed": 30.0, "summary": "ok", "warnings": 0 },
+    { "task": "Demo Pipeline", "date": "2026-09-02T08:00:00", "startedAt": "2026-09-02T07:58:00", "success": true, "elapsed": 120.0, "summary": "four times the usual", "warnings": 0 },
+    { "task": "<b>Bad Task</b>", "date": "2026-09-02T05:00:00", "success": true, "elapsed": 12.0, "summary": "name needs escaping & more", "warnings": 0 },
+    { "task": "Long Job", "date": "2026-09-02T06:00:00", "startedAt": "2026-08-31T06:00:00", "success": true, "elapsed": 172800.0, "summary": "longer than the window", "warnings": 0 },
+    { "task": "Overlap A", "date": "2026-09-02T07:30:00", "startedAt": "2026-09-02T07:00:00", "success": true, "elapsed": 1800.0, "summary": "ok", "warnings": 0 },
+    { "task": "Overlap B", "date": "2026-09-02T07:40:00", "startedAt": "2026-09-02T07:10:00", "success": true, "elapsed": 1800.0, "summary": "ok", "warnings": 0 }
+  ],
+  "deltas": {},
+  "access": null,
+  "overlays": [],
+  "logsDir": "C:\\demo\\logs",
+  "logsDirExists": true,
+  "readErrors": []
+}

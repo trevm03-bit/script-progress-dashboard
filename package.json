@@ -2,7 +2,7 @@
   "name": "script-progress-dashboard",
   "displayName": "Script Progress Dashboard",
   "description": "Live progress, run history, process calendar, health, metrics and an access map for your long-running scripts — read from JSON files they write. No network, no AI, no dependencies. Every feature is a switch.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publisher": "trevor-marshall",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -31,6 +31,7 @@
       { "command": "scriptProgress.runFile", "title": "Run with Script Progress", "category": "Script Progress" },
       { "command": "scriptProgress.copyDailySummary", "title": "Copy Daily Summary", "category": "Script Progress", "icon": "$(clippy)" },
       { "command": "scriptProgress.exportHistoryCsv", "title": "Export Run History (CSV)", "category": "Script Progress" },
+      { "command": "scriptProgress.exportReport", "title": "Export HTML Report", "category": "Script Progress", "icon": "$(file-pdf)" },
       { "command": "scriptProgress.archiveHistory", "title": "Archive Run History", "category": "Script Progress" },
       { "command": "scriptProgress.clearHistory", "title": "Clear Run History…", "category": "Script Progress" },
       { "command": "scriptProgress.toggleSections", "title": "Choose Dashboard Sections…", "category": "Script Progress", "icon": "$(checklist)" },
@@ -62,6 +63,7 @@
         { "command": "scriptProgress.openMap", "when": "view == scriptProgress.dashboard", "group": "1_sections@2" },
         { "command": "scriptProgress.copyDailySummary", "when": "view == scriptProgress.dashboard", "group": "2_data@1" },
         { "command": "scriptProgress.exportHistoryCsv", "when": "view == scriptProgress.dashboard", "group": "2_data@2" },
+        { "command": "scriptProgress.exportReport", "when": "view == scriptProgress.dashboard", "group": "2_data@3" },
         { "command": "scriptProgress.archiveHistory", "when": "view == scriptProgress.dashboard", "group": "2_data@3" },
         { "command": "scriptProgress.clearHistory", "when": "view == scriptProgress.dashboard", "group": "2_data@4" },
         { "command": "scriptProgress.openLogsFolder", "when": "view == scriptProgress.dashboard", "group": "3_misc@1" },
@@ -139,13 +141,16 @@
           "scriptProgress.sections.warnings": { "type": "boolean", "default": true, "order": 2, "description": "Warnings raised by the running script (hidden automatically when there are none)." },
           "scriptProgress.sections.lastCompleted": { "type": "boolean", "default": true, "order": 3, "description": "Last Completed: status, duration, warnings and the metrics the script reported." },
           "scriptProgress.sections.runHistory": { "type": "boolean", "default": true, "order": 4, "description": "Run History table with filters, sorting and click-to-expand detail." },
-          "scriptProgress.sections.processCalendar": { "type": "boolean", "default": false, "order": 5, "description": "Process Calendar: expected daily / weekly / monthly processes and whether they have run." },
-          "scriptProgress.sections.quickActions": { "type": "boolean", "default": false, "order": 6, "description": "Quick Action buttons that run commands in a terminal or as a task." },
-          "scriptProgress.sections.deltaTracker": { "type": "boolean", "default": false, "order": 7, "description": "Delta Tracker sparkline charts with thresholds." },
-          "scriptProgress.sections.scriptHealth": { "type": "boolean", "default": false, "order": 8, "description": "Script Health: last run per script, result dots, failure rate, duration trend, stale detection." },
-          "scriptProgress.sections.accessMap": { "type": "boolean", "default": false, "order": 9, "description": "Access Map: which scripts touch which files, tables and services, drawn as a constellation." },
-          "scriptProgress.dashboard.sectionOrder": { "type": "array", "items": { "type": "string", "enum": ["summary", "activeTask", "warnings", "lastCompleted", "quickActions", "processCalendar", "deltaTracker", "runHistory", "scriptHealth", "accessMap"] }, "default": ["summary", "activeTask", "warnings", "lastCompleted", "quickActions", "processCalendar", "deltaTracker", "runHistory", "scriptHealth", "accessMap"], "order": 10, "description": "Order of sections top to bottom. Sections not listed go last." },
-          "scriptProgress.dashboard.sidebarSections": { "type": "array", "items": { "type": "string", "enum": ["summary", "activeTask", "warnings", "lastCompleted", "quickActions", "processCalendar", "deltaTracker", "runHistory", "scriptHealth", "accessMap"] }, "default": [], "order": 11, "markdownDescription": "Sections to show in the **sidebar** (the narrow view). Empty = the same sections as the dashboard tab. Use this to keep only the core in the sidebar." },
+          "scriptProgress.sections.processCalendar": { "type": "boolean", "default": false, "order": 5, "description": "Process Calendar: expected daily / weekly / monthly processes, whether they have run, month grids, SLAs." },
+          "scriptProgress.sections.timeline": { "type": "boolean", "default": true, "order": 6, "description": "Run Timeline: a Gantt-style strip of when each script ran over the last hours or days, with overlaps, failures and slow runs visible." },
+          "scriptProgress.sections.quickActions": { "type": "boolean", "default": false, "order": 7, "description": "Quick Action buttons that run commands in a terminal or as a task." },
+          "scriptProgress.sections.deltaTracker": { "type": "boolean", "default": false, "order": 8, "description": "Delta Tracker sparkline charts with thresholds." },
+          "scriptProgress.sections.metrics": { "type": "boolean", "default": false, "order": 9, "description": "Metrics Explorer: every value reported with Progress.metric(), per task across recent runs, with change vs the previous run." },
+          "scriptProgress.sections.warningTrends": { "type": "boolean", "default": false, "order": 10, "description": "Warning Trends: recurring warning messages grouped and counted, and warnings per day." },
+          "scriptProgress.sections.scriptHealth": { "type": "boolean", "default": false, "order": 11, "description": "Script Health: last run per script, result dots, failure rate, duration trend, stale detection." },
+          "scriptProgress.sections.accessMap": { "type": "boolean", "default": false, "order": 12, "description": "Access Map: which scripts touch which files, tables and services, drawn as a constellation with data lineage." },
+          "scriptProgress.dashboard.sectionOrder": { "type": "array", "items": { "type": "string", "enum": ["summary", "activeTask", "warnings", "lastCompleted", "quickActions", "processCalendar", "timeline", "deltaTracker", "metrics", "runHistory", "warningTrends", "scriptHealth", "accessMap"] }, "default": ["summary", "activeTask", "warnings", "lastCompleted", "quickActions", "processCalendar", "timeline", "deltaTracker", "metrics", "runHistory", "warningTrends", "scriptHealth", "accessMap"], "order": 13, "description": "Order of sections top to bottom. Sections not listed go last." },
+          "scriptProgress.dashboard.sidebarSections": { "type": "array", "items": { "type": "string", "enum": ["summary", "activeTask", "warnings", "lastCompleted", "quickActions", "processCalendar", "timeline", "deltaTracker", "metrics", "runHistory", "warningTrends", "scriptHealth", "accessMap"] }, "default": [], "order": 14, "markdownDescription": "Sections to show in the **sidebar** (the narrow view). Empty = the same sections as the dashboard tab. Use this to keep only the core in the sidebar." },
           "scriptProgress.dashboard.collapsible": { "type": "boolean", "default": true, "order": 12, "description": "Click a section title to collapse it; the choice is remembered." },
           "scriptProgress.dashboard.density": { "type": "string", "enum": ["comfortable", "compact"], "default": "comfortable", "order": 13, "description": "Spacing and font size of the dashboard." }
         }
@@ -167,7 +172,33 @@
           "scriptProgress.runHistory.maxRows": { "type": "number", "default": 15, "minimum": 1, "description": "Maximum rows to show." },
           "scriptProgress.runHistory.filters": { "type": "boolean", "default": true, "description": "Show the search box and status chips above the table." },
           "scriptProgress.runHistory.detail": { "type": "boolean", "default": true, "description": "Click a row to expand its warnings, metrics, resources and artifacts." },
-          "scriptProgress.runHistory.trend": { "type": "boolean", "default": true, "description": "Show a duration trend sparkline per task in Script Health and the detail row." }
+          "scriptProgress.runHistory.trend": { "type": "boolean", "default": true, "description": "Show a duration trend sparkline per task in Script Health and the detail row." },
+          "scriptProgress.runHistory.anomalies": { "type": "boolean", "default": true, "description": "Flag runs that took much longer than the task's usual duration (needs 3 prior runs)." },
+          "scriptProgress.runHistory.anomalyFactor": { "type": "number", "default": 2, "minimum": 1.1, "description": "A run is 'slow' when it takes at least this many times the task's median duration." }
+        }
+      },
+      {
+        "title": "Run Timeline",
+        "order": 4.5,
+        "properties": {
+          "scriptProgress.timeline.windowHours": { "type": "number", "default": 24, "minimum": 1, "description": "How many hours the timeline covers (24 = today, 168 = a week)." },
+          "scriptProgress.timeline.showFailed": { "type": "boolean", "default": true, "description": "Draw failed runs (in the failure colour) as well as successful ones." }
+        }
+      },
+      {
+        "title": "Metrics Explorer",
+        "order": 7.5,
+        "properties": {
+          "scriptProgress.metricsExplorer.maxRuns": { "type": "number", "default": 12, "minimum": 2, "maximum": 100, "description": "How many recent runs per task to show as columns." },
+          "scriptProgress.metricsExplorer.metrics": { "type": "array", "default": [], "items": { "type": "string" }, "description": "Metric names to show. Empty = every metric any run reported." }
+        }
+      },
+      {
+        "title": "Warning Trends",
+        "order": 7.6,
+        "properties": {
+          "scriptProgress.warningTrends.days": { "type": "number", "default": 14, "minimum": 1, "maximum": 365, "description": "How many days of warnings to analyse." },
+          "scriptProgress.warningTrends.top": { "type": "number", "default": 8, "minimum": 1, "maximum": 50, "description": "How many recurring messages to list." }
         }
       },
       {
@@ -183,7 +214,8 @@
               "frequency": { "type": "string", "enum": ["monthly", "weekly", "daily"], "default": "monthly" },
               "dayOfMonth": { "type": "number", "minimum": 1, "maximum": 31, "description": "Monthly only: the day by which the process is expected." },
               "dayOfWeek": { "type": "number", "minimum": 1, "maximum": 7, "description": "Weekly only: ISO weekday it is due by (1 = Monday … 7 = Sunday). Default: end of the week." },
-              "dueHour": { "type": "number", "minimum": 0, "maximum": 23, "description": "Daily only: hour (local) after which a missing run is overdue. Default 12." }
+              "dueHour": { "type": "number", "minimum": 0, "maximum": 23, "description": "Daily only: hour (local) after which a missing run is overdue. Default 12." },
+              "maxMinutes": { "type": "number", "minimum": 1, "description": "SLA: a run of this process longer than this is flagged as over its time budget (and notified when notifications.onSlow is on)." }
             } }
           },
           "scriptProgress.processCalendar.view": { "type": "string", "enum": ["list", "grid", "both"], "default": "both", "description": "List of processes, a month grid per process, or both." },
@@ -241,7 +273,12 @@
           "scriptProgress.accessMap.timeWindowDays": { "type": "number", "default": 0, "minimum": 0, "description": "Only draw nodes and links seen in the last N days (0 = everything)." },
           "scriptProgress.accessMap.labels": { "type": "string", "enum": ["auto", "all", "scripts"], "default": "auto", "description": "Which labels to draw. auto = scripts always, resources when the map is small or on hover/focus." },
           "scriptProgress.accessMap.sidebarPreview": { "type": "boolean", "default": true, "description": "Draw a small live preview of the map in the sidebar." },
-          "scriptProgress.accessMap.replay": { "type": "boolean", "default": true, "description": "When a run completes, replay its path through the map." }
+          "scriptProgress.accessMap.replay": { "type": "boolean", "default": true, "description": "When a run completes, replay its path through the map." },
+          "scriptProgress.accessMap.ambient": { "type": "boolean", "default": true, "description": "Traffic particles along the links a running script is using right now — script→resource for writes, resource→script for reads. Nothing moves when nothing is running." },
+          "scriptProgress.accessMap.halos": { "type": "boolean", "default": true, "description": "Soft coloured halos behind each script hub and its resources." },
+          "scriptProgress.accessMap.glyphs": { "type": "boolean", "default": true, "description": "Draw a small type glyph inside each node (script, table, file, service)." },
+          "scriptProgress.accessMap.minimap": { "type": "boolean", "default": true, "description": "Show a mini-map inset with the current viewport when zoomed in." },
+          "scriptProgress.accessMap.starfield": { "type": "boolean", "default": false, "description": "A faint static starfield behind the map. Off by default; purely decorative and never animated." }
         }
       },
       {
@@ -253,6 +290,7 @@
           "scriptProgress.notifications.onStall": { "type": "boolean", "default": true, "description": "Notify when a running task is detected as stalled." },
           "scriptProgress.notifications.onWarning": { "type": "boolean", "default": false, "description": "Notify on each new warning while a task runs." },
           "scriptProgress.notifications.onExit": { "type": "boolean", "default": true, "description": "Notify when a Quick Action's process exits with a non-zero code." },
+          "scriptProgress.notifications.onSlow": { "type": "boolean", "default": false, "description": "Notify when a run finishes far slower than usual or over its SLA (maxMinutes)." },
           "scriptProgress.notifications.mirrorProgress": { "type": "boolean", "default": false, "description": "Mirror the running task into a native VS Code progress notification with a percentage." }
         }
       },

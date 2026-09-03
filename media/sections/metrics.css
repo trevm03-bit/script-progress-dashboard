@@ -1,0 +1,87 @@
+/* ---- metrics explorer ----
+   Every colour here is a VS Code theme variable or one of the --sp-* variables defined in
+   dashboard.css. No literals: the section has to survive High Contrast themes too. */
+
+.mx-task + .mx-task {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--sp-border);
+}
+
+.mx-task-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.mx-task-name {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mx-task-meta { white-space: nowrap; }
+
+/* The table itself scrolls inside .table-wrap; the page never does. */
+.mx-table { min-width: max-content; }
+.mx-table th,
+.mx-table td { white-space: nowrap; }
+
+.mx-key-h,
+.mx-key {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--vscode-editorWidget-background);
+  text-align: left;
+  max-width: 200px;
+}
+.mx-key-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--vscode-editor-font-family);
+}
+.mx-spark {
+  display: block;
+  width: 60px;
+  height: 16px;
+  margin-top: 2px;
+}
+.mx-spark .sparkline {
+  fill: none;
+  stroke: var(--sp-muted);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.mx-run { text-align: right; font-variant-numeric: tabular-nums; }
+.mx-run-d { display: block; }
+.mx-run-t { display: block; font-weight: 400; opacity: 0.7; font-size: 10px; }
+.mx-run-failed { color: var(--sp-failed); }
+
+.mx-val {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--vscode-editor-font-family);
+}
+.mx-val-latest { font-weight: 600; }
+.mx-absent { color: var(--sp-muted); opacity: 0.6; }
+
+.mx-delta-h,
+.mx-delta {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  border-left: 1px solid var(--sp-border);
+}
+/* Same reading as the Delta Tracker's sparklines: up is green, down is red, flat is muted.
+   Direction only — the section makes no claim about which direction is good for a given metric. */
+.mx-up { color: var(--vscode-charts-green, var(--sp-complete)); }
+.mx-down { color: var(--vscode-charts-red, var(--sp-failed)); }
+.mx-flat { color: var(--sp-muted); }
+.mx-pct { opacity: 0.75; font-size: 11px; }
+
+.surface-sidebar .mx-spark { display: none; }
+.surface-sidebar .mx-key { max-width: 110px; }

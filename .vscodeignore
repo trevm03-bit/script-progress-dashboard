@@ -14,3 +14,4 @@ out/**/*.map
 **/__pycache__/**
 docs/**
 demo/logs/**
+.harness/**

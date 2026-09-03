@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.renderActiveTask = renderActiveTask;
 const time_1 = require("../logic/time");
 const html_1 = require("./html");
+const anomaly_1 = require("../logic/anomaly");
 const STATE_ICON = {
     running: 'sync~spin', stalled: 'warning', exited: 'debug-disconnect', complete: 'check', failed: 'error', idle: 'circle-outline',
 };
@@ -36,8 +37,12 @@ function taskCard(p, data, settings, now) {
         const o = (0, time_1.exitOverlayFor)(p, data.overlays);
         stateNote = `<div class="state-note status-fail">${(0, html_1.icon)('debug-disconnect')} The process exited with code ${o?.exitCode ?? '?'} while the script still reported "running".</div>`;
     }
+    const sla = (0, anomaly_1.slaFor)(p.task, settings.processes);
+    const pastSla = typeof sla === 'number' && elapsed > sla * 60 && (state === 'running' || state === 'stalled');
+    if (pastSla && !stateNote)
+        stateNote = `<div class="state-note status-fail">${(0, html_1.icon)('alert')} Over the ${(0, html_1.esc)((0, time_1.formatDuration)(sla * 60))} limit set for this process — ${(0, html_1.esc)((0, time_1.formatDuration)(elapsed - sla * 60))} past it.</div>`;
     const meta = [];
-    meta.push(`<span title="Elapsed">${(0, html_1.icon)('watch')} ${(0, html_1.esc)((0, time_1.formatDuration)(elapsed))}</span>`);
+    meta.push(`<span title="Elapsed${typeof sla === 'number' ? ` (limit ${(0, time_1.formatDuration)(sla * 60)})` : ''}" class="${pastSla ? 'status-fail' : ''}">${(0, html_1.icon)('watch')} ${(0, html_1.esc)((0, time_1.formatDuration)(elapsed))}${typeof sla === 'number' ? `<span class="muted"> / ${(0, html_1.esc)((0, time_1.formatDuration)(sla * 60))}</span>` : ''}</span>`);
     if (state === 'running' && eta !== null)
         meta.push(`<span title="Estimated remaining, from prior runs">${(0, html_1.icon)('history')} ~${(0, html_1.esc)((0, time_1.formatDuration)(eta))} left</span>`);
     if (p.warnings && p.warnings.length)

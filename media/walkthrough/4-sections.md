@@ -1,9 +1,9 @@
 ## Every section is a switch
 
-Ten sections, each with its own `scriptProgress.sections.*` key. Five are on by default
-(summary, activeTask, warnings, lastCompleted, runHistory); the heavier five
-(processCalendar, quickActions, deltaTracker, scriptHealth, accessMap) start off, so you turn
-on only what you use.
+Thirteen sections, each with its own `scriptProgress.sections.*` key. Six are on by default
+(summary, activeTask, warnings, lastCompleted, runHistory, timeline); the heavier seven
+(processCalendar, quickActions, deltaTracker, metrics, warningTrends, scriptHealth, accessMap)
+start off, so you turn on only what you use.
 
 [Choose Dashboard Sections](command:scriptProgress.toggleSections) is the fast way — it ticks
 the same settings.
@@ -15,8 +15,8 @@ the same settings.
   "scriptProgress.sections.scriptHealth": true,
   "scriptProgress.dashboard.sectionOrder": [
     "summary", "activeTask", "warnings", "quickActions",
-    "processCalendar", "runHistory", "lastCompleted",
-    "deltaTracker", "scriptHealth", "accessMap"
+    "processCalendar", "timeline", "runHistory", "lastCompleted",
+    "deltaTracker", "metrics", "warningTrends", "scriptHealth", "accessMap"
   ],
   "scriptProgress.dashboard.sidebarSections": ["summary", "activeTask", "warnings"],
   "scriptProgress.dashboard.collapsible": true,

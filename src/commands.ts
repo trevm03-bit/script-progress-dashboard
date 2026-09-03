@@ -9,6 +9,7 @@ import { FILES } from './dataReader';
 import { dailySummaryText, historyCsv } from './logic/summary';
 import { dateTime, formatDuration, parseIso, taskState } from './logic/time';
 import { simulateRun } from './simulate';
+import { reportHtml } from './logic/report';
 import { ALL_SECTIONS, SECTION_TITLES, SectionId } from './types';
 
 import { StateProvider } from './dashboardHost';
@@ -110,6 +111,23 @@ export function registerCommands(context: vscode.ExtensionContext, cx: CommandCo
     if (pick) await vscode.window.showTextDocument(target);
   });
 
+  reg('scriptProgress.exportReport', async () => {
+    const data = cx.getData();
+    const stamp = new Date().toISOString().slice(0, 10);
+    const target = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file(path.join(cx.logsDir(), `script-progress-report-${stamp}.html`)),
+      filters: { HTML: ['html'] }, title: 'Export a shareable HTML report',
+    });
+    if (!target) return;
+    const read = (...p: string[]) => { try { return fs.readFileSync(vscode.Uri.joinPath(cx.extensionUri, 'media', ...p).fsPath, 'utf-8'); } catch { return ''; } };
+    const css = [read('dashboard.css'), read('sections', 'timeline.css'), read('sections', 'metrics.css'), read('sections', 'warningTrends.css')].join('\n');
+    const html = reportHtml(data, cx.getSettings(), new Date()).replace('__DASHBOARD_CSS__', () => css);
+    await vscode.workspace.fs.writeFile(target, Buffer.from(html, 'utf-8'));
+    const pick = await vscode.window.showInformationMessage(`Report written to ${path.basename(target.fsPath)}.`, 'Open in browser', 'Reveal');
+    if (pick === 'Open in browser') await vscode.env.openExternal(target);
+    else if (pick === 'Reveal') await vscode.commands.executeCommand('revealFileInOS', target);
+  });
+
   reg('scriptProgress.archiveHistory', async () => {
     const file = path.join(cx.logsDir(), FILES.history);
     if (!fs.existsSync(file)) { void vscode.window.showInformationMessage('No run history file to archive.'); return; }
@@ -166,6 +184,7 @@ export function registerCommands(context: vscode.ExtensionContext, cx: CommandCo
     items.push({ label: '$(graph) Open Access Map', run: () => vscode.commands.executeCommand('scriptProgress.openMap') });
     if (s.buttons.length) items.push({ label: '$(play) Run Quick Action…', run: () => vscode.commands.executeCommand('scriptProgress.runQuickAction') });
     items.push({ label: '$(clippy) Copy Daily Summary', run: () => vscode.commands.executeCommand('scriptProgress.copyDailySummary') });
+    items.push({ label: '$(file-pdf) Export HTML Report', run: () => vscode.commands.executeCommand('scriptProgress.exportReport') });
     items.push({ label: '$(history) Show Run History', run: () => vscode.commands.executeCommand('scriptProgress.showHistory') });
     items.push({ label: '$(folder-opened) Open Logs Folder', run: () => vscode.commands.executeCommand('scriptProgress.openLogsFolder') });
     items.push({ label: '$(settings-gear) Settings', run: () => vscode.commands.executeCommand('scriptProgress.openSettings') });

@@ -12,11 +12,22 @@ function renderDeltaTracker(data, settings, now, opts) {
     if (names.length === 0)
         return (0, html_1.section)('deltaTracker', 'Delta Tracker', (0, html_1.empty)('No metrics in deltas.json yet. Scripts add them with Progress.track_delta().'), opts);
     let outCount = 0;
-    const cards = names.map(name => {
+    // A metric several tasks report (rows_loaded from two pipelines, say) is one card per task;
+    // drawing them on one line would zigzag between two unrelated scales.
+    const series = [];
+    for (const name of names) {
+        const tasks = [...new Set((data.deltas[name] ?? []).map(p => p.task).filter((t) => typeof t === 'string' && t.length > 0))];
+        if (tasks.length > 1)
+            for (const task of tasks.sort())
+                series.push({ name, task });
+        else
+            series.push({ name });
+    }
+    const cards = series.map(({ name, task }) => {
         const fmt = settings.deltas.formats[name];
         const thr = settings.deltas.thresholds[name];
-        const label = fmt?.label || name;
-        const pts = (data.deltas[name] ?? []).slice(-settings.deltas.points);
+        const label = (fmt?.label || name) + (task ? ` · ${task}` : '');
+        const pts = (data.deltas[name] ?? []).filter(p => !task || p.task === task).slice(-settings.deltas.points);
         const values = pts.map(p => p.value);
         const stats = (0, sparkline_1.seriesStats)(values);
         if (!stats)
@@ -36,7 +47,7 @@ function renderDeltaTracker(data, settings, now, opts) {
         const lastX = values.length === 1 ? W / 2 : W - 3;
         const lastY = (0, sparkline_1.sparklineY)(guideVals.length ? scaleVals : values, stats.current, H, 3) ?? H / 2;
         return `<div class="delta ${bad ? 'delta-bad' : ''}">
-  <div class="delta-head"><span class="delta-name" title="${(0, html_1.esc)(name)}">${(0, html_1.esc)(label)}</span><span class="delta-current ${trendCls}">${(0, html_1.esc)((0, sparkline_1.formatMetric)(stats.current, fmt))} ${(0, html_1.icon)(bad ? 'warning' : trendIcon)}</span></div>
+  <div class="delta-head"><span class="delta-name" title="${(0, html_1.esc)(task ? `${name} reported by ${task}` : name)}">${(0, html_1.esc)(fmt?.label || name)}${task ? `<span class="delta-task"> · ${(0, html_1.esc)(task)}</span>` : ''}</span><span class="delta-current ${trendCls}">${(0, html_1.esc)((0, sparkline_1.formatMetric)(stats.current, fmt))} ${(0, html_1.icon)(bad ? 'warning' : trendIcon)}</span></div>
   <svg class="sparkline-svg ${trendCls}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="${(0, html_1.esc)(label)} trend">
     ${guides}
     <path class="sparkline-area" d="${pathScaled} L ${lastX.toFixed(1)},${H} L 3,${H} Z"/>

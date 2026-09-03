@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.renderLastCompleted = renderLastCompleted;
 const time_1 = require("../logic/time");
 const html_1 = require("./html");
+const anomaly_1 = require("../logic/anomaly");
 function renderLastCompleted(data, settings, now, opts) {
     const sorted = data.history
         .slice()
@@ -18,6 +19,11 @@ function renderLastCompleted(data, settings, now, opts) {
         : '';
     const artifacts = settings.activeTask.showArtifacts && last.artifacts && last.artifacts.length
         ? `<div class="artifacts">${last.artifacts.map(a => `<button class="link-btn" data-open="${(0, html_1.esc)(a)}" title="${(0, html_1.esc)(a)}">${(0, html_1.icon)('file')}${(0, html_1.esc)(a.split(/[\\/]/).pop() || a)}</button>`).join('')}</div>` : '';
+    const verdict = settings.runHistory.anomalies ? (0, anomaly_1.durationVerdict)(last, data.history, settings.runHistory.anomalyFactor) : undefined;
+    const sla = (0, anomaly_1.overSla)(last.task, Number(last.elapsed) || 0, settings.processes);
+    const note = verdict?.slow
+        ? `<div class="state-note status-warn">${(0, html_1.icon)('dashboard')} ${(0, html_1.esc)(`${verdict.factor.toFixed(1)}× slower than usual — this task normally takes ${(0, time_1.formatDuration)(verdict.baseline)}.`)}</div>`
+        : sla ? `<div class="state-note status-fail">${(0, html_1.icon)('alert')} Ran longer than the limit set for this process.</div>` : '';
     const body = `
   <div class="metrics">
     <div class="metric"><div class="metric-value ${statusCls}">${(0, html_1.icon)(statusIcon)} ${statusText}</div><div class="metric-label">Status</div></div>
@@ -27,7 +33,7 @@ function renderLastCompleted(data, settings, now, opts) {
   </div>
   <div class="last-name" title="${(0, html_1.esc)(last.task)}">${(0, html_1.esc)(last.task)} <span class="muted">· ${(0, html_1.esc)((0, time_1.relativeTime)(last.date, now))}</span></div>
   ${last.summary ? `<div class="last-summary">${(0, html_1.esc)(last.summary)}</div>` : ''}
-  ${artifacts}`;
+  ${artifacts}${note}`;
     return (0, html_1.section)('lastCompleted', 'Last Completed', body, opts);
 }
 //# sourceMappingURL=lastCompleted.js.map

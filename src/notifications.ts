@@ -3,12 +3,15 @@
 // extension activated — only for changes seen while it was watching.
 import * as vscode from 'vscode';
 import { DashboardData, ProgressData, Settings, TaskState } from './types';
-import { formatDuration, percent, taskState } from './logic/time';
+import { formatDuration, percent, taskState, liveElapsed } from './logic/time';
+import { durationVerdict, slaFor } from './logic/anomaly';
 
 interface Seen {
   state: TaskState;
   warnings: number;
   updatedAt: string;
+  /** Already told the user this run is over its limit. */
+  slaWarned?: boolean;
 }
 
 export class Notifier implements vscode.Disposable {
@@ -25,12 +28,25 @@ export class Notifier implements vscode.Disposable {
       const key = keyOf(t);
       const state = taskState(t, settings.staleRunningMinutes, now, data.overlays);
       const prev = this.seen.get(key);
-      const cur: Seen = { state, warnings: t.warnings?.length ?? 0, updatedAt: t.updatedAt };
+      const cur: Seen = { state, warnings: t.warnings?.length ?? 0, updatedAt: t.updatedAt, slaWarned: prev?.slaWarned };
       this.seen.set(key, cur);
       if (!this.primed || !prev) continue; // first sight: no notification, just remember it
 
+      if (n.onSlow && state === 'running' && !cur.slaWarned) {
+        const sla = slaFor(t.task, settings.processes);
+        if (typeof sla === 'number' && liveElapsed(t, now) > sla * 60) {
+          cur.slaWarned = true;
+          this.warn(`⏱ ${t.task} has been running for ${formatDuration(liveElapsed(t, now))}, past its ${formatDuration(sla * 60)} limit`);
+        }
+      }
+
       if (prev.state !== state) {
         if (state === 'complete' && n.onComplete) this.info(`✓ ${t.task} completed in ${formatDuration(t.elapsed)}${t.detail ? ` — ${t.detail}` : ''}`);
+        if (state === 'complete' && n.onSlow && settings.runHistory.anomalies) {
+          const rec = data.history.find(r => (t.runId && r.runId === t.runId) || (r.task === t.task && r.date === t.updatedAt));
+          const v = rec ? durationVerdict(rec, data.history, settings.runHistory.anomalyFactor) : undefined;
+          if (v?.slow && rec) this.warn(`⏱ ${t.task} took ${formatDuration(rec.elapsed)} — ${v.factor.toFixed(1)}× its usual ${formatDuration(v.baseline)}`);
+        }
         if (state === 'failed' && n.onFail) this.error(`✗ ${t.task} FAILED${t.detail ? ` — ${t.detail}` : ''}`);
         if (state === 'stalled' && n.onStall) this.warn(`⚠ ${t.task} looks stalled: no update for ${settings.staleRunningMinutes} min (step ${t.step}/${t.totalSteps}, ${t.label})`);
         if (state === 'exited' && n.onExit) {

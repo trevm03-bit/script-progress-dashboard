@@ -1,0 +1,89 @@
+/* ---- Run Timeline ----
+   Gantt strip: a CSS grid of [task name | track | totals]. Only the bars are SVG (stretched with
+   preserveAspectRatio="none"), so no text is ever distorted. Colours are the shared --sp-* theme
+   variables from dashboard.css; nothing here is a literal colour. */
+
+.tl-wrap { overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; }
+
+.tl-grid {
+  display: grid;
+  grid-template-columns: minmax(72px, 140px) minmax(220px, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 3px;
+  min-width: 320px;
+}
+.tl-grid.tl-narrow { grid-template-columns: minmax(56px, 96px) minmax(120px, 1fr); min-width: 200px; }
+
+.tl-name {
+  font-size: 11px;
+  color: var(--vscode-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tl-name-running { color: var(--sp-running); }
+.tl-head-name { font-size: 11px; color: var(--sp-muted); }
+
+/* The right edge of every track is "now": one dashed line down the whole strip. */
+.tl-track {
+  position: relative;
+  border-right: 1px dashed var(--sp-running);
+  min-width: 0;
+}
+
+.tl-axis { height: 24px; }
+.tl-ticks { display: block; width: 100%; height: 10px; }
+.tl-tick { stroke: var(--sp-border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tl-tick-major { stroke: var(--sp-muted); }
+
+/* Labels are centred on their tick, so the outermost ones hang past the track; clipping them
+   here keeps that overhang from inventing a horizontal scrollbar on the whole section. */
+.tl-tick-labels { position: relative; height: 13px; overflow: hidden; container-type: inline-size; }
+/* Drop lower-priority labels as the track narrows, so words never sit on top of each other. */
+@container (max-width: 900px) { .tl-lbl-minor { display: none; } }
+@container (max-width: 560px) { .tl-lbl-half { display: none; } }
+@container (max-width: 300px) { .tl-lbl-alt { display: none; } }
+.tl-tick-lbl {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 11px;
+  line-height: 13px;
+  color: var(--sp-muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.tl-now-lbl {
+  position: absolute;
+  top: 0;
+  right: 1px;
+  font-size: 11px;
+  line-height: 13px;
+  color: var(--sp-running);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.tl-bars { display: block; width: 100%; height: 22px; }
+.tl-bar { fill: var(--sp-complete); }
+.tl-bar-ok { fill: var(--sp-complete); }
+.tl-bar-fail { fill: var(--sp-failed); }
+.tl-bar-running { fill: var(--sp-running); animation: tl-pulse 1.8s ease-in-out infinite; }
+.tl-bar-slow { fill: var(--sp-stalled); }
+.tl-bar-sla { stroke: var(--sp-failed); stroke-width: 1; vector-effect: non-scaling-stroke; }
+
+@keyframes tl-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+.tl-tot {
+  font-size: 11px;
+  color: var(--sp-muted);
+  white-space: nowrap;
+  justify-self: end;
+}
+.tl-head-tot { min-width: 1px; }
+.tl-more { font-size: 11px; color: var(--sp-muted); margin-top: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tl-bar-running { animation: none; }
+}

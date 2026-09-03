@@ -3,6 +3,7 @@
 import { DashboardData, ProgressData, Settings, TaskState } from '../types';
 import { formatDuration, liveElapsed, liveEta, minutesSinceUpdate, percent, taskState, exitOverlayFor, clockTime } from '../logic/time';
 import { esc, icon, section, empty, chip, metricText, SectionOpts } from './html';
+import { slaFor } from '../logic/anomaly';
 
 const STATE_ICON: Record<TaskState, string> = {
   running: 'sync~spin', stalled: 'warning', exited: 'debug-disconnect', complete: 'check', failed: 'error', idle: 'circle-outline',
@@ -40,8 +41,11 @@ function taskCard(p: ProgressData, data: DashboardData, settings: Settings, now:
     stateNote = `<div class="state-note status-fail">${icon('debug-disconnect')} The process exited with code ${o?.exitCode ?? '?'} while the script still reported "running".</div>`;
   }
 
+  const sla = slaFor(p.task, settings.processes);
+  const pastSla = typeof sla === 'number' && elapsed > sla * 60 && (state === 'running' || state === 'stalled');
+  if (pastSla && !stateNote) stateNote = `<div class="state-note status-fail">${icon('alert')} Over the ${esc(formatDuration(sla! * 60))} limit set for this process — ${esc(formatDuration(elapsed - sla! * 60))} past it.</div>`;
   const meta: string[] = [];
-  meta.push(`<span title="Elapsed">${icon('watch')} ${esc(formatDuration(elapsed))}</span>`);
+  meta.push(`<span title="Elapsed${typeof sla === 'number' ? ` (limit ${formatDuration(sla * 60)})` : ''}" class="${pastSla ? 'status-fail' : ''}">${icon('watch')} ${esc(formatDuration(elapsed))}${typeof sla === 'number' ? `<span class="muted"> / ${esc(formatDuration(sla * 60))}</span>` : ''}</span>`);
   if (state === 'running' && eta !== null) meta.push(`<span title="Estimated remaining, from prior runs">${icon('history')} ~${esc(formatDuration(eta))} left</span>`);
   if (p.warnings && p.warnings.length) meta.push(`<span class="status-warn" title="Warnings this run">${icon('warning')} ${p.warnings.length}</span>`);
   if (p.startedAt) meta.push(`<span class="muted" title="Started">${icon('play')} ${esc(clockTime(p.startedAt))}</span>`);

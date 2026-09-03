@@ -1,0 +1,33 @@
+{
+  "progress": null,
+  "tasks": [],
+  "history": [
+    { "task": "Demo Pipeline", "date": "2026-08-31T09:00:00", "success": true, "elapsed": 34.0, "summary": "ok",
+      "warnings": 0, "runId": "r-0831", "metrics": { "rows_loaded": 4000, "dupes": 0, "total_value": "$16.0M" } },
+    { "task": "Demo Pipeline", "date": "2026-08-29T09:00:00", "success": true, "elapsed": 31.0, "summary": "ok",
+      "warnings": 0, "runId": "r-0829", "metrics": { "rows_loaded": 3800, "dupes": 4 } },
+    { "task": "Demo Pipeline", "date": "2026-09-02T09:30:30", "success": true, "elapsed": 35.0, "summary": "ok",
+      "warnings": 0, "runId": "r-0902", "metrics": { "rows_loaded": 4200, "dupes": 2, "total_value": "$16.4M", "<b>odd</b>": 7 } },
+    { "task": "Demo Pipeline", "date": "2026-08-30T09:00:00", "success": false, "elapsed": 12.0, "summary": "row count mismatch",
+      "warnings": 0, "runId": "r-0830", "metrics": { "rows_loaded": 3900 } },
+    { "task": "Demo Pipeline", "date": "2026-09-01T09:00:00", "success": true, "elapsed": 33.0, "summary": "ok",
+      "warnings": 0, "runId": "r-0901", "metrics": { "rows_loaded": 4001, "total_value": "$16.2M" } },
+
+    { "task": "Weekly Rollup", "date": "2026-08-31T08:00:00", "success": true, "elapsed": 120.0, "summary": "ok",
+      "warnings": 0, "runId": "w-0831", "metrics": { "tables": 12 } },
+
+    { "task": "Mixed Types", "date": "2026-08-30T07:00:00", "success": true, "elapsed": 5.0, "summary": "ok",
+      "warnings": 0, "metrics": { "size": 120 } },
+    { "task": "Mixed Types", "date": "2026-08-31T07:00:00", "success": true, "elapsed": 5.0, "summary": "ok",
+      "warnings": 0, "metrics": { "size": "unknown" } },
+
+    { "task": "Silent Task", "date": "2026-09-01T06:00:00", "success": true, "elapsed": 9.0, "summary": "no metrics", "warnings": 0 },
+    { "task": "Silent Task", "date": "2026-09-02T06:00:00", "success": true, "elapsed": 9.0, "summary": "empty metrics", "warnings": 0, "metrics": {} }
+  ],
+  "deltas": {},
+  "access": null,
+  "overlays": [],
+  "logsDir": "C:\\demo\\logs",
+  "logsDirExists": true,
+  "readErrors": []
+}

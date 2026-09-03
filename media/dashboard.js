@@ -7,14 +7,28 @@
   const main = document.getElementById('sections');
   const sortState = {};                     // table id -> {col, dir}
   const filterState = { text: '', kind: 'all' };
-  const openDetails = new Set();            // run ids (task|date) whose detail row is open
+  const openDetails = new Set();            // run keys whose detail row is open
   let collapsed = new Set();
   let collapsible = true;
   const isMapSurface = document.body.classList.contains('surface-map');
 
   // ---- map plumbing --------------------------------------------------------------------
   const mapApi = {
-    post: m => vscode.postMessage(m),
+    post: m => {
+      if (m && m.type === 'filterHistory' && !isMapSurface) {
+        // Handle locally when the history table is on this page.
+        const sec = main.querySelector('section[data-section="runHistory"]');
+        const input = sec && sec.querySelector('.filter-text');
+        if (input) {
+          input.value = m.text || '';
+          filterState.text = (m.text || '').trim().toLowerCase();
+          applyFilters(sec);
+          sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          return;
+        }
+      }
+      vscode.postMessage(m);
+    },
     getState: () => { try { return (vscode.getState() || {}).map || null; } catch { return null; } },
     setState: s => { try { const st = vscode.getState() || {}; st.map = s; vscode.setState(st); } catch { /* ignore */ } },
   };
@@ -45,7 +59,20 @@
     if (msg.graph !== undefined || typeof msg.sections === 'string' || isMapSurface) feedMaps();
     if (msg.replay && window.AccessMap) for (const sec of mapSections()) window.AccessMap.replay(sec, msg.replay);
     document.body.dataset.state = msg.state || 'idle';
+    if (msg.status) applyStatus(msg.status);
   });
+
+  function applyStatus(st) {
+    const pill = document.getElementById('status-pill');
+    if (pill) {
+      pill.dataset.state = st.running ? 'running' : st.state;
+      const t = pill.querySelector('.pill-text');
+      if (t) t.textContent = st.text;
+      pill.title = st.logsDir ? 'Reading ' + st.logsDir : '';
+    }
+    const up = document.getElementById('updated');
+    if (up) up.textContent = st.updated ? 'updated ' + st.updated : '';
+  }
 
   function applySections(html) {
     const scrollY = window.scrollY;
@@ -63,14 +90,12 @@
       const old = key ? existing.get(key) : null;
       if (old && old.outerHTML === el.outerHTML) { next.push(old); continue; }
       if (old && key === 'accessMap') {
-        // The canvas holds layout state; carry the live pieces across instead of recreating them.
         for (const sel of ['.map-host', '.map-toolbar', '.map-legend']) {
           const o = old.querySelector(sel), n = el.querySelector(sel);
           if (o && n && (sel !== '.map-host' || o.classList.contains('map-host-mini') === n.classList.contains('map-host-mini'))) n.replaceWith(o);
         }
       }
       if (old && key === 'runHistory') {
-        // Keep the filter box text and open detail rows.
         const oi = old.querySelector('.filter-text'), ni = el.querySelector('.filter-text');
         if (oi && ni) ni.value = oi.value;
       }
@@ -85,7 +110,7 @@
 
   // ---- clicks (event delegation, so re-rendered sections keep working) -----------------
   document.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-action],[data-msg],[data-open],th[data-col],.section-title.toggle,tr.expandable,.fchip');
+    const t = e.target.closest('[data-action],[data-msg],[data-open],[data-filter-task],th[data-col],.section-title.toggle,tr.expandable,.fchip');
     if (!t) return;
     if (t.hasAttribute('data-action')) {
       if (t.disabled) return;
@@ -94,6 +119,8 @@
       vscode.postMessage({ type: t.getAttribute('data-msg') });
     } else if (t.hasAttribute('data-open')) {
       vscode.postMessage({ type: 'openFile', path: t.getAttribute('data-open') });
+    } else if (t.hasAttribute('data-filter-task')) {
+      mapApi.post({ type: 'filterHistory', text: t.getAttribute('data-filter-task') });
     } else if (t.matches('th[data-col]')) {
       const table = t.closest('table');
       const id = table.dataset.table || 'table';
@@ -111,6 +138,7 @@
       if (now) collapsed.add(id); else collapsed.delete(id);
       vscode.postMessage({ type: 'collapse', id, collapsed: now });
     } else if (t.matches('tr.expandable')) {
+      if (e.target.closest('button, a')) return;
       const detail = t.nextElementSibling;
       if (!detail || !detail.classList.contains('detail')) return;
       const key = rowKey(t);
@@ -125,7 +153,7 @@
   });
   document.addEventListener('keydown', (e) => {
     const t = e.target;
-    if ((e.key === 'Enter' || e.key === ' ') && t.matches && t.matches('.section-title.toggle')) { e.preventDefault(); t.click(); }
+    if ((e.key === 'Enter' || e.key === ' ') && t.matches && (t.matches('.section-title.toggle') || t.matches('tr.expandable'))) { e.preventDefault(); t.click(); }
   });
   document.addEventListener('input', (e) => {
     if (e.target.matches && e.target.matches('.filter-text')) {
@@ -152,7 +180,6 @@
   function sortTable(table, col, dir) {
     const tbody = table.tBodies[0];
     if (!tbody) return;
-    // Rows travel with their detail row.
     const pairs = [];
     for (const row of Array.from(tbody.rows)) {
       if (row.classList.contains('detail')) { if (pairs.length) pairs[pairs.length - 1].push(row); continue; }
@@ -186,7 +213,7 @@
     if (!sec) return;
     for (const chip of sec.querySelectorAll('.fchip')) chip.classList.toggle('active', (chip.dataset.filter || 'all') === filterState.kind);
     let shown = 0, total = 0;
-    for (const tr of sec.querySelectorAll('tr.expandable, tbody tr:not(.detail)')) {
+    for (const tr of sec.querySelectorAll('tbody tr')) {
       if (tr.classList.contains('detail')) continue;
       total++;
       const kinds = (tr.dataset.kinds || '').split(' ');
@@ -218,7 +245,6 @@
     }
   }
 
-  // The map tab has a static shell already in the page: wire it once.
   if (isMapSurface && window.AccessMap) {
     for (const sec of mapSections()) window.AccessMap.attach(sec, mapApi);
   }

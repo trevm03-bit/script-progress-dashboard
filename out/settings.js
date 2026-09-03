@@ -52,8 +52,8 @@ function readSettings() {
     const sectionList = (key) => (c.get(key, []) || []).filter((s) => types_1.ALL_SECTIONS.includes(s));
     const sections = {};
     const defaults = {
-        summary: true, activeTask: true, warnings: true, lastCompleted: true, runHistory: true,
-        quickActions: false, processCalendar: false, deltaTracker: false, scriptHealth: false, accessMap: false,
+        summary: true, activeTask: true, warnings: true, lastCompleted: true, runHistory: true, timeline: true,
+        quickActions: false, processCalendar: false, deltaTracker: false, metrics: false, warningTrends: false, scriptHealth: false, accessMap: false,
     };
     for (const s of types_1.ALL_SECTIONS)
         sections[s] = c.get(`sections.${s}`, defaults[s]);
@@ -81,6 +81,20 @@ function readSettings() {
             filters: bool('runHistory.filters', true),
             detail: bool('runHistory.detail', true),
             trend: bool('runHistory.trend', true),
+            anomalies: bool('runHistory.anomalies', true),
+            anomalyFactor: num('runHistory.anomalyFactor', 2, 1.1),
+        },
+        timeline: {
+            windowHours: num('timeline.windowHours', 24, 1),
+            showFailed: bool('timeline.showFailed', true),
+        },
+        metricsExplorer: {
+            maxRuns: num('metricsExplorer.maxRuns', 12, 2, 100),
+            metrics: (c.get('metricsExplorer.metrics', []) || []).filter(m => typeof m === 'string' && m),
+        },
+        warningTrends: {
+            days: num('warningTrends.days', 14, 1, 365),
+            top: num('warningTrends.top', 8, 1, 50),
         },
         processes: (c.get('processCalendar.processes', []) || []).filter(p => p && p.name),
         calendar: {
@@ -110,6 +124,11 @@ function readSettings() {
             labels: str('accessMap.labels', 'auto', ['auto', 'all', 'scripts']),
             sidebarPreview: bool('accessMap.sidebarPreview', true),
             replay: bool('accessMap.replay', true),
+            ambient: bool('accessMap.ambient', true),
+            halos: bool('accessMap.halos', true),
+            glyphs: bool('accessMap.glyphs', true),
+            minimap: bool('accessMap.minimap', true),
+            starfield: bool('accessMap.starfield', false),
         },
         notifications: {
             onComplete: bool('notifications.onComplete', false),
@@ -117,6 +136,7 @@ function readSettings() {
             onStall: bool('notifications.onStall', true),
             onWarning: bool('notifications.onWarning', false),
             onExit: bool('notifications.onExit', true),
+            onSlow: bool('notifications.onSlow', false),
             mirrorProgress: bool('notifications.mirrorProgress', false),
         },
         statusBar: {

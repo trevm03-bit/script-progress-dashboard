@@ -19,8 +19,8 @@ export function readSettings(): Settings {
 
   const sections = {} as SectionConfig;
   const defaults: SectionConfig = {
-    summary: true, activeTask: true, warnings: true, lastCompleted: true, runHistory: true,
-    quickActions: false, processCalendar: false, deltaTracker: false, scriptHealth: false, accessMap: false,
+    summary: true, activeTask: true, warnings: true, lastCompleted: true, runHistory: true, timeline: true,
+    quickActions: false, processCalendar: false, deltaTracker: false, metrics: false, warningTrends: false, scriptHealth: false, accessMap: false,
   };
   for (const s of ALL_SECTIONS) sections[s] = c.get<boolean>(`sections.${s}`, defaults[s]);
 
@@ -49,6 +49,20 @@ export function readSettings(): Settings {
       filters: bool('runHistory.filters', true),
       detail: bool('runHistory.detail', true),
       trend: bool('runHistory.trend', true),
+      anomalies: bool('runHistory.anomalies', true),
+      anomalyFactor: num('runHistory.anomalyFactor', 2, 1.1),
+    },
+    timeline: {
+      windowHours: num('timeline.windowHours', 24, 1),
+      showFailed: bool('timeline.showFailed', true),
+    },
+    metricsExplorer: {
+      maxRuns: num('metricsExplorer.maxRuns', 12, 2, 100),
+      metrics: (c.get<string[]>('metricsExplorer.metrics', []) || []).filter(m => typeof m === 'string' && m),
+    },
+    warningTrends: {
+      days: num('warningTrends.days', 14, 1, 365),
+      top: num('warningTrends.top', 8, 1, 50),
     },
     processes: (c.get<ProcessConfig[]>('processCalendar.processes', []) || []).filter(p => p && p.name),
     calendar: {
@@ -78,6 +92,11 @@ export function readSettings(): Settings {
       labels: str('accessMap.labels', 'auto', ['auto', 'all', 'scripts'] as const),
       sidebarPreview: bool('accessMap.sidebarPreview', true),
       replay: bool('accessMap.replay', true),
+      ambient: bool('accessMap.ambient', true),
+      halos: bool('accessMap.halos', true),
+      glyphs: bool('accessMap.glyphs', true),
+      minimap: bool('accessMap.minimap', true),
+      starfield: bool('accessMap.starfield', false),
     },
     notifications: {
       onComplete: bool('notifications.onComplete', false),
@@ -85,6 +104,7 @@ export function readSettings(): Settings {
       onStall: bool('notifications.onStall', true),
       onWarning: bool('notifications.onWarning', false),
       onExit: bool('notifications.onExit', true),
+      onSlow: bool('notifications.onSlow', false),
       mirrorProgress: bool('notifications.mirrorProgress', false),
     },
     statusBar: {

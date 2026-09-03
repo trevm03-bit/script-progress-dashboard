@@ -3,6 +3,7 @@
 import { DashboardData, Settings } from '../types';
 import { formatDuration, parseIso, relativeTime } from '../logic/time';
 import { esc, icon, section, empty, metricText, SectionOpts } from './html';
+import { durationVerdict, overSla } from '../logic/anomaly';
 
 export function renderLastCompleted(data: DashboardData, settings: Settings, now: Date, opts: SectionOpts): string {
   const sorted = data.history
@@ -21,6 +22,11 @@ export function renderLastCompleted(data: DashboardData, settings: Settings, now
   const artifacts = settings.activeTask.showArtifacts && last.artifacts && last.artifacts.length
     ? `<div class="artifacts">${last.artifacts.map(a => `<button class="link-btn" data-open="${esc(a)}" title="${esc(a)}">${icon('file')}${esc(a.split(/[\\/]/).pop() || a)}</button>`).join('')}</div>` : '';
 
+  const verdict = settings.runHistory.anomalies ? durationVerdict(last, data.history, settings.runHistory.anomalyFactor) : undefined;
+  const sla = overSla(last.task, Number(last.elapsed) || 0, settings.processes);
+  const note = verdict?.slow
+    ? `<div class="state-note status-warn">${icon('dashboard')} ${esc(`${verdict.factor.toFixed(1)}× slower than usual — this task normally takes ${formatDuration(verdict.baseline)}.`)}</div>`
+    : sla ? `<div class="state-note status-fail">${icon('alert')} Ran longer than the limit set for this process.</div>` : '';
   const body = `
   <div class="metrics">
     <div class="metric"><div class="metric-value ${statusCls}">${icon(statusIcon)} ${statusText}</div><div class="metric-label">Status</div></div>
@@ -30,7 +36,7 @@ export function renderLastCompleted(data: DashboardData, settings: Settings, now
   </div>
   <div class="last-name" title="${esc(last.task)}">${esc(last.task)} <span class="muted">· ${esc(relativeTime(last.date, now))}</span></div>
   ${last.summary ? `<div class="last-summary">${esc(last.summary)}</div>` : ''}
-  ${artifacts}`;
+  ${artifacts}${note}`;
 
   return section('lastCompleted', 'Last Completed', body, opts);
 }

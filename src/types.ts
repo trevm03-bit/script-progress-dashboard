@@ -120,6 +120,8 @@ export interface ProcessConfig {
   dayOfMonth?: number;
   dayOfWeek?: number;
   dueHour?: number;
+  /** SLA: a run of this process longer than this many minutes is flagged (and notified if enabled). */
+  maxMinutes?: number;
 }
 
 export interface QuickActionConfig {
@@ -134,11 +136,13 @@ export interface QuickActionConfig {
 
 export type SectionId =
   | 'summary' | 'activeTask' | 'warnings' | 'lastCompleted' | 'quickActions'
-  | 'processCalendar' | 'deltaTracker' | 'runHistory' | 'scriptHealth' | 'accessMap';
+  | 'processCalendar' | 'timeline' | 'deltaTracker' | 'metrics' | 'runHistory'
+  | 'warningTrends' | 'scriptHealth' | 'accessMap';
 
 export const ALL_SECTIONS: SectionId[] = [
   'summary', 'activeTask', 'warnings', 'lastCompleted', 'quickActions',
-  'processCalendar', 'deltaTracker', 'runHistory', 'scriptHealth', 'accessMap',
+  'processCalendar', 'timeline', 'deltaTracker', 'metrics', 'runHistory',
+  'warningTrends', 'scriptHealth', 'accessMap',
 ];
 
 export const SECTION_TITLES: Record<SectionId, string> = {
@@ -148,10 +152,20 @@ export const SECTION_TITLES: Record<SectionId, string> = {
   lastCompleted: 'Last Completed',
   quickActions: 'Quick Actions',
   processCalendar: 'Process Calendar',
+  timeline: 'Run Timeline',
   deltaTracker: 'Delta Tracker',
+  metrics: 'Metrics Explorer',
   runHistory: 'Run History',
+  warningTrends: 'Warning Trends',
   scriptHealth: 'Script Health',
   accessMap: 'Access Map',
+};
+
+/** Codicon per section, for titles and pickers. */
+export const SECTION_ICONS: Record<SectionId, string> = {
+  summary: 'dashboard', activeTask: 'pulse', warnings: 'warning', lastCompleted: 'check-all', quickActions: 'play',
+  processCalendar: 'calendar', timeline: 'timeline-view-icon', deltaTracker: 'graph-line', metrics: 'table', runHistory: 'history',
+  warningTrends: 'flame', scriptHealth: 'heart', accessMap: 'graph',
 };
 
 export type SectionConfig = Record<SectionId, boolean>;
@@ -168,7 +182,10 @@ export interface Settings {
   sidebarSections: SectionId[];
   dashboard: { collapsible: boolean; density: 'comfortable' | 'compact' };
   activeTask: { showLog: boolean; logLines: number; showMetrics: boolean; showArtifacts: boolean };
-  runHistory: { maxRows: number; filters: boolean; detail: boolean; trend: boolean };
+  runHistory: { maxRows: number; filters: boolean; detail: boolean; trend: boolean; anomalies: boolean; anomalyFactor: number };
+  timeline: { windowHours: number; showFailed: boolean };
+  metricsExplorer: { maxRuns: number; metrics: string[] };
+  warningTrends: { days: number; top: number };
   processes: ProcessConfig[];
   calendar: { view: 'list' | 'grid' | 'both'; upcoming: boolean };
   buttons: QuickActionConfig[];
@@ -177,8 +194,8 @@ export interface Settings {
   deltas: { formats: Record<string, DeltaFormat>; thresholds: Record<string, DeltaThreshold>; points: number };
   staleHours: number;
   health: { resultDots: number };
-  accessMap: { maxNodes: number; layout: 'force' | 'radial'; timeWindowDays: number; labels: 'auto' | 'all' | 'scripts'; sidebarPreview: boolean; replay: boolean };
-  notifications: { onComplete: boolean; onFail: boolean; onStall: boolean; onWarning: boolean; onExit: boolean; mirrorProgress: boolean };
+  accessMap: { maxNodes: number; layout: 'force' | 'radial'; timeWindowDays: number; labels: 'auto' | 'all' | 'scripts'; sidebarPreview: boolean; replay: boolean; ambient: boolean; halos: boolean; glyphs: boolean; minimap: boolean; starfield: boolean };
+  notifications: { onComplete: boolean; onFail: boolean; onStall: boolean; onWarning: boolean; onExit: boolean; onSlow: boolean; mirrorProgress: boolean };
   statusBar: { enabled: boolean; idleMode: 'last' | 'hidden'; clickAction: 'menu' | 'dashboard' };
   badge: 'running' | 'failures' | 'off';
 }

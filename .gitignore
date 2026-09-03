@@ -5,3 +5,5 @@ demo/logs/
 __pycache__/
 *.pyc
 .DS_Store
+.harness/
+.backups/

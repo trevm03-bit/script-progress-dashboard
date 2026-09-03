@@ -39,6 +39,7 @@ exports.Notifier = void 0;
 // extension activated — only for changes seen while it was watching.
 const vscode = __importStar(require("vscode"));
 const time_1 = require("./logic/time");
+const anomaly_1 = require("./logic/anomaly");
 class Notifier {
     constructor() {
         this.seen = new Map();
@@ -53,13 +54,26 @@ class Notifier {
             const key = keyOf(t);
             const state = (0, time_1.taskState)(t, settings.staleRunningMinutes, now, data.overlays);
             const prev = this.seen.get(key);
-            const cur = { state, warnings: t.warnings?.length ?? 0, updatedAt: t.updatedAt };
+            const cur = { state, warnings: t.warnings?.length ?? 0, updatedAt: t.updatedAt, slaWarned: prev?.slaWarned };
             this.seen.set(key, cur);
             if (!this.primed || !prev)
                 continue; // first sight: no notification, just remember it
+            if (n.onSlow && state === 'running' && !cur.slaWarned) {
+                const sla = (0, anomaly_1.slaFor)(t.task, settings.processes);
+                if (typeof sla === 'number' && (0, time_1.liveElapsed)(t, now) > sla * 60) {
+                    cur.slaWarned = true;
+                    this.warn(`⏱ ${t.task} has been running for ${(0, time_1.formatDuration)((0, time_1.liveElapsed)(t, now))}, past its ${(0, time_1.formatDuration)(sla * 60)} limit`);
+                }
+            }
             if (prev.state !== state) {
                 if (state === 'complete' && n.onComplete)
                     this.info(`✓ ${t.task} completed in ${(0, time_1.formatDuration)(t.elapsed)}${t.detail ? ` — ${t.detail}` : ''}`);
+                if (state === 'complete' && n.onSlow && settings.runHistory.anomalies) {
+                    const rec = data.history.find(r => (t.runId && r.runId === t.runId) || (r.task === t.task && r.date === t.updatedAt));
+                    const v = rec ? (0, anomaly_1.durationVerdict)(rec, data.history, settings.runHistory.anomalyFactor) : undefined;
+                    if (v?.slow && rec)
+                        this.warn(`⏱ ${t.task} took ${(0, time_1.formatDuration)(rec.elapsed)} — ${v.factor.toFixed(1)}× its usual ${(0, time_1.formatDuration)(v.baseline)}`);
+                }
                 if (state === 'failed' && n.onFail)
                     this.error(`✗ ${t.task} FAILED${t.detail ? ` — ${t.detail}` : ''}`);
                 if (state === 'stalled' && n.onStall)

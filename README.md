@@ -15,12 +15,18 @@ telemetry, no dependencies, and every section is a switch you turn on when you w
 | Active Task | Progress bar, step, live elapsed, ETA, log tail, metrics, artifacts — one card per running script | `scriptProgress.sections.activeTask` (on) |
 | Warnings | Warnings the running script raised; hidden automatically when there are none | `scriptProgress.sections.warnings` (on) |
 | Last Completed | Status, duration, warnings and the metrics of the most recent run | `scriptProgress.sections.lastCompleted` (on) |
-| Run History | Table of recent runs with filters, sorting and click-to-expand detail | `scriptProgress.sections.runHistory` (on) |
+| Run History | Table of recent runs with filters, sorting, click-to-expand detail, metric deltas against the previous run, and **slow** / **SLA** flags | `scriptProgress.sections.runHistory` (on) |
+| Run Timeline | Swim lanes per script over the last day or week — when runs happened, how long, what overlapped | `scriptProgress.sections.timeline` (on) |
 | Process Calendar | Expected daily / weekly / monthly processes and whether they have run | `scriptProgress.sections.processCalendar` (off) |
 | Quick Actions | Buttons that run your scripts in a terminal or as a task | `scriptProgress.sections.quickActions` (off) |
 | Delta Tracker | Sparkline per tracked metric, with thresholds | `scriptProgress.sections.deltaTracker` (off) |
+| Metrics Explorer | Every metric a script reports, run by run, with sparklines and change since last run | `scriptProgress.sections.metrics` (off) |
+| Warning Trends | Which warnings recur, on which scripts, rising or falling over the last two weeks | `scriptProgress.sections.warningTrends` (off) |
 | Script Health | Last run per script, result dots, failure rate, duration trend, stale detection | `scriptProgress.sections.scriptHealth` (off) |
-| Access Map | Scripts and the files, tables and services they touch, drawn as a constellation | `scriptProgress.sections.accessMap` (off) |
+| Access Map | Scripts and the files, tables and services they touch, drawn as a constellation with lineage (what feeds what), a minimap, replay and PNG export | `scriptProgress.sections.accessMap` (off) |
+
+And, from any surface, **Export HTML Report** writes a self-contained page of the whole dashboard
+— sections, tables and a static map — to attach to a ticket or send to whoever asked "did it run?".
 
 Plus a status bar item (`scriptProgress.statusBar.enabled`) and an Activity Bar badge
 (`scriptProgress.badge`).
@@ -31,9 +37,15 @@ editor tab — which is where the Access Map is drawn at size.
 
 ## Screenshots
 
-![Sidebar, Access Map and dashboard side by side, with a stalled run](docs/dashboard-overview.png)
+![The dashboard tab: summary strip, the Active Task card with log tail and metric chips, warnings, and Last Completed](docs/dashboard-overview.png)
 
-![Access Map, force layout — a running script's links pulse](docs/access-map-force.png)
+![Run Timeline swim lanes over a week, per-script Delta Tracker cards, and the Metrics Explorer](docs/timeline-metrics.png)
+
+![Run History with filter chips and a 2.7× slow flag, and Warning Trends grouped by message](docs/run-history-warnings.png)
+
+![Access Map, force layout — every script and the tables, files and services it touches](docs/access-map-force.png)
+
+![Access Map lineage — one script's inputs lit orange, outputs green, and the downstream scripts that depend on it](docs/access-map-lineage.png)
 
 ![Access Map, radial layout — scripts on the inner ring, resources grouped by type outside](docs/access-map-radial.png)
 
@@ -195,9 +207,12 @@ A complete example, in workspace or user `settings.json`:
   "scriptProgress.sections.warnings": true,
   "scriptProgress.sections.lastCompleted": true,
   "scriptProgress.sections.runHistory": true,
+  "scriptProgress.sections.timeline": true,
   "scriptProgress.sections.processCalendar": true,
   "scriptProgress.sections.quickActions": true,
   "scriptProgress.sections.deltaTracker": true,
+  "scriptProgress.sections.metrics": true,
+  "scriptProgress.sections.warningTrends": true,
   "scriptProgress.sections.scriptHealth": true,
   "scriptProgress.sections.accessMap": true,
 
@@ -208,9 +223,14 @@ A complete example, in workspace or user `settings.json`:
   "scriptProgress.activeTask.showLog": true,
   "scriptProgress.activeTask.logLines": 6,
   "scriptProgress.runHistory.maxRows": 15,
+  "scriptProgress.runHistory.anomalies": true,
+  "scriptProgress.runHistory.anomalyFactor": 2,
+  "scriptProgress.timeline.windowHours": 24,
+  "scriptProgress.metricsExplorer.maxRuns": 12,
+  "scriptProgress.warningTrends.days": 14,
 
   "scriptProgress.processCalendar.processes": [
-    { "name": "Nightly Load", "label": "Nightly Load", "frequency": "daily", "dueHour": 9 },
+    { "name": "Nightly Load", "label": "Nightly Load", "frequency": "daily", "dueHour": 9, "maxMinutes": 45 },
     { "name": "Weekly Rollup", "label": "Weekly Rollup", "frequency": "weekly", "dayOfWeek": 5 },
     { "name": "Month-End Close", "label": "Month-End Close", "frequency": "monthly", "dayOfMonth": 5 }
   ],
@@ -286,6 +306,26 @@ to run it (`".py": "python"`, `".ts": "npx tsx"`, and so on).
 **Workspace trust.** Quick Actions run shell commands from settings, so in an untrusted
 workspace buttons defined by the workspace's own settings are ignored and nothing is run.
 
+### Run Timeline
+
+`scriptProgress.timeline.windowHours` is how far back the lanes reach (default 24; 168 for a
+week). `scriptProgress.timeline.showFailed` keeps failed runs on the track (default on). Bars
+are coloured by result; a bar that took far longer than that script usually does is marked slow,
+and one that passed the process's `maxMinutes` gets the failure stroke. Hover a bar for its times.
+
+### Anomalies and limits
+
+Two things flag a run as worth a look, in Run History, Last Completed, the timeline and the
+notifications:
+
+- **Slow** — `scriptProgress.runHistory.anomalies` (on) compares each run with the median of that
+  script's previous successful runs (needs at least three) and flags it at
+  `scriptProgress.runHistory.anomalyFactor` × the usual time (default 2). The flag shows the
+  factor, e.g. **2.7×**, and the expanded row says what "usual" was.
+- **SLA** — give a Process Calendar entry `maxMinutes` and any run of it longer than that is
+  flagged, the Active Task card shows elapsed against the limit, and
+  `scriptProgress.notifications.onSlow` can warn the moment a running script passes it.
+
 ### Delta Tracker
 
 `scriptProgress.deltaTracker.metrics` lists which series from `deltas.json` to chart; empty means
@@ -295,6 +335,19 @@ draws (default 50).
 `scriptProgress.deltaTracker.formats` sets display per metric — `unit`, `decimals`, `label` — and
 `scriptProgress.deltaTracker.thresholds` sets an acceptable range per metric with `min` and `max`.
 Values outside the range are highlighted on the chart and counted in the summary strip.
+
+### Metrics Explorer
+
+One table per script: its metrics down the side, its last `scriptProgress.metricsExplorer.maxRuns`
+runs across (default 12), a sparkline per numeric metric and the change against the previous run
+that reported it. `scriptProgress.metricsExplorer.metrics` narrows it to the names you care about.
+
+### Warning Trends
+
+Warnings from the last `scriptProgress.warningTrends.days` (default 14) grouped by message —
+numbers and ids are normalised so "17 rows had no customer id" and "29 rows had no customer id"
+count as one pattern — with a daily bar chart, the scripts each pattern came from, and whether it
+is rising or falling. `scriptProgress.warningTrends.top` caps the list (default 8).
 
 ### Script Health
 
@@ -311,9 +364,13 @@ Turn on `scriptProgress.sections.accessMap` and open it with **Script Progress: 
 `scriptProgress.accessMap.sidebarPreview` is on).
 
 Controls: drag the background to pan, wheel to zoom, drag a node to move it, type in the search
-box to filter, click a node to focus its neighborhood, click a legend entry to hide a type, and
-double-click the canvas to reset. Node types are `task`, `file`, `table`, `api` and `other`;
-solid lines are writes, dashed lines are reads, and line width grows with use.
+box (or press `/`) to filter, click a node for its **lineage** — everything upstream of it lit
+orange, everything downstream lit green, two hops out — right-click for a menu (focus, centre,
+hide the type, copy the name, show its runs in Run History), click a legend entry to hide a type,
+`F` to fit, `R` to re-layout, `Esc` to clear, and double-click the canvas to reset. Node types are
+`task`, `file`, `table`, `api` and `other`; solid lines are writes, dashed lines are reads, line
+width grows with use, and nodes fade with age since last seen. The toolbar replays the last runs
+through the map, fits, resets, saves a PNG, and opens the map full-size.
 
 | Setting | Does |
 |---|---|
@@ -323,6 +380,11 @@ solid lines are writes, dashed lines are reads, and line width grows with use.
 | `scriptProgress.accessMap.labels` | `auto`, `all` or `scripts` |
 | `scriptProgress.accessMap.sidebarPreview` | Small live preview in the sidebar |
 | `scriptProgress.accessMap.replay` | When a run completes, replay its path through the map |
+| `scriptProgress.accessMap.halos` | Soft glow behind each node |
+| `scriptProgress.accessMap.ambient` | Traffic particles on the links a running script is using right now — direction shows reads vs writes. The map is still when nothing is running: motion means activity |
+| `scriptProgress.accessMap.glyphs` | Type glyphs inside the nodes (terminal, table, file, cloud) |
+| `scriptProgress.accessMap.minimap` | A minimap in the corner; click it to pan |
+| `scriptProgress.accessMap.starfield` | A faint static starfield behind the graph (off by default) |
 
 Motion honors the system reduced-motion setting.
 
@@ -330,6 +392,7 @@ Motion honors the system reduced-motion setting.
 
 `scriptProgress.notifications.onFail` and `.onStall` are on by default; `.onComplete` and
 `.onWarning` are off. `.onExit` notifies when a Quick Action's process exits non-zero.
+`.onSlow` warns when a run passes its `maxMinutes`, or finishes far slower than usual.
 `.mirrorProgress` additionally mirrors the running task into a native VS Code progress
 notification with a percentage — useful on a second monitor, noisy otherwise.
 
@@ -359,6 +422,7 @@ Everything is under the **Script Progress** category in the Command Palette.
 | Run with Script Progress | Runs the current or selected script file using the configured interpreter |
 | Copy Daily Summary | Copies today's runs, failures and warnings to the clipboard |
 | Export Run History (CSV) | Writes run history, with metrics, to a CSV file |
+| Export HTML Report | Writes a self-contained HTML page of the whole dashboard, static map included, to share |
 | Archive Run History | Moves the current history aside into a dated file and starts fresh |
 | Clear Run History… | Empties run history after confirmation |
 | Choose Dashboard Sections… | Ticks sections on and off without opening Settings |

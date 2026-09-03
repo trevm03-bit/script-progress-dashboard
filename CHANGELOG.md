@@ -1,5 +1,50 @@
 # Changelog
 
+## 1.2.0 — 2026-09-03
+
+Three new sections, anomaly detection, a shareable report, and a constellation worth staring at.
+
+**New sections**
+- **Run Timeline** — swim lanes per script over the last day or week: when runs happened, how
+  long they took, what overlapped, clipped at the window edge with the true times on hover.
+- **Metrics Explorer** — every metric a script reports, run by run, with a sparkline per numeric
+  metric and the change against the previous run that reported it.
+- **Warning Trends** — recurring warnings grouped by normalised message, a daily bar chart, which
+  scripts raise them, rising or falling.
+
+**Analysis**
+- Duration anomalies: a run far slower than that script's median gets a **2.7×** flag in Run
+  History (with a **Slow** filter chip), a note on Last Completed, and an optional notification.
+- SLAs: `maxMinutes` on a Process Calendar entry flags runs over it, shows elapsed against the
+  limit on the Active Task card, and `notifications.onSlow` warns the moment a running script
+  passes it.
+- Run History detail rows show each metric's delta and percentage against the previous run.
+- Delta Tracker draws one card per script when several scripts report the same metric name,
+  instead of one zigzag line across two scales.
+
+**Access Map v3**
+- Click a node for its **lineage**: upstream writers lit orange, downstream readers lit green,
+  two hops out, with an impact line ("changing this touches 4 scripts").
+- Right-click menu: focus, centre, hide the type, copy the name, show its runs.
+- Motion means activity: traffic particles flow only along the links a running script is using
+  (script→resource for writes, resource→script for reads), each resource flashes the moment the
+  script first touches it, and a finished run replays its path. An idle map is completely still.
+- Halos, type glyphs, age-based fading, birth rings for new nodes, a minimap, an optional static
+  starfield — each its own setting.
+- Toolbar: replay recent runs, fit, reset, **save as PNG**, open full-size; keyboard `/ F R Esc + -`.
+- The camera follows the layout while it settles and refits after a resize, so the graph is
+  never off-screen when the tab opens.
+- Auto-fit accounts for label widths, so long names no longer clip at the right edge.
+
+**Around the editor**
+- **Export HTML Report** — a self-contained page of the whole dashboard with a static map, in
+  light or dark to match the reader's system.
+- Header status pill and last-refresh time on every surface; section icons; empty states.
+- Timeline tick labels thin themselves with container queries, so nothing overlaps at sidebar width.
+
+**Demo**
+- `demo/seed_demo.py` writes two weeks of realistic history so every section has something to show.
+
 ## 1.1.0 — 2026-09-03
 
 The "finished product" release. Everything below is a switch in Settings.
