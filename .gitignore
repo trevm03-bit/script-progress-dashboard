@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.vsix
+demo/logs/
+__pycache__/
+*.pyc
+.DS_Store

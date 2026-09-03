@@ -1,0 +1,51 @@
+{
+  "progress": {
+    "task": "Demo Pipeline",
+    "status": "running",
+    "step": 3,
+    "totalSteps": 7,
+    "label": "Looking up customers",
+    "detail": "2,410 rows",
+    "elapsed": 20.0,
+    "eta": 15.0,
+    "warnings": [{ "time": "2026-09-02T10:00:15", "msg": "12 rows had no customer id <b>bold?</b>" }],
+    "accessed": ["file:input/orders.csv", "table:crm.customers"],
+    "updatedAt": "2026-09-02T10:00:20"
+  },
+  "history": [
+    { "task": "Demo Pipeline", "date": "2026-09-01T09:00:00", "success": true, "elapsed": 38.2, "summary": "INSERT: 4,001 rows", "warnings": 1 },
+    { "task": "Weekly Rollup", "date": "2026-08-31T08:00:00", "success": true, "elapsed": 120.0, "summary": "ok", "warnings": 0 },
+    { "task": "Month-End Close", "date": "2026-08-04T08:00:00", "success": false, "elapsed": 12.0, "summary": "Row count mismatch", "warnings": 0 },
+    { "task": "Demo Pipeline", "date": "2026-09-02T09:30:00", "success": true, "elapsed": 35.0, "summary": "INSERT: 3,990 rows & more", "warnings": 0 }
+  ],
+  "deltas": {
+    "rows_loaded": [
+      { "date": "2026-08-30T09:00:00", "value": 3900, "task": "Demo Pipeline" },
+      { "date": "2026-08-31T09:00:00", "value": 3950, "task": "Demo Pipeline" },
+      { "date": "2026-09-01T09:00:00", "value": 4001, "task": "Demo Pipeline" }
+    ],
+    "reconciliation_delta": [
+      { "date": "2026-09-01T09:00:00", "value": 0.0, "task": "Demo Pipeline" }
+    ]
+  },
+  "access": {
+    "nodes": [
+      { "id": "task:Demo Pipeline", "type": "task", "label": "Demo Pipeline", "lastSeen": "2026-09-02T10:00:20" },
+      { "id": "task:Weekly Rollup", "type": "task", "label": "Weekly Rollup", "lastSeen": "2026-08-31T08:00:00" },
+      { "id": "file:input/orders.csv", "type": "file", "label": "input/orders.csv", "lastSeen": "2026-09-02T10:00:05" },
+      { "id": "table:crm.customers", "type": "table", "label": "crm.customers", "lastSeen": "2026-09-02T10:00:20" },
+      { "id": "table:sales.orders_monthly", "type": "table", "label": "sales.orders_monthly", "lastSeen": "2026-09-01T09:00:30" },
+      { "id": "api:Reporting service", "type": "api", "label": "Reporting service", "lastSeen": "2026-08-31T08:01:00" }
+    ],
+    "edges": [
+      { "from": "task:Demo Pipeline", "to": "file:input/orders.csv", "mode": "read", "count": 5, "lastSeen": "2026-09-02T10:00:05" },
+      { "from": "task:Demo Pipeline", "to": "table:crm.customers", "mode": "read", "count": 5, "lastSeen": "2026-09-02T10:00:20" },
+      { "from": "task:Demo Pipeline", "to": "table:sales.orders_monthly", "mode": "write", "count": 4, "lastSeen": "2026-09-01T09:00:30" },
+      { "from": "task:Weekly Rollup", "to": "table:sales.orders_monthly", "mode": "read", "count": 2, "lastSeen": "2026-08-31T08:00:30" },
+      { "from": "task:Weekly Rollup", "to": "api:Reporting service", "mode": "write", "count": 2, "lastSeen": "2026-08-31T08:01:00" }
+    ]
+  },
+  "logsDir": "C:\\demo\\logs",
+  "logsDirExists": true,
+  "readErrors": []
+}

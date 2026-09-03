@@ -1,0 +1,134 @@
+{
+  "name": "script-progress-dashboard",
+  "displayName": "Script Progress Dashboard",
+  "description": "Real-time progress tracking and operations dashboard for long-running scripts. Reads JSON files your scripts write; no network, no AI, no dependencies.",
+  "version": "1.0.0",
+  "publisher": "trevor-marshall",
+  "license": "MIT",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Other", "Visualization"],
+  "keywords": ["progress", "dashboard", "scripts", "monitoring", "status bar"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Quick Action buttons run shell commands defined in settings. In an untrusted workspace, buttons defined by the workspace's own settings are ignored and no command is run.",
+      "restrictedConfigurations": ["scriptProgress.quickActions.buttons"]
+    }
+  },
+  "contributes": {
+    "commands": [
+      { "command": "scriptProgress.openPanel", "title": "Open Dashboard", "category": "Script Progress", "icon": "$(link-external)" },
+      { "command": "scriptProgress.showHistory", "title": "Show Run History", "category": "Script Progress" },
+      { "command": "scriptProgress.refresh", "title": "Refresh", "category": "Script Progress", "icon": "$(refresh)" },
+      { "command": "scriptProgress.openLogsFolder", "title": "Open Logs Folder", "category": "Script Progress", "icon": "$(folder-opened)" }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        { "id": "scriptProgress", "title": "Script Progress", "icon": "media/icon.svg" }
+      ]
+    },
+    "views": {
+      "scriptProgress": [
+        { "id": "scriptProgress.dashboard", "name": "Dashboard", "type": "webview" }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        { "command": "scriptProgress.openPanel", "when": "view == scriptProgress.dashboard", "group": "navigation@1" },
+        { "command": "scriptProgress.refresh", "when": "view == scriptProgress.dashboard", "group": "navigation@2" },
+        { "command": "scriptProgress.openLogsFolder", "when": "view == scriptProgress.dashboard", "group": "navigation@3" }
+      ]
+    },
+    "configuration": {
+      "title": "Script Progress Dashboard",
+      "properties": {
+        "scriptProgress.logsPath": {
+          "type": "string",
+          "default": "logs",
+          "description": "Folder holding progress.json, run_history.json, deltas.json and access.json. Relative paths resolve against the first workspace folder; absolute paths are used as-is."
+        },
+        "scriptProgress.refreshInterval": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 500,
+          "description": "Fallback poll interval in milliseconds. File changes are also picked up immediately by a watcher; this catches anything the watcher misses."
+        },
+        "scriptProgress.staleRunningMinutes": {
+          "type": "number",
+          "default": 30,
+          "minimum": 1,
+          "description": "If progress.json still says 'running' but has not been updated for this many minutes, the task is shown as STALLED (the script probably died without reporting)."
+        },
+        "scriptProgress.statusBar.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the current task in the VS Code status bar."
+        },
+        "scriptProgress.sections.activeTask": { "type": "boolean", "default": true, "description": "Show the Active Task progress section." },
+        "scriptProgress.sections.warnings": { "type": "boolean", "default": true, "description": "Show the Warnings section (hidden automatically when there are none)." },
+        "scriptProgress.sections.lastCompleted": { "type": "boolean", "default": true, "description": "Show the Last Completed metric cards." },
+        "scriptProgress.sections.runHistory": { "type": "boolean", "default": true, "description": "Show the Run History table." },
+        "scriptProgress.runHistory.maxRows": { "type": "number", "default": 15, "minimum": 1, "description": "Maximum rows to show in Run History." },
+        "scriptProgress.sections.processCalendar": { "type": "boolean", "default": false, "description": "Show the Process Calendar (expected daily / weekly / monthly processes and whether they have run)." },
+        "scriptProgress.processCalendar.processes": {
+          "type": "array",
+          "default": [],
+          "description": "Expected processes. 'name' is matched against the START of task names in run history, case-insensitively.",
+          "items": {
+            "type": "object",
+            "required": ["name", "label", "frequency"],
+            "properties": {
+              "name": { "type": "string", "description": "Prefix of the task name to match in run history (e.g. 'Nightly Load' matches 'Nightly Load Phase 2')." },
+              "label": { "type": "string", "description": "Display label." },
+              "frequency": { "type": "string", "enum": ["monthly", "weekly", "daily"], "default": "monthly" },
+              "dayOfMonth": { "type": "number", "minimum": 1, "maximum": 31, "description": "Monthly only: the day by which the process is expected. Overdue after this day if it has not run this month." }
+            }
+          }
+        },
+        "scriptProgress.sections.quickActions": { "type": "boolean", "default": false, "description": "Show Quick Action buttons that run commands in a terminal." },
+        "scriptProgress.quickActions.buttons": {
+          "type": "array",
+          "default": [],
+          "description": "Buttons. In 'command', write ${prompt:Your question} anywhere you want to be asked for a value when the button is clicked.",
+          "items": {
+            "type": "object",
+            "required": ["label", "command"],
+            "properties": {
+              "label": { "type": "string", "description": "Button label." },
+              "command": { "type": "string", "description": "Shell command sent to a terminal. ${prompt:Label} tokens ask for input first." },
+              "icon": { "type": "string", "description": "Codicon name, e.g. 'play', 'sync', 'beaker', 'mail'." },
+              "confirm": { "type": "boolean", "default": true, "description": "Ask for confirmation before running." },
+              "group": { "type": "string", "description": "Group heading the button appears under." }
+            }
+          }
+        },
+        "scriptProgress.sections.deltaTracker": { "type": "boolean", "default": false, "description": "Show the Delta Tracker sparkline charts." },
+        "scriptProgress.deltaTracker.metrics": {
+          "type": "array",
+          "default": [],
+          "description": "Metric names from deltas.json to chart. Empty = chart every metric present.",
+          "items": { "type": "string" }
+        },
+        "scriptProgress.sections.scriptHealth": { "type": "boolean", "default": false, "description": "Show Script Health: last run per task with stale detection." },
+        "scriptProgress.scriptHealth.staleHours": { "type": "number", "default": 168, "minimum": 1, "description": "Hours after which a task with no run is considered stale (default 7 days)." },
+        "scriptProgress.sections.accessMap": { "type": "boolean", "default": false, "description": "Show the Access Map: which scripts touch which files, tables and services, drawn as a 2D constellation in the dashboard tab." },
+        "scriptProgress.accessMap.maxNodes": { "type": "number", "default": 150, "minimum": 10, "description": "Cap on nodes drawn in the Access Map (least recently seen are dropped first)." }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "node scripts/copy-codicons.js && tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "node --test \"test/*.test.js\"",
+    "package": "npx --yes @vscode/vsce@latest package -o dist/ --allow-missing-repository",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/vscode": "1.80.0",
+    "@vscode/codicons": "^0.0.36",
+    "typescript": "^5.5.0"
+  }
+}

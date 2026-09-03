@@ -1,0 +1,15 @@
+.vscode/**
+.git/**
+.gitignore
+src/**
+test/**
+python/test_*.py
+demo/logs/**
+scripts/**
+node_modules/**
+tsconfig.json
+*.vsix
+dist/**
+out/**/*.map
+**/__pycache__/**
+demo/logs/**

@@ -1,0 +1,25 @@
+{
+  "scriptProgress.logsPath": "logs",
+  "scriptProgress.staleRunningMinutes": 1,
+  "scriptProgress.sections.processCalendar": true,
+  "scriptProgress.processCalendar.processes": [
+    { "name": "Demo Pipeline", "label": "Demo Pipeline", "frequency": "daily" },
+    { "name": "Weekly Rollup", "label": "Weekly Rollup", "frequency": "weekly" },
+    { "name": "Month-End Close", "label": "Month-End Close", "frequency": "monthly", "dayOfMonth": 5 }
+  ],
+  "scriptProgress.sections.quickActions": true,
+  "scriptProgress.quickActions.buttons": [
+    { "label": "Run demo", "command": "python fake_run.py --fast", "icon": "play", "confirm": false, "group": "Demo" },
+    { "label": "Run demo (slow)", "command": "python fake_run.py", "icon": "play", "group": "Demo" },
+    { "label": "Weekly Rollup", "command": "python fake_run.py --fast --task \"Weekly Rollup\" --steps 4", "icon": "calendar", "confirm": false, "group": "Demo" },
+    { "label": "Custom steps", "command": "python fake_run.py --fast --steps ${prompt:How many steps (1-7)?}", "icon": "settings-gear", "group": "Demo" },
+    { "label": "Simulate failure", "command": "python fake_run.py --fast --fail", "icon": "error", "group": "Failure modes" },
+    { "label": "Simulate crash", "command": "python fake_run.py --fast --crash", "icon": "debug", "group": "Failure modes" },
+    { "label": "Simulate stall", "command": "python fake_run.py --fast --stall", "icon": "warning", "group": "Failure modes" }
+  ],
+  "scriptProgress.sections.deltaTracker": true,
+  "scriptProgress.deltaTracker.metrics": ["rows_loaded", "reconciliation_delta"],
+  "scriptProgress.sections.scriptHealth": true,
+  "scriptProgress.scriptHealth.staleHours": 24,
+  "scriptProgress.sections.accessMap": true
+}
