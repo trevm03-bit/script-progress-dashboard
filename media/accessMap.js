@@ -105,7 +105,11 @@
         this.requestFrame();
         if (this.userAdjusted || !this.nodes.size || before <= 0 || Math.abs(after - before) / before < 0.05) return;
         clearTimeout(this.fitTimer);
-        this.fitTimer = setTimeout(() => { if (!this.userAdjusted) this.fit(true); }, 180);
+        this.fitTimer = setTimeout(() => {
+          // Radial positions are a function of the canvas size, so recompute them for the new size.
+          if (this.layout === 'radial') this.applyRadial(false);
+          if (!this.userAdjusted) this.fit(true);
+        }, 180);
       });
       this.ro.observe(this.host);
       if (!mini) { this.bind(); this.bindToolbar(); }
