@@ -96,12 +96,16 @@
 
       this.resize();
       this.userAdjusted = false; // set once the user pans or zooms; until then the view auto-fits on resize
+      // Editor groups animate their width, so a resize arrives as a burst; fit once it goes quiet.
+      this.fitTimer = 0;
       this.ro = new ResizeObserver(() => {
         const before = this.W * this.H;
         this.resize();
         const after = this.W * this.H;
-        if (!this.userAdjusted && before > 0 && Math.abs(after - before) / before > 0.15 && this.nodes.size) this.fit(true);
         this.requestFrame();
+        if (this.userAdjusted || !this.nodes.size || before <= 0 || Math.abs(after - before) / before < 0.05) return;
+        clearTimeout(this.fitTimer);
+        this.fitTimer = setTimeout(() => { if (!this.userAdjusted) this.fit(true); }, 180);
       });
       this.ro.observe(this.host);
       if (!mini) { this.bind(); this.bindToolbar(); }
@@ -219,7 +223,8 @@
           let dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
           if (d2 < 1) { dx = 0.5; dy = 0.5; d2 = 0.5; }
           const d = Math.sqrt(d2);
-          const boost = (a.type === 'task' || b.type === 'task') ? 1.6 : 1;
+          // Scripts repel each other hardest so hubs (and their label clusters) spread apart.
+          const boost = (a.type === 'task' && b.type === 'task') ? 5 : (a.type === 'task' || b.type === 'task') ? 1.6 : 1;
           const f = Math.min(k * boost / d2, 9) * dt;
           const fx = (dx / d) * f, fy = (dy / d) * f;
           a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
@@ -257,7 +262,7 @@
       for (const [x, y] of pts) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
       const pad = 70;
       const w = Math.max(60, maxX - minX + pad * 2), h = Math.max(60, maxY - minY + pad * 2);
-      const scale = Math.max(0.25, Math.min(2.2, Math.min(this.W / w, this.H / h)));
+      const scale = Math.max(0.25, Math.min(1.6, Math.min(this.W / w, this.H / h)));
       const target = { scale, tx: this.W / 2 - ((minX + maxX) / 2) * scale, ty: this.H / 2 - ((minY + maxY) / 2) * scale };
       if (instant || reducedMotion) this.view = target;
       else { this.viewFrom = { ...this.view }; this.viewTo = target; this.viewTween = performance.now() + 450; }
@@ -273,7 +278,12 @@
     frame(t) {
       this.raf = 0;
       let animating = false;
-      if (t < this.settleUntil) { this.step(1); animating = true; }
+      if (t < this.settleUntil) { this.step(1); animating = true; this.wasSettling = true; }
+      else if (this.wasSettling) {
+        // The layout just came to rest: frame it once more unless the user has taken the wheel.
+        this.wasSettling = false;
+        if (!this.userAdjusted) this.fit(true);
+      }
       if (this.tweenUntil && t < this.tweenUntil) {
         const k = easeOut(1 - (this.tweenUntil - t) / 700);
         for (const n of this.nodes.values()) if (n.tx !== undefined) { n.x = n.fx + (n.tx - n.fx) * k; n.y = n.fy + (n.ty - n.fy) * k; }
