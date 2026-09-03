@@ -43,10 +43,13 @@ Never paste the token into a chat, a file in this repo, or a settings file.
 | Version | `package.json` → `version` |
 
 **Screenshots in the README:** the Marketplace renders `README.md` but only shows images with
-**absolute HTTPS URLs**. The recommended way is a public GitHub repository for this project (the
-`repository` field in `package.json` then points at it, `vsce` stops warning, and the README's
-`docs/*.png` links resolve as `https://raw.githubusercontent.com/<user>/<repo>/main/docs/...`).
-Until then the README's screenshot section is text-only on purpose.
+**absolute HTTPS URLs**. `npm run package` rewrites the README's `docs/*.png` links to
+`https://raw.githubusercontent.com/trevm03-bit/script-progress-dashboard/main/docs/...` (the
+`--baseImagesUrl` flag in `package.json`). They render on the listing once a **public GitHub
+repository with that exact name** exists under your account and contains the `docs/` folder;
+until then the listing shows broken image boxes, so create the repo (or change the URL in the
+script) before publishing. Adding `"repository": {"type": "git", "url": "https://github.com/trevm03-bit/script-progress-dashboard.git"}`
+to `package.json` at the same time lets `vsce` detect it and drops the `--allow-missing-repository` flag.
 
 ## 4. Before every release
 

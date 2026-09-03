@@ -272,7 +272,7 @@
     "compile": "node scripts/copy-codicons.js && tsc -p ./",
     "watch": "tsc -watch -p ./",
     "test": "node --test \"test/*.test.js\"",
-    "package": "npx --yes @vscode/vsce@latest package -o dist/ --allow-missing-repository",
+    "package": "npx --yes @vscode/vsce@latest package -o dist/ --allow-missing-repository --baseImagesUrl https://raw.githubusercontent.com/trevm03-bit/script-progress-dashboard/main/",
     "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {
