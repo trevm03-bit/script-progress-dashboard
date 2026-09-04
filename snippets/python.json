@@ -44,5 +44,107 @@
       "    $0",
       "    p.complete(success=True, summary=\"${5:done}\")"
     ]
+  },
+  "Script Progress: query script": {
+    "prefix": "prog-query",
+    "description": "A query/extract script: reports the table it reads, the rows it got, and the cost if you know it.",
+    "body": [
+      "from lib.progress import Progress",
+      "",
+      "with Progress(\"${1:Daily Extract}\") as p:",
+      "    p.step(1, 3, \"Running query\")",
+      "    p.access(\"table\", \"${2:dataset.table}\", \"read\")",
+      "    rows = ${3:run_query(SQL)}",
+      "",
+      "    p.step(2, 3, \"Checking what came back\")",
+      "    p.metric(\"rows\", len(rows))",
+      "    ${4:p.metric(\"cost_usd\", round(bytes_billed / 1e12 * 6.25, 4))}",
+      "    if not rows:",
+      "        p.warn(\"Query returned nothing\", category=\"empty-result\", severity=\"error\", actionable=True)",
+      "",
+      "    p.step(3, 3, \"Writing output\")",
+      "    ${5:write(rows)}",
+      "    p.complete(summary=f\"{len(rows):,} rows\")",
+      ""
+    ]
+  },
+  "Script Progress: data load": {
+    "prefix": "prog-load",
+    "description": "A load/update script: names the failure kind, records what it wrote, and confirms after.",
+    "body": [
+      "from lib.progress import Progress",
+      "",
+      "with Progress(\"${1:Monthly Load}\") as p:",
+      "    try:",
+      "        p.step(1, 3, \"Authenticating\")",
+      "        ${2:connect()}",
+      "    except Exception as e:",
+      "        # A named category turns repeat trouble into a pattern instead of five stack traces.",
+      "        p.fail(f\"Could not connect: {e}\", category=\"auth\")",
+      "        raise",
+      "",
+      "    p.step(2, 3, \"Writing records\")",
+      "    p.access(\"table\", \"${3:Target_Object}\", \"write\", detail=\"${4:updated in place}\")",
+      "    written = ${5:load(records)}",
+      "    p.metric(\"written\", written)",
+      "",
+      "    p.step(3, 3, \"Verifying\")",
+      "    ${6:verify()}",
+      "    p.complete(summary=f\"{written:,} record(s) written\")",
+      ""
+    ]
+  },
+  "Script Progress: reconciliation": {
+    "prefix": "prog-recon",
+    "description": "A reconciliation: measures the gap before AND after the fix, so the chart tells the whole story.",
+    "body": [
+      "from lib.progress import Progress",
+      "",
+      "with Progress(\"${1:Reconciliation}\") as p:",
+      "    p.step(1, 3, \"Comparing the two sides\")",
+      "    p.access(\"table\", \"${2:system_a.view}\", \"read\")",
+      "    p.access(\"table\", \"${3:system_b.view}\", \"read\")",
+      "    gap = ${4:compare()}",
+      "",
+      "    # Two readings in one run: what was found, and what was left. The chart pairs them.",
+      "    p.track_delta(\"${5:reconciliation_delta}\", gap)",
+      "    p.impact(\"${6:corrections_found}\", abs(gap), label=\"${7:Corrections identified}\")",
+      "",
+      "    p.step(2, 3, \"Applying fixes\")",
+      "    fixed = ${8:apply_fixes()}",
+      "    p.metric(\"fixed\", fixed)",
+      "    if fixed:",
+      "        p.warn(f\"{fixed} record(s) corrected\", count=fixed, category=\"corrected\", actionable=True)",
+      "",
+      "    p.step(3, 3, \"Re-checking\")",
+      "    p.track_delta(\"${5:reconciliation_delta}\", ${9:compare()})",
+      "    p.complete(summary=f\"{fixed} fixed\")",
+      ""
+    ]
+  },
+  "Script Progress: file ETL": {
+    "prefix": "prog-etl",
+    "description": "A file-in, file-out job: records both files so the Access Map shows the chain.",
+    "body": [
+      "from lib.progress import Progress",
+      "",
+      "with Progress(\"${1:File ETL}\") as p:",
+      "    p.step(1, 3, \"Reading input\")",
+      "    p.access(\"file\", \"${2:input/source.csv}\", \"read\")",
+      "    rows = ${3:read_csv(src)}",
+      "    p.metric(\"rows_in\", len(rows))",
+      "",
+      "    p.step(2, 3, \"Transforming\")",
+      "    for i, chunk in enumerate(${4:chunks}):",
+      "        p.substep(i / len(${4:chunks}))",
+      "        ${5:transform(chunk)}",
+      "",
+      "    p.step(3, 3, \"Writing output\")",
+      "    p.access(\"file\", \"${6:output/result.csv}\", \"write\")",
+      "    ${7:write_csv(out)}",
+      "    p.artifact(\"${6:output/result.csv}\")",
+      "    p.complete(summary=f\"{len(rows):,} rows processed\")",
+      ""
+    ]
   }
 }

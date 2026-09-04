@@ -262,7 +262,7 @@ export interface Settings {
   metricsExplorer: { totals: boolean; maxRuns: number; metrics: string[] };
   warningTrends: { days: number; top: number };
   processes: ProcessConfig[];
-  calendar: { view: 'list' | 'grid' | 'both'; upcoming: boolean };
+  calendar: { view: 'list' | 'grid' | 'both'; upcoming: boolean; compliance: boolean; compliancePeriods: number };
   buttons: QuickActionConfig[];
   quickActions: { runVia: 'terminal' | 'task'; asTasks: boolean; contextMenu: boolean; disableWhileRunning: boolean; interpreters: Record<string, string> };
   deltaMetrics: string[];

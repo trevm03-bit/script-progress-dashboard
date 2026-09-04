@@ -5,6 +5,7 @@ import { calendarRows, CalendarStatus, dueText, monthGrid } from '../logic/calen
 import { relativeTime } from '../logic/time';
 import { esc, icon, section, empty, problemList, SectionOpts } from './html';
 import { problemsFor } from '../logic/validate';
+import { complianceReport } from '../logic/compliance';
 
 const MARK: Record<CalendarStatus, { icon: string; cls: string; text: string }> = {
   done: { icon: 'check', cls: 'calendar-done', text: 'done' },
@@ -36,6 +37,14 @@ export function renderProcessCalendar(data: DashboardData, settings: Settings, n
     const next = !settings.calendar.upcoming ? ''
       : r.status === 'unseen' ? '<span class="cal-next"></span>'
       : `<span class="cal-next muted">${esc(dueText(r.nextDue, now))}</span>`;
+    // Reliability over time, beside today's state. A run of green squares says "this has been
+    // holding" in a way a single status never can.
+    const comp = settings.calendar.compliance ? complianceReport(r.process, data.history, now, settings.calendar.compliancePeriods) : null;
+    const sla = comp && comp.percent !== null
+      ? `<span class="cal-sla" title="${esc(comp.periods.map(p => `${p.label}: ${!p.known ? 'before it was wired' : p.met ? 'ran' : 'MISSED'}`).join(' · '))}">`
+        + comp.periods.map(p => `<span class="sla-dot${!p.known ? ' sla-unknown' : p.met ? ' sla-met' : ' sla-missed'}"></span>`).join('')
+        + `<span class="sla-pct ${comp.percent >= 90 ? 'status-pass' : comp.percent >= 70 ? 'status-warn' : 'status-fail'}">${comp.percent}%</span></span>`
+      : '';
     const phases = r.phases.length
       ? `<span class="cal-phases" title="${esc(r.phases.map(p => `${p.done ? 'done' : 'not yet'}: ${p.name}`).join(' · '))}">${r.phases.map(p => `<span class="phase-pip${p.done ? ' on' : ''}"></span>`).join('')}</span>`
       : '';
@@ -46,6 +55,7 @@ export function renderProcessCalendar(data: DashboardData, settings: Settings, n
   <span class="cal-mark ${m.cls}" title="${m.text}">${icon(m.icon)}</span>
   <span class="cal-label" title="${esc(r.process.name)}">${esc(r.process.label || r.process.name)}${phases}</span>
   <span class="cal-note muted">${esc(r.note)}</span>
+  ${sla}
   ${next}
   ${last}
   ${grid}

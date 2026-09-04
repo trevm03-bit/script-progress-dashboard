@@ -38,6 +38,7 @@ exports.disposeCommands = disposeCommands;
 // Every command the extension registers, in one place. Thin: the logic lives in logic/ and the
 // state comes from the StateProvider so commands never hold data of their own.
 const fs = __importStar(require("fs"));
+const os = __importStar(require("os"));
 const path = __importStar(require("path"));
 const vscode = __importStar(require("vscode"));
 const actions_1 = require("./actions");
@@ -49,6 +50,9 @@ const compareText_1 = require("./logic/compareText");
 const time_1 = require("./logic/time");
 const simulate_1 = require("./simulate");
 const report_1 = require("./logic/report");
+const digestHtml_1 = require("./logic/digestHtml");
+const runbook_1 = require("./logic/runbook");
+const richClipboard_1 = require("./richClipboard");
 const types_1 = require("./types");
 let historyChannel;
 function registerCommands(context, cx) {
@@ -274,6 +278,35 @@ function registerCommands(context, cx) {
         cx.refresh(true);
         void vscode.window.showInformationMessage(`Imported ${added} point(s) into ${dataReader_1.FILES.deltas}${skipped ? `, skipped ${skipped} already present` : ''}${rejected ? `, ${rejected} unreadable` : ''}.`);
     });
+    reg('scriptProgress.generateRunbook', async () => {
+        const text = (0, runbook_1.runbookMarkdown)(cx.getData(), cx.getSettings(), new Date());
+        const doc = await vscode.workspace.openTextDocument({ content: text, language: 'markdown' });
+        await vscode.window.showTextDocument(doc, { preview: false });
+        void vscode.window.showInformationMessage('Runbook generated from observed runs. Fill in the ⚠️ gaps — anything a person does between steps is invisible to this tool.');
+    });
+    reg('scriptProgress.copyDigestHtml', async () => {
+        const html = (0, digestHtml_1.digestHtml)(cx.getData(), cx.getSettings(), new Date());
+        const rich = await (0, richClipboard_1.copyHtmlRich)(html);
+        if (rich.ok) {
+            void vscode.window.showInformationMessage('Digest copied as formatted text — paste straight into an email.');
+            return;
+        }
+        // Rich paste is Windows-only and can be blocked outright. Rather than silently leaving
+        // markup on the clipboard (which pastes as a wall of tags), open the rendered page so it can
+        // be copied from there — a browser puts real formatted text on the clipboard.
+        const file = path.join(os.tmpdir(), `script-progress-digest-${Date.now()}.html`);
+        try {
+            fs.writeFileSync(file, `<!doctype html><meta charset="utf-8"><title>Digest</title>${html}`, 'utf-8');
+        }
+        catch (e) {
+            void vscode.window.showErrorMessage(`Could not write the digest: ${e.message}`);
+            return;
+        }
+        const OPEN = 'Open it';
+        const pick = await vscode.window.showInformationMessage(`Formatted copy is not available here (${rich.reason}). The digest has been written to a file — open it, select all and copy to paste it with its formatting.`, OPEN);
+        if (pick === OPEN)
+            await vscode.env.openExternal(vscode.Uri.file(file));
+    });
     reg('scriptProgress.exportReport', async () => {
         const data = cx.getData();
         const stamp = new Date().toISOString().slice(0, 10);
@@ -386,6 +419,8 @@ function registerCommands(context, cx) {
             items.push({ label: '$(play) Run Quick Action…', run: () => vscode.commands.executeCommand('scriptProgress.runQuickAction') });
         items.push({ label: '$(clippy) Copy Daily Summary', run: () => vscode.commands.executeCommand('scriptProgress.copyDailySummary') });
         items.push({ label: '$(mail) Copy Weekly Digest', run: () => vscode.commands.executeCommand('scriptProgress.copyWeeklyDigest') });
+        items.push({ label: '$(mail) Copy Digest for Email (formatted)', run: () => vscode.commands.executeCommand('scriptProgress.copyDigestHtml') });
+        items.push({ label: '$(book) Generate Runbook', run: () => vscode.commands.executeCommand('scriptProgress.generateRunbook') });
         items.push({ label: '$(git-compare) Compare Two Runs…', run: () => vscode.commands.executeCommand('scriptProgress.compareRuns') });
         items.push({ label: '$(file-pdf) Export HTML Report', run: () => vscode.commands.executeCommand('scriptProgress.exportReport') });
         items.push({ label: '$(history) Show Run History', run: () => vscode.commands.executeCommand('scriptProgress.showHistory') });

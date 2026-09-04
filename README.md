@@ -1,14 +1,18 @@
-# Script Progress Dashboard
+# Script Progress — Data Ops Dashboard
 
 [![Marketplace](https://img.shields.io/visual-studio-marketplace/v/trevor-marshall.script-progress-dashboard?label=Marketplace&color=0e6b62)](https://marketplace.visualstudio.com/items?itemName=trevor-marshall.script-progress-dashboard)
 [![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 ![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-lightgrey)
 ![Network calls](https://img.shields.io/badge/network%20calls-0-lightgrey)
 
-**Know what your scripts are doing without leaving the editor.** Five lines in a Python or
-Node script give you a live progress card, a status bar line, and a run history that flags the
-runs that took far longer than usual. Add one call per resource and you get a map of every
-table, file and service your scripts touch, with lineage.
+**Did it run, what did it find, and is the trend getting better or worse?** One dashboard for
+every recurring job. Five lines in a Python or Node script give you a live progress card, a status
+bar line, and a run history that flags runs which took far longer than usual — or whose numbers
+moved further than they should have. Add one call per resource and you get a map of every table,
+file and service your scripts touch, with lineage.
+
+It watches scripts, but the question it exists to answer is about the work: whether the routine is
+holding together, what the last run turned up, and what is still outstanding.
 
 ![A script runs in the dashboard: the progress bar advances step by step, the log tail fills, warnings appear, and the run lands in history](docs/hero.gif)
 
@@ -25,9 +29,10 @@ That is the whole integration. No server to run, no package to install, no accou
 
 - **Nothing to host.** Your script writes a few small JSON files; the extension watches the folder.
 - **Nothing leaves the machine.** No network, no telemetry, no AI, no runtime dependencies.
-- **Everything is a switch.** Thirteen sections; turn on the ones you want, in the order you want.
-- **Built for people who babysit pipelines.** Slow-run detection, SLAs, warning trends, metric
-  deltas run over run, and lineage so "what breaks if this fails?" has an answer.
+- **Everything is a switch.** Fifteen sections; turn on the ones you want, in the order you want.
+- **Built for people who babysit pipelines.** Slow-run and metric-regression detection, SLA
+  compliance over months, warning trends, outstanding findings, and lineage so "what breaks if
+  this fails?" has an answer.
 
 ### Is this for you?
 
@@ -48,6 +53,7 @@ Python and Node reporters are just the two that ship.
 | Active Task | Progress bar, step, live elapsed, ETA, log tail, metrics, artifacts — one card per running script | `scriptProgress.sections.activeTask` (on) |
 | Warnings | Warnings the running script raised; hidden automatically when there are none | `scriptProgress.sections.warnings` (on) |
 | Last Completed | Status, duration, warnings and the metrics of the most recent run | `scriptProgress.sections.lastCompleted` (on) |
+| Pending Actions | Findings marked `actionable`, from each script's latest **successful** run; cleared only by a later successful run that stops reporting them (`pendingActions.maxAgeDays` bounds how far back it looks) | `scriptProgress.sections.pendingActions` (on) |
 | Run History | Table of recent runs with filters, sorting, click-to-expand detail, metric deltas against the previous run, and **slow** / **SLA** flags | `scriptProgress.sections.runHistory` (on) |
 | Run Timeline | Swim lanes per script over the last day or week — when runs happened, how long, what overlapped | `scriptProgress.sections.timeline` (on) |
 | Process Calendar | Expected daily / weekly / monthly processes and whether they have run | `scriptProgress.sections.processCalendar` (off) |
@@ -56,6 +62,7 @@ Python and Node reporters are just the two that ship.
 | Metrics Explorer | Every metric a script reports, run by run, with sparklines and change since last run | `scriptProgress.sections.metrics` (off) |
 | Warning Trends | Which warnings recur, on which scripts, rising or falling over the last two weeks | `scriptProgress.sections.warningTrends` (off) |
 | Script Health | Last run per script, result dots, failure rate, duration trend, stale detection | `scriptProgress.sections.scriptHealth` (off) |
+| Impact Summary | Running totals from `Progress.impact()` — overall, this month, and how many runs are behind each figure | `scriptProgress.sections.impact` (off) |
 | Access Map | Scripts and the files, tables and services they touch, drawn as a constellation with lineage (what feeds what), a minimap, replay and PNG export | `scriptProgress.sections.accessMap` (off) |
 
 And, from any surface, **Export HTML Report** writes a self-contained page of the whole dashboard
@@ -217,6 +224,40 @@ python progress.py                 # reads the folder it would write to
 python progress.py /path/to/logs   # or an explicit one
 ```
 
+### Warnings that can be grouped
+
+A warning can carry more than its text, and all of it is optional:
+
+```python
+p.warn("Section 6 discontinuities", count=310, category="cross-quarter", severity="info")
+p.warn("Two records missing an owner flag", count=2, category="missing-flag", actionable=True)
+```
+
+- **`count`** — so a steady 310 reads as steady instead of as a new warning every run.
+- **`category`** — your own word for the kind of finding. Warning Trends groups by it when present,
+  which is the difference between *"cross-quarter has been flat for three weeks"* and a list of
+  near-identical sentences.
+- **`severity`** — `info`, `warn` or `error`. Your judgement; nothing here infers it.
+- **`actionable`** — this is something a person must **do**, not merely know. Those appear in
+  **Pending Actions** and stay there until a later *successful* run stops reporting them.
+
+### What a run contributed
+
+`track_delta` records where a number stands now. `impact` records what a run *added*, and those
+accumulate:
+
+```python
+p.impact("corrections_found", 1204.50, label="Reconciliation corrections")
+```
+
+The Impact Summary then shows the running total, the figure for this month, and how many runs it
+came from.
+
+> **Be precise about what the number counts, and write that definition down next to the script.**
+> A total is only as defensible as its definition, and "identified" is the word that gets
+> questioned first — a discrepancy that passed through a check is not money recovered. The figure
+> is what your scripts reported, using their own rules.
+
 ### Naming a failure
 
 When a run fails for a reason you can name, say so:
@@ -271,6 +312,16 @@ python progress.py complete --run "$RUN" --summary "3 items"
 Better still, give concurrent runs distinct names. The task name is the key for the calendar,
 history and ETA, so two things sharing one are indistinguishable everywhere, not just here.
 
+### Who ran it, and from which commit
+
+Each run records the OS username and the short git commit of the folder it ran from, so history
+reads *"X ran it at 10:08"* and a change in behaviour can be lined up against a change in code.
+Both are best-effort and never interrupt a run.
+
+Opt out with `PROGRESS_NO_USER=1` and `PROGRESS_NO_GIT=1`, or set `PROGRESS_USER` to something
+else. ⚠️ The username is a personal identifier and it travels into `run_history.json`, the CSV
+export and the HTML report — turn it off if those are ever shared.
+
 ### Comparing two runs
 
 Expand a row in Run History and click **Compare with…**, or run **Script Progress: Compare Two
@@ -306,6 +357,44 @@ logs folder is resolved by the same four rules, with `PROGRESS_LOGS_DIR` honored
 
 Any other language works too — the files are the contract, and the JSON schemas below describe
 them exactly.
+
+## Runbook generation
+
+**Generate Runbook** writes a Markdown document from what the extension has actually observed: each
+process, its cadence, its phases in order, the command behind each step, how long each usually
+takes, what it reads and writes, and what it produces.
+
+🔴 **It marks its own blind spots, and you must fill them in.** It cannot see a step performed by a
+person — an approval, a file sent out and returned — so it flags the gap between phases instead of
+quietly omitting it. A runbook is read by whoever is covering in an emergency, and a confident
+document with a missing step is worse than no document. Steps it has never seen run say so plainly.
+
+## Sending a digest
+
+**Copy Weekly Digest** gives plain text. **Copy Digest for Email (formatted)** gives the same
+content with formatting, ready to paste into an email.
+
+Formatted copy is Windows-only: VS Code's clipboard API writes plain text, so the extension sets
+the `CF_HTML` clipboard format through PowerShell. Where that is unavailable or blocked, it writes
+the digest to an HTML file and offers to open it, so you can copy it from the rendered page — and
+it always sets a plain-text flavour alongside, so the worst case is a clean plain-text paste rather
+than a wall of tags.
+
+## Templates
+
+Type a prefix in a Python file and press Tab:
+
+| Prefix | What it starts |
+|---|---|
+| `progress` | A job wrapped in a `Progress` block |
+| `prog-query` | A query/extract: table read, rows returned, empty result flagged |
+| `prog-load` | A write/load: named failure category, what it wrote, verification |
+| `prog-recon` | A reconciliation: measures the gap before *and* after the fix |
+| `prog-etl` | File in, file out, with both recorded and sub-step progress |
+| `prog-cli` | A shell script using the command line, with an abort trap |
+
+`prog-cli` is available in shell and PowerShell files; the rest in Python, with the core four also
+in JavaScript.
 
 ## The files
 
@@ -394,6 +483,20 @@ A worked example, in workspace or user `settings.json` (every setting is describ
 }
 ```
 
+### Pending Actions
+
+Findings your scripts marked `actionable=True`, taken from each script's most recent **successful**
+run. On by default; it renders as a single quiet line when there is nothing outstanding.
+
+Nothing is stored. The list is derived, so an item disappears exactly when a later successful run
+of that script stops reporting it — and 🔴 **a failed run never clears one**, because a run that
+died before reaching the check has not told you anything about whether the finding is still there.
+
+### Impact Summary
+
+Running totals from `Progress.impact()`: overall, this month, and the number of runs behind each
+figure. Off by default. See the note under *What a run contributed* about defining what you count.
+
 ### Process Calendar
 
 `scriptProgress.processCalendar.processes` is a list of `{ name, label, frequency }` objects.
@@ -405,6 +508,27 @@ A worked example, in workspace or user `settings.json` (every setting is describ
 | `daily` | `dueHour` (0–23, default 12) | Done if a successful run happened today. Overdue once the local clock passes that hour with no run. |
 | `weekly` | `dayOfWeek` (1 = Monday … 7 = Sunday, default end of week) | Done if a successful run happened since Monday. Overdue past the end of that weekday, or if a whole week was missed. |
 | `monthly` | `dayOfMonth` (1–31, default last day) | Done if a successful run happened this calendar month. Overdue past the end of that day. |
+
+**Dependencies between processes.** `dependsOn` lists task names that must have run successfully
+in the current period before this process can:
+
+```json
+{ "name": "Downstream Load", "label": "Downstream", "frequency": "monthly", "dayOfMonth": 5,
+  "dependsOn": ["Upstream Extract"] }
+```
+
+It then reads **blocked — waiting on Upstream Extract** rather than overdue, because there is
+nothing you can do about it yet and calling it overdue points at the wrong step. Blocked never
+overrides *done*: if it ran, it ran.
+
+⚠️ It means exactly *"the named process has not run in this period"*. It cannot know about a step a
+person performs — a file sent to someone and returned — so do not read it as "everything upstream
+is ready".
+
+**Reliability over time.** Each row carries a dot per recent period and a percentage: *ran in 11 of
+the last 12*. A period **before the process first ran** is drawn hollow and excluded from the
+figure — a process wired up last week is not "0% for the year". Configure with
+`processCalendar.compliance` and `processCalendar.compliancePeriods`.
 
 `reminderDays` on a process notifies you when its due date is approaching rather than only once
 it has been missed — `"reminderDays": 2` fires once, two days out. The calendar always knew this;
@@ -460,6 +584,19 @@ to run it (`".py": "python"`, `".ts": "npx tsx"`, and so on).
 **Workspace trust.** Quick Actions run shell commands from settings, so in an untrusted
 workspace buttons defined by the workspace's own settings are ignored and nothing is run.
 
+**Buttons that know when they are pointless.** `enableWhen` checks the last successful run of a
+task before offering a button:
+
+```json
+{ "label": "Fix issues", "command": "python fix.py", "task": "Audit",
+  "enableWhen": { "metric": "issues", "gt": 0 } }
+```
+
+The button stays **visible and disabled, with the reason on hover** — *"last run had issues = 0,
+needs more than 0"* — rather than disappearing. A control that vanishes leaves you hunting for it,
+and the reason is usually what you wanted to know. If the metric or the run is missing, the button
+stays enabled: an unnecessary run costs less than a control nobody can use.
+
 ### Run Timeline
 
 `scriptProgress.timeline.windowHours` is how far back the lanes reach (default 24; 168 for a
@@ -480,6 +617,16 @@ notifications:
   flagged, the Active Task card shows elapsed against the limit, and
   `scriptProgress.notifications.onSlow` can warn the moment a running script passes it.
 
+### Metric regressions
+
+The anomaly detector also watches the numbers, not just the clock. A metric that lands far from its
+own median across previous runs of the same task is flagged in Run History and explained in the
+row's detail: *rows 200 — usually about 4,000 (7 prior runs)*.
+
+Duration anomalies catch infrastructure; these catch **data**. It needs at least four prior
+successful runs before it will say anything, and `runHistory.ignoreMetrics` excludes anything
+naturally variable — without that, one restless number teaches you to ignore all of them.
+
 ### Delta Tracker
 
 `scriptProgress.deltaTracker.metrics` lists which series from `deltas.json` to chart; empty means
@@ -490,6 +637,13 @@ draws (default 50).
 `scriptProgress.deltaTracker.thresholds` sets an acceptable range per metric with `min` and `max`.
 Values outside the range are highlighted on the chart and counted in the summary strip.
 
+**A goal is not a band.** `target` draws its own line, so the chart answers *"are we at goal?"*
+and not only *"which way is it moving?"*:
+
+```json
+"scriptProgress.deltaTracker.thresholds": { "reconciliation_delta": { "min": -0.5, "max": 0.5, "target": 0 } }
+```
+
 **Measuring twice in one run.** Call `track_delta()` more than once and the card says what the
 run found and what it left behind — *found 4.2K, resolved to 0* — instead of drawing two dots you
 have to interpret. Points are paired by run id, so unrelated readings are never joined up.
@@ -499,6 +653,20 @@ have to interpret. Points are paired by run id, so unrelated readings are never 
 series) into `deltas.json`, so a series that existed before this extension did starts with its
 real depth. It merges rather than replaces, skips points already present, and reports anything it
 could not read.
+
+### Coverage
+
+One figure in the summary strip for *is the routine holding together*, combining schedule
+adherence, run success and metrics-in-range. Its three inputs are always in the tooltip —
+`4/4 processes on time · 53/59 runs in 30 days · 0/1 metrics in range`.
+
+🔴 **It is not a data-quality score, and it is not named like one on purpose.** This extension can
+see whether your jobs ran, whether they succeeded, and how the numbers they report *about
+themselves* moved. It cannot see your data. A composite is honest while you can check what went
+into it; it stops being honest the moment its name promises more than its inputs support.
+
+Blocked and never-run processes are excluded — neither is this process failing to comply. Turn it
+off with `coverage.show`.
 
 ### Metrics Explorer
 
@@ -592,6 +760,8 @@ Everything is under the **Script Progress** category in the Command Palette.
 | Copy Weekly Digest | A week's rollup: what ran, what failed, what is overdue, how tracked metrics moved |
 | Compare Two Runs… | Picks two runs and opens their differences as Markdown |
 | Import Delta History… | Merges an existing `[{date, value, task}]` series into `deltas.json` |
+| Generate Runbook | Writes a Markdown runbook from what the extension has observed |
+| Copy Digest for Email (formatted) | The weekly digest as formatted text, ready to paste into an email |
 | Export Run History (CSV) | Writes run history, with metrics, to a CSV file |
 | Export HTML Report | Writes a self-contained HTML page of the whole dashboard, static map included, to share |
 | Archive Run History | Moves the current history aside into a dated file and starts fresh |
@@ -639,7 +809,14 @@ requests, sends no telemetry, bundles no runtime dependencies, and calls no AI s
 thing it ever executes is a Quick Action command you wrote yourself, in your own terminal — and
 not at all in an untrusted workspace.
 
-It writes nothing, with one opt-in exception: turn on `scriptProgress.events.file` and it writes
+It records the OS username and git commit per run so history can say who ran what; both are
+opt-out (`PROGRESS_NO_USER=1`, `PROGRESS_NO_GIT=1`), and the username reaches `run_history.json`,
+the CSV export and the HTML report.
+
+Formatted-digest copying starts a short-lived PowerShell process on Windows to set the clipboard.
+It reads nothing and sends nothing anywhere.
+
+It writes nothing else, with one opt-in exception: turn on `scriptProgress.events.file` and it writes
 `last_event.json` into your logs folder when a run completes, fails, stalls or exits, so a tool
 outside VS Code can watch for it. That is a local file. There is deliberately no webhook option —
 an outbound request would make the paragraph above false, and that promise is the reason this is

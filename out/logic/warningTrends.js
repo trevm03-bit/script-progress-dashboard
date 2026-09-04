@@ -37,7 +37,7 @@ function occurrences(history) {
             if (!when)
                 continue;
             // Keep the timestamp exactly as written so the section can show it back unchanged.
-            out.push({ msg: item.msg, task: run.task, time: itemTime ? item.time : run.date, t: when.getTime() });
+            out.push({ msg: item.msg, task: run.task, time: itemTime ? item.time : run.date, t: when.getTime(), category: item.category, count: item.count });
         }
     }
     return out;
@@ -68,7 +68,9 @@ function warningTrendsModel(data, settings, now) {
     const third = Math.max(1, Math.min(Math.floor(windowDays / 3), Math.floor(windowDays / 2)));
     const buckets = new Map();
     for (const o of inWindow) {
-        const key = normalizeWarning(o.msg);
+        // A category the script chose beats a guess made from its wording: "Section 6: 310 issues"
+        // and "Section 6: 311 issues" are the same finding, and only the author can say so for sure.
+        const key = o.category ? `cat:${o.category.toLowerCase()}` : normalizeWarning(o.msg);
         const list = buckets.get(key);
         if (list)
             list.push(o);

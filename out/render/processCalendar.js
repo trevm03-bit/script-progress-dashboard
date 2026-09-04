@@ -5,6 +5,7 @@ const calendar_1 = require("../logic/calendar");
 const time_1 = require("../logic/time");
 const html_1 = require("./html");
 const validate_1 = require("../logic/validate");
+const compliance_1 = require("../logic/compliance");
 const MARK = {
     done: { icon: 'check', cls: 'calendar-done', text: 'done' },
     partial: { icon: 'circle-half', cls: 'calendar-partial', text: 'part done' },
@@ -34,6 +35,14 @@ function renderProcessCalendar(data, settings, now, opts, narrow) {
         const next = !settings.calendar.upcoming ? ''
             : r.status === 'unseen' ? '<span class="cal-next"></span>'
                 : `<span class="cal-next muted">${(0, html_1.esc)((0, calendar_1.dueText)(r.nextDue, now))}</span>`;
+        // Reliability over time, beside today's state. A run of green squares says "this has been
+        // holding" in a way a single status never can.
+        const comp = settings.calendar.compliance ? (0, compliance_1.complianceReport)(r.process, data.history, now, settings.calendar.compliancePeriods) : null;
+        const sla = comp && comp.percent !== null
+            ? `<span class="cal-sla" title="${(0, html_1.esc)(comp.periods.map(p => `${p.label}: ${!p.known ? 'before it was wired' : p.met ? 'ran' : 'MISSED'}`).join(' · '))}">`
+                + comp.periods.map(p => `<span class="sla-dot${!p.known ? ' sla-unknown' : p.met ? ' sla-met' : ' sla-missed'}"></span>`).join('')
+                + `<span class="sla-pct ${comp.percent >= 90 ? 'status-pass' : comp.percent >= 70 ? 'status-warn' : 'status-fail'}">${comp.percent}%</span></span>`
+            : '';
         const phases = r.phases.length
             ? `<span class="cal-phases" title="${(0, html_1.esc)(r.phases.map(p => `${p.done ? 'done' : 'not yet'}: ${p.name}`).join(' · '))}">${r.phases.map(p => `<span class="phase-pip${p.done ? ' on' : ''}"></span>`).join('')}</span>`
             : '';
@@ -44,6 +53,7 @@ function renderProcessCalendar(data, settings, now, opts, narrow) {
   <span class="cal-mark ${m.cls}" title="${m.text}">${(0, html_1.icon)(m.icon)}</span>
   <span class="cal-label" title="${(0, html_1.esc)(r.process.name)}">${(0, html_1.esc)(r.process.label || r.process.name)}${phases}</span>
   <span class="cal-note muted">${(0, html_1.esc)(r.note)}</span>
+  ${sla}
   ${next}
   ${last}
   ${grid}

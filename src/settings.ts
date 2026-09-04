@@ -83,6 +83,8 @@ export function readSettings(): Settings {
     calendar: {
       view: str('processCalendar.view', 'both', ['list', 'grid', 'both'] as const),
       upcoming: bool('processCalendar.upcoming', true),
+      compliance: bool('processCalendar.compliance', true),
+      compliancePeriods: num('processCalendar.compliancePeriods', 12, 3, 36),
     },
     buttons: (c.get<QuickActionConfig[]>('quickActions.buttons', []) || []).filter(b => b && b.label && b.command),
     quickActions: {

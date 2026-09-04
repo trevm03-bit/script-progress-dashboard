@@ -25,7 +25,7 @@ function settings(o = {}) {
       { name: 'Weekly Rollup', label: 'Weekly', frequency: 'weekly' },
       { name: 'Month-End Close', label: 'Close', frequency: 'monthly', dayOfMonth: 5 },
     ],
-    calendar: { view: 'both', upcoming: true, ...(o.calendar || {}) },
+    calendar: { view: 'both', upcoming: true, compliance: true, compliancePeriods: 12, ...(o.calendar || {}) },
     buttons: o.buttons || [
       { label: 'Run <it>', command: 'python x.py --m ${prompt:Month}', icon: 'play', group: 'Ops', task: 'Demo Pipeline' },
       { label: 'No confirm', command: 'echo hi', confirm: false },

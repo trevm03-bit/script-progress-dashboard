@@ -62,7 +62,7 @@ function dayKey(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-interface Occurrence { msg: string; task: string; time: string; t: number }
+interface Occurrence { msg: string; task: string; time: string; t: number; category?: string; count?: number }
 
 /** Every warning item in the history, timestamped (falling back to the run's own date). */
 function occurrences(history: RunRecord[]): Occurrence[] {
@@ -76,7 +76,7 @@ function occurrences(history: RunRecord[]): Occurrence[] {
       const when = itemTime ?? parseIso(run.date);
       if (!when) continue;
       // Keep the timestamp exactly as written so the section can show it back unchanged.
-      out.push({ msg: item.msg, task: run.task, time: itemTime ? item.time : run.date, t: when.getTime() });
+      out.push({ msg: item.msg, task: run.task, time: itemTime ? item.time : run.date, t: when.getTime(), category: item.category, count: item.count });
     }
   }
   return out;
@@ -112,7 +112,9 @@ export function warningTrendsModel(data: DashboardData, settings: Settings, now:
 
   const buckets = new Map<string, Occurrence[]>();
   for (const o of inWindow) {
-    const key = normalizeWarning(o.msg);
+    // A category the script chose beats a guess made from its wording: "Section 6: 310 issues"
+    // and "Section 6: 311 issues" are the same finding, and only the author can say so for sure.
+    const key = o.category ? `cat:${o.category.toLowerCase()}` : normalizeWarning(o.msg);
     const list = buckets.get(key);
     if (list) list.push(o); else buckets.set(key, [o]);
   }
