@@ -7,6 +7,8 @@ const os = require('os');
 const path = require('path');
 
 const { DataReader } = require('../out/dataReader.js');
+const { renderSections } = require('../out/render/dashboard.js');
+const { settings } = require('./fixtures/settings.js');
 const fixture = require('./fixtures/data.json');
 
 function tmpDir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'spd-reader-')); }
@@ -128,4 +130,44 @@ test('setLogsDir clears the cache and overlays', () => {
   const d = r.readAll();
   assert.equal(d.progress, null);
   assert.deepEqual(d.overlays, []);
+});
+
+// ---------------------------------------------------------------- corrupt series files
+// A renderer that throws blanks the whole dashboard, so a single bad point in a file anyone
+// can hand-edit must never reach one. Found by fuzzing before the 1.6.0 release.
+test('series files are normalised point by point, not just at the top level', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'spd-corrupt-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'deltas.json'), JSON.stringify({
+      good: [null, 42, 'x', { value: 5 }, { date: 'd1', value: 'not a number' },
+             { date: 'd2', value: NaN }, { date: 'd3', value: 7, task: 'T' }],
+      empty: [],
+      wrong: 'not an array',
+    }));
+    fs.writeFileSync(path.join(dir, 'impact.json'), JSON.stringify({
+      m: [null, { date: 'd', value: 1, task: 'T' }],
+    }));
+    const d = new DataReader(dir).readAll();
+    assert.deepEqual(d.deltas.good, [{ date: 'd3', value: 7, task: 'T' }], 'only the usable point survives');
+    assert.equal(d.deltas.empty, undefined, 'a series with nothing usable is dropped entirely');
+    assert.equal(d.deltas.wrong, undefined);
+    assert.equal(d.impact.m.length, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a corrupt series file never stops the dashboard rendering', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'spd-corrupt2-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'run_history.json'), JSON.stringify([null, 42, 'x']));
+    fs.writeFileSync(path.join(dir, 'deltas.json'), JSON.stringify({ a: [null, { value: Infinity }] }));
+    fs.writeFileSync(path.join(dir, 'impact.json'), JSON.stringify('not even an object'));
+    const d = new DataReader(dir).readAll();
+    const html = renderSections(d, settings(), { now: new Date(), surface: 'panel', trusted: true, collapsed: [] });
+    assert.equal(typeof html, 'string');
+    assert.doesNotMatch(html, /NaN|Infinity|undefined/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

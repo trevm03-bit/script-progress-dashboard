@@ -4,7 +4,7 @@
 // card. No vscode import, so it is testable with plain Node.
 import * as fs from 'fs';
 import * as path from 'path';
-import { AccessGraph, DashboardData, DeltaSeries, ImpactSeries, ProgressData, RunOverlay, RunRecord } from './types';
+import { AccessGraph, DashboardData, DeltaPoint, DeltaSeries, ImpactPoint, ImpactSeries, ProgressData, RunOverlay, RunRecord } from './types';
 import { parseIso } from './logic/time';
 
 export const FILES = {
@@ -55,8 +55,12 @@ export class DataReader {
       progress: main,
       tasks,
       history: Array.isArray(history) ? history.filter(isRun) : [],
-      deltas: deltas && typeof deltas === 'object' && !Array.isArray(deltas) ? deltas : {},
-      impact: impact && typeof impact === 'object' && !Array.isArray(impact) ? impact : {},
+      // Series files are normalised POINT BY POINT, not just at the top level. A single null or
+      // malformed entry — a hand edit, a half-written file, an import from elsewhere — used to
+      // throw inside a renderer, and a renderer that throws blanks the whole dashboard. The one
+      // bad point is dropped; everything around it still draws.
+      deltas: normalizeSeries(deltas, isDeltaPoint),
+      impact: normalizeSeries(impact, isImpactPoint),
       access: access && Array.isArray((access as AccessGraph).nodes) ? access : null,
       overlays: this.overlays,
       logsDir: this.logsDir,
@@ -125,6 +129,32 @@ export class DataReader {
 
 function isProgress(p: unknown): p is ProgressData {
   return !!p && typeof p === 'object' && typeof (p as ProgressData).task === 'string' && typeof (p as ProgressData).status === 'string';
+}
+
+/** Keep the shape { name: [point, ...] }, dropping anything that is not a usable point. */
+function normalizeSeries<T>(value: unknown, ok: (p: unknown) => p is T): Record<string, T[]> {
+  const out: Record<string, T[]> = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
+  for (const [name, points] of Object.entries(value as Record<string, unknown>)) {
+    if (!Array.isArray(points)) continue;
+    const kept = points.filter(ok);
+    if (kept.length) out[name] = kept;
+  }
+  return out;
+}
+
+function isDeltaPoint(p: unknown): p is DeltaPoint {
+  return !!p && typeof p === 'object'
+    && typeof (p as DeltaPoint).date === 'string'
+    && typeof (p as DeltaPoint).value === 'number'
+    && isFinite((p as DeltaPoint).value);
+}
+
+function isImpactPoint(p: unknown): p is ImpactPoint {
+  return !!p && typeof p === 'object'
+    && typeof (p as ImpactPoint).date === 'string'
+    && typeof (p as ImpactPoint).value === 'number'
+    && isFinite((p as ImpactPoint).value);
 }
 
 function isRun(r: unknown): r is RunRecord {

@@ -86,8 +86,12 @@ class DataReader {
             progress: main,
             tasks,
             history: Array.isArray(history) ? history.filter(isRun) : [],
-            deltas: deltas && typeof deltas === 'object' && !Array.isArray(deltas) ? deltas : {},
-            impact: impact && typeof impact === 'object' && !Array.isArray(impact) ? impact : {},
+            // Series files are normalised POINT BY POINT, not just at the top level. A single null or
+            // malformed entry — a hand edit, a half-written file, an import from elsewhere — used to
+            // throw inside a renderer, and a renderer that throws blanks the whole dashboard. The one
+            // bad point is dropped; everything around it still draws.
+            deltas: normalizeSeries(deltas, isDeltaPoint),
+            impact: normalizeSeries(impact, isImpactPoint),
             access: access && Array.isArray(access.nodes) ? access : null,
             overlays: this.overlays,
             logsDir: this.logsDir,
@@ -174,6 +178,32 @@ class DataReader {
 exports.DataReader = DataReader;
 function isProgress(p) {
     return !!p && typeof p === 'object' && typeof p.task === 'string' && typeof p.status === 'string';
+}
+/** Keep the shape { name: [point, ...] }, dropping anything that is not a usable point. */
+function normalizeSeries(value, ok) {
+    const out = {};
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+        return out;
+    for (const [name, points] of Object.entries(value)) {
+        if (!Array.isArray(points))
+            continue;
+        const kept = points.filter(ok);
+        if (kept.length)
+            out[name] = kept;
+    }
+    return out;
+}
+function isDeltaPoint(p) {
+    return !!p && typeof p === 'object'
+        && typeof p.date === 'string'
+        && typeof p.value === 'number'
+        && isFinite(p.value);
+}
+function isImpactPoint(p) {
+    return !!p && typeof p === 'object'
+        && typeof p.date === 'string'
+        && typeof p.value === 'number'
+        && isFinite(p.value);
 }
 function isRun(r) {
     return !!r && typeof r === 'object' && typeof r.task === 'string' && typeof r.date === 'string';
