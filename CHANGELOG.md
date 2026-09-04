@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1 — 2026-09-03
+
+- README install commands and the unpacked-folder template name the current package. No code changes.
+
 ## 1.2.0 — 2026-09-03
 
 Three new sections, anomaly detection, a shareable report, and a constellation worth staring at.

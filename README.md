@@ -54,7 +54,7 @@ editor tab — which is where the Access Map is drawn at size.
 **With the `code` command**
 
 ```
-code --install-extension script-progress-dashboard-1.1.0.vsix
+code --install-extension script-progress-dashboard-1.2.1.vsix
 ```
 
 **From the Extensions view**
@@ -67,7 +67,7 @@ Copy the folder — you need `package.json`, `out/`, `media/`, `schemas/`, `snip
 `LICENSE`, `README.md`; `node_modules` is not needed — to:
 
 ```
-%USERPROFILE%\.vscode\extensions\trevor-marshall.script-progress-dashboard-1.1.0\
+%USERPROFILE%\.vscode\extensions\trevor-marshall.script-progress-dashboard-1.2.1\
 ```
 
 On VS Code 1.136 that is not enough on its own: VS Code only loads folders listed in
@@ -489,7 +489,7 @@ npm install          # TypeScript, types and Codicons — dev-time only
 npm run compile      # tsc -> out/  (also refreshes media/codicons/)
 npm test             # node --test, no VS Code download needed
 python python/test_progress.py
-npm run package      # dist/script-progress-dashboard-1.1.0.vsix, via npx @vscode/vsce
+npm run package      # dist/script-progress-dashboard-1.2.1.vsix, via npx @vscode/vsce
 ```
 
 Press **F5** in this folder to launch an Extension Development Host on the demo workspace.
