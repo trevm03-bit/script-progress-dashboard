@@ -36,6 +36,24 @@ export function renderSections(data: DashboardData, settings: Settings, ctx: Ren
   const collapsed = new Set(ctx.collapsed ?? []);
   const o = (id: SectionId): SectionOpts => ({ collapsed: collapsed.has(id), collapsible: settings.dashboard.collapsible, icon: SECTION_ICONS[id] });
 
+  // Before anything has ever reported, eight empty cards is a worse answer than one clear one.
+  // This is the first thing a Marketplace installer sees, and the sections have nothing to say
+  // yet by definition — so say what to do instead of showing eight ways of saying "nothing".
+  const nothingEverReported = !data.progress && data.tasks.length === 0 && data.history.length === 0;
+  if (nothingEverReported && !data.readErrors.length) {
+    const where = data.logsDirExists ? `Watching <code>${esc(data.logsDir)}</code>.` : `It will watch <code>${esc(data.logsDir)}</code>, which does not exist yet.`;
+    return `<div class="empty-state">
+  <div class="es-icon">${icon('pulse')}</div>
+  <div class="es-title">No script has reported yet</div>
+  <div class="es-text">Add five lines to a script and it appears here — live progress, run history, and what each run found.<br>${where}</div>
+  <div class="es-actions">
+    <button class="btn" data-msg="simulate">${icon('beaker')}<span>Simulate a demo run</span></button>
+    <button class="btn btn-secondary" data-msg="walkthrough">${icon('book')}<span>Getting started</span></button>
+    <button class="btn btn-secondary" data-msg="layout">${icon('layout')}<span>Choose a layout</span></button>
+  </div>
+</div>`;
+  }
+
   if (data.readErrors.length) {
     parts.push(`<div class="read-errors">${icon('info')} ${data.readErrors.map(esc).join('<br>')}</div>`);
   }

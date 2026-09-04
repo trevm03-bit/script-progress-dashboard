@@ -21,7 +21,12 @@ export function readSettings(): Settings {
   const sections = {} as SectionConfig;
   const defaults: SectionConfig = {
     summary: true, activeTask: true, warnings: true, lastCompleted: true, runHistory: true, timeline: true,
-    quickActions: false, processCalendar: false, deltaTracker: false, metrics: false, warningTrends: false, scriptHealth: false, accessMap: false,
+    // On by default only where a section is useful with NO configuration and will not sit empty
+    // once scripts are reporting: Script Health derives from run history alone, and the Process
+    // Calendar is the question this tool exists to answer — its empty state offers the setting
+    // rather than dead-ending.
+    quickActions: false, processCalendar: true, deltaTracker: false, metrics: false,
+    warningTrends: false, scriptHealth: true, accessMap: false,
     // Pending Actions is ON by default: an outstanding item nobody sees is the failure this
     // section exists to prevent, and it renders as a single quiet line when there is nothing.
     pendingActions: true, impact: false,

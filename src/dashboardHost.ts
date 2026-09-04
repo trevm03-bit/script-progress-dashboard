@@ -185,6 +185,7 @@ export class DashboardHost {
       case 'simulate': await vscode.commands.executeCommand('scriptProgress.simulateRun'); break;
       case 'copySummary': await vscode.commands.executeCommand('scriptProgress.copyDailySummary'); break;
       case 'walkthrough': await vscode.commands.executeCommand('scriptProgress.openWalkthrough'); break;
+      case 'layout': await vscode.commands.executeCommand('scriptProgress.chooseLayout'); break;
     }
   }
 

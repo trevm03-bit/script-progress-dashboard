@@ -44,10 +44,19 @@ Python and Node reporters are just the two that ship.
 
 ## The views
 
-Fifteen sections. **Six are on out of the box** — enough to be useful the moment a script reports —
-and the rest are a checkbox away, in **Script Progress: Choose Dashboard Sections…** or Settings.
-Every one can be reordered, collapsed, and shown or hidden independently in the sidebar and the
-editor tab.
+Fifteen sections. **Nine are on out of the box** — enough to answer *did it run, what did it find,
+is it holding together* the moment a script reports — and the rest are one click away.
+
+**Script Progress: Choose a Layout…** switches the whole set in one go:
+
+| Layout | For |
+|---|---|
+| **Essentials** | Just what is running and what happened — progress, warnings, history, timeline. |
+| **Operations** | Essentials plus the schedule, health, buttons, metrics and trends. The default shape, plus the parts that need a little configuration. |
+| **Everything** | Every section, including the Access Map, Metrics Explorer and Impact Summary. |
+
+Or turn them on individually in **Choose Dashboard Sections…** or Settings. Every section can be
+reordered, collapsed, and shown or hidden independently in the sidebar and the editor tab.
 
 ### On by default
 
@@ -60,17 +69,17 @@ editor tab.
 | **Last Completed** | The most recent finished run: pass or fail, duration, warning count, its summary line, and its metrics as cards. |
 | **Run History** | A table of recent runs — status, task, date, duration, warnings, summary. Filter by text or by chips (OK / failed / with warnings / slow), sort any column, and expand a row for its metrics with the change since the previous run, its warnings in full, the resources it touched, its artifacts, who ran it and from which commit. Flags runs that were unusually **slow** or over their **SLA**, and metrics that landed far from their own history. Every row offers **Compare with…**. |
 | **Run Timeline** | Swim lanes per script over the last day (or week), showing when each run happened, how long it took and what overlapped with what. |
+| **Script Health** | One row per script: when it last ran, a dot per recent result, its failure rate, its duration trend, and whether it has gone stale against the freshness you expect. Needs no configuration — it reads run history. |
+| **Process Calendar** | The daily, weekly and monthly processes you expect, and whether each has actually run in its period. Per row: a status mark, a plain-English note, a dot per recent period with a compliance percentage (*ran in 11 of the last 12*), when it is next due, and a month grid of every run. Understands **phases** (`2 of 3 phases` until all are done), **dependencies** (*blocked — waiting on Upstream Extract*), processes that have never reported (*not wired yet*, never "overdue"), and reminders a set number of days before a due date. Empty until you list your processes in settings. |
 
 ### Switch on as you need them
 
 | Section | What it shows |
 |---|---|
-| **Process Calendar** | The daily, weekly and monthly processes you expect, and whether each has actually run in its period. Per row: a status mark, a plain-English note, a dot per recent period with a compliance percentage (*ran in 11 of the last 12*), when it is next due, and a month grid of every run. Understands **phases** (`2 of 3 phases` until all are done), **dependencies** (*blocked — waiting on Upstream Extract*), processes that have never reported (*not wired yet*, never "overdue"), and reminders a set number of days before a due date. |
 | **Quick Actions** | Buttons that run your scripts, grouped however you like, in a reusable terminal or as VS Code tasks. Each shows its task's last result, disables itself while that task is running, can require confirmation, can ask for a value before running (`${prompt:Month}`), and can disable itself with a reason when the last run says it is not needed. |
 | **Delta Tracker** | A sparkline per tracked metric with its current value, min, max, change and trend. Draws your acceptable range as guide lines and a separate **target** line, flags values outside the range, and when one run measured the same thing twice it reads *found 4.2K, resolved to 0*. |
 | **Metrics Explorer** | Every metric each script reports, run by run: a table with a sparkline per numeric metric, the change against the previous run, and a **total** and mean across the runs in view — so a per-run cost or row count reads as a period figure. |
 | **Warning Trends** | Which warnings keep coming back, on which scripts, and whether they are rising or falling over the window. Groups by the category your script gave the warning when it gave one, otherwise by wording, so *"310 issues"* and *"311 issues"* count as the same recurring finding. |
-| **Script Health** | One row per script: when it last ran, a dot per recent result, its failure rate, its duration trend, and whether it has gone stale against the freshness you expect. |
 | **Impact Summary** | Running totals of what your scripts have contributed via `Progress.impact()` — overall, this month, and how many runs are behind each figure. |
 | **Access Map** | A constellation of your scripts and the files, tables and services they touch, drawn from `p.access()` calls. Write edges stand out from reads; click any node for its lineage — what feeds it, and which scripts break if it fails. Force or radial layout, search, filter by type, a minimap, replay of the last run, and PNG export. Shows only what scripts declared, so treat it as a floor rather than a complete picture. |
 

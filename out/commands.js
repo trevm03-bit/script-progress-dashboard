@@ -312,6 +312,46 @@ function registerCommands(context, cx) {
         if (pick === OPEN)
             await vscode.env.openExternal(vscode.Uri.file(file));
     });
+    reg('scriptProgress.chooseLayout', async () => {
+        // Presets rather than a second extension. The difference between "track my scripts" and a
+        // full operations view is which sections are on, so it is one command — not a fork, and not
+        // fifteen checkboxes for someone who has just installed it.
+        const LAYOUTS = [
+            {
+                label: '$(list-flat) Essentials',
+                detail: 'Just what is running and what happened — progress, warnings, history, timeline.',
+                on: ['summary', 'activeTask', 'pendingActions', 'warnings', 'lastCompleted', 'runHistory', 'timeline'],
+            },
+            {
+                label: '$(dashboard) Operations',
+                detail: 'Essentials plus the schedule, health, buttons, metrics and trends. Needs a little configuration.',
+                on: ['summary', 'activeTask', 'pendingActions', 'warnings', 'lastCompleted', 'runHistory', 'timeline',
+                    'processCalendar', 'scriptHealth', 'quickActions', 'deltaTracker', 'warningTrends'],
+            },
+            {
+                label: '$(three-bars) Everything',
+                detail: 'Every section, including the Access Map, Metrics Explorer and Impact Summary.',
+                on: [...types_1.ALL_SECTIONS],
+            },
+        ];
+        const pick = await vscode.window.showQuickPick(LAYOUTS.map(l => ({ label: l.label, detail: l.detail, layout: l })), { title: 'Choose a layout', placeHolder: 'Sections you can still turn on and off individually afterwards' });
+        if (!pick)
+            return;
+        const wanted = new Set(pick.layout.on);
+        const cfg = vscode.workspace.getConfiguration('scriptProgress');
+        const target = vscode.workspace.workspaceFolders ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+        try {
+            for (const id of types_1.ALL_SECTIONS)
+                await cfg.update(`sections.${id}`, wanted.has(id), target);
+        }
+        catch (e) {
+            void vscode.window.showErrorMessage(`Could not save the layout: ${e.message}`);
+            return;
+        }
+        const needsSetup = ['processCalendar', 'quickActions'].filter(id => wanted.has(id));
+        void vscode.window.showInformationMessage(`Layout set.${needsSetup.length ? ' Process Calendar and Quick Actions need a little configuration before they show anything.' : ''}`, ...(needsSetup.length ? ['Open Settings'] : [])).then(p2 => { if (p2)
+            void vscode.commands.executeCommand('scriptProgress.openSettings'); });
+    });
     reg('scriptProgress.exportReport', async () => {
         const data = cx.getData();
         const stamp = new Date().toISOString().slice(0, 10);
@@ -430,6 +470,7 @@ function registerCommands(context, cx) {
         items.push({ label: '$(file-pdf) Export HTML Report', run: () => vscode.commands.executeCommand('scriptProgress.exportReport') });
         items.push({ label: '$(history) Show Run History', run: () => vscode.commands.executeCommand('scriptProgress.showHistory') });
         items.push({ label: '$(folder-opened) Open Logs Folder', run: () => vscode.commands.executeCommand('scriptProgress.openLogsFolder') });
+        items.push({ label: '$(layout) Choose a Layout…', run: () => vscode.commands.executeCommand('scriptProgress.chooseLayout') });
         items.push({ label: '$(settings-gear) Settings', run: () => vscode.commands.executeCommand('scriptProgress.openSettings') });
         const pick = await vscode.window.showQuickPick(items, { title: 'Script Progress', placeHolder: running.length ? `${running.length} running` : 'Nothing running' });
         if (pick?.run)

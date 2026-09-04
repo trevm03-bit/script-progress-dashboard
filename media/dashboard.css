@@ -183,6 +183,8 @@ body.surface-map #sections { flex: 1; display: flex; flex-direction: column; min
 .mx-total, .mx-total-h { text-align: right; white-space: nowrap; padding-left: 10px; border-left: 1px solid var(--sp-border); }
 .mx-total { font-variant-numeric: tabular-nums; }
 .es-icon { font-size: 28px; opacity: 0.5; margin-bottom: 8px; }
+.es-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 4px; }
+.btn.btn-secondary { background: transparent; color: var(--vscode-foreground); border: 1px solid var(--sp-border); }
 .es-icon .codicon { font-size: 28px; }
 .es-title { font-size: 14px; font-weight: 600; color: var(--vscode-foreground); }
 .es-text { font-size: 12px; margin: 4px 0 12px; }

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Script Progress Dashboard - Python reporter (v1.2).
+Script Progress Dashboard - Python reporter (v1.3).
 
 Drop this file into your project (for example scripts/lib/progress.py) and call it from any
 long-running script. It writes small JSON files that the VS Code extension watches. Nothing
@@ -69,7 +69,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 __all__ = ["Progress", "resolve_logs_dir"]
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 
 # Windows consoles default to cp1252; a stray non-ASCII character in a summary must never
 # crash the script that is doing the real work.

@@ -237,6 +237,9 @@ class DashboardHost {
             case 'walkthrough':
                 await vscode.commands.executeCommand('scriptProgress.openWalkthrough');
                 break;
+            case 'layout':
+                await vscode.commands.executeCommand('scriptProgress.chooseLayout');
+                break;
         }
     }
     shell(webview) {

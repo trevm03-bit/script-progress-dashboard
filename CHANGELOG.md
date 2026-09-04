@@ -1,5 +1,75 @@
 # Changelog
 
+## 1.6.0 — 2026-09-04
+
+The operations release. The tool always watched scripts; this is the version that answers the
+question underneath — *did it run, what did it find, and is it holding together.*
+
+**New views**
+
+- **Pending Actions** (on by default) — findings your scripts mark `actionable=True`, from each
+  script's most recent *successful* run. Derived, never stored, so an item clears itself when a
+  later successful run stops reporting it. A failed run never clears one.
+- **Impact Summary** — running totals from the new `Progress.impact()`: overall, this month, and
+  how many runs are behind each figure.
+- **Coverage** in the summary strip — schedule adherence, run success and metrics-in-range, with
+  its inputs and weights printed on the page beside it. Deliberately not called a data-quality
+  score: this extension can see whether jobs ran and what they reported about themselves, not
+  your data.
+
+**The calendar answers more**
+
+- `dependsOn` gives a **blocked** state — *waiting on Upstream Extract* — instead of blaming a
+  downstream process for something it cannot act on.
+- Per-process **compliance over time**: a dot per period and a percentage. Periods before a
+  process first ran are shown hollow and excluded, so a new process is never "0% for the year".
+- `reminderDays` warns before a due date rather than only after it is missed.
+
+**Finding things sooner**
+
+- **Metric regressions** — the anomaly detector now watches the numbers, not just the clock. Rows
+  falling from 4,000 to 200 is the signal duration alone never gives you.
+- **Structured warnings** — `count`, `category`, `severity`, `actionable`, all optional and
+  backward compatible. Warning Trends groups by category when it is there.
+- **Failure categories** — `p.fail("token expired", category="auth")`, so repeat trouble reads as
+  *2 of the last 6 failures were auth*.
+
+**Getting things out**
+
+- **Generate Runbook** — a Markdown runbook from what the extension has observed, opening with a
+  DRAFT banner and marking every gap it knows it cannot see. The steps a person performs are
+  invisible to it, and it says so rather than presenting a tidy list with a missing step.
+- **Copy Digest for Email (formatted)** — the weekly digest as rich text, with a rendered-file
+  fallback where the clipboard route is unavailable.
+- **Who ran it and from which commit**, recorded per run. Both opt-out; excluded from shared
+  exports unless you turn `report.includeIdentity` on.
+
+**Fit and finish**
+
+- A real first-run: one welcome panel with a way forward, instead of eight empty cards.
+- **Choose a Layout…** — Essentials, Operations or Everything in one click. Process Calendar and
+  Script Health are now on by default.
+- Buttons can disable themselves with a reason when the last run says they are not needed.
+- Five more snippets: query, load, reconciliation, file ETL and a shell script using the CLI.
+- A target line on the Delta Tracker, totals in Metrics Explorer, and the first warning inline in
+  Run History.
+
+**Fixed**
+
+- The summary strip announced a never-reported process as *next due — overdue* while the calendar
+  called it *not wired yet*. Two views of one fact must not disagree.
+- Currency symbols sat after the number (`-25.00$`).
+- A single malformed point in `deltas.json` or `impact.json` threw inside a renderer and blanked
+  the dashboard.
+- A CLI-driven run lost every warning past the first ten, actionable ones included.
+- Metric regressions were inverted for metrics whose usual value is negative.
+- `powershell.exe` and `git` were launched by bare name, which Windows resolves against the
+  working directory before PATH.
+- `logsPath` plus `events.file` let an untrusted workspace choose where a file was written. Both
+  are now restricted, and the writer refuses without trust.
+
+Reporter 1.3.0. 172 Node tests, 30 Python tests.
+
 ## 1.5.0 — 2026-09-04
 
 From "did it run?" to "what did it find?". A second round of field proposals, triaged; the ones

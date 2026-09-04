@@ -229,3 +229,30 @@ test('read errors are surfaced', () => {
   assert.match(html, /read-errors/);
   assert.match(html, /progress\.json: not valid JSON/);
 });
+
+// ---------------------------------------------------------------- first run
+test('a brand-new install shows one welcome panel, not a stack of empty cards', () => {
+  const blank = { progress: null, tasks: [], history: [], deltas: {}, impact: {}, access: null,
+    overlays: [], logsDir: 'C:/proj/logs', logsDirExists: false, readErrors: [] };
+  const html = renderSections(blank, S(), ctx());
+  assert.equal([...html.matchAll(/data-section=/g)].length, 0, 'no section cards before anything has reported');
+  assert.match(html, /No script has reported yet/);
+  // It must offer a way forward, not just state the problem.
+  for (const msg of ['simulate', 'walkthrough', 'layout']) {
+    assert.match(html, new RegExp(`data-msg="${msg}"`), `offers ${msg}`);
+  }
+});
+
+test('the welcome panel yields as soon as anything has reported', () => {
+  const oneRun = { progress: null, tasks: [], history: [{ task: 'T', date: new Date().toISOString(), success: true, elapsed: 5, summary: 'ok', warnings: 0 }],
+    deltas: {}, impact: {}, access: null, overlays: [], logsDir: 'C:/proj/logs', logsDirExists: true, readErrors: [] };
+  const html = renderSections(oneRun, S(), ctx());
+  assert.ok([...html.matchAll(/data-section=/g)].length > 0, 'the real dashboard comes back');
+  assert.doesNotMatch(html, /No script has reported yet/);
+});
+
+test('a read error is shown rather than hidden behind the welcome panel', () => {
+  const broken = { progress: null, tasks: [], history: [], deltas: {}, impact: {}, access: null,
+    overlays: [], logsDir: 'C:/proj/logs', logsDirExists: true, readErrors: ['run_history.json: broken'] };
+  assert.match(renderSections(broken, S(), ctx()), /broken/);
+});
