@@ -77,6 +77,8 @@ export interface AccessEdge {
   mode: 'read' | 'write';
   count: number;
   lastSeen: string;
+  /** Optional note from the reporter about what was actually done, e.g. "5 records updated". */
+  detail?: string;
 }
 export interface AccessGraph {
   nodes: AccessNode[];
@@ -122,6 +124,12 @@ export interface ProcessConfig {
   dueHour?: number;
   /** SLA: a run of this process longer than this many minutes is flagged (and notified if enabled). */
   maxMinutes?: number;
+  /**
+   * Task names of the phases this process is made of, when it is not one script. The process
+   * counts as done only when every phase has run successfully in the period; until then it
+   * reports "2 of 3 phases". Each name is matched as a prefix, like `name` itself.
+   */
+  subtasks?: string[];
 }
 
 export interface QuickActionConfig {
@@ -198,6 +206,7 @@ export interface Settings {
   health: { resultDots: number };
   accessMap: { maxNodes: number; layout: 'force' | 'radial'; timeWindowDays: number; labels: 'auto' | 'all' | 'scripts'; sidebarPreview: boolean; replay: boolean; ambient: boolean; halos: boolean; glyphs: boolean; minimap: boolean; starfield: boolean };
   notifications: { onComplete: boolean; onFail: boolean; onStall: boolean; onWarning: boolean; onExit: boolean; onSlow: boolean; mirrorProgress: boolean };
+  events: { file: boolean };
   statusBar: { enabled: boolean; idleMode: 'last' | 'hidden'; clickAction: 'menu' | 'dashboard' };
   badge: 'running' | 'failures' | 'off';
 }

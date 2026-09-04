@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.4.0 — 2026-09-04
+
+Coverage for work that is not a Python script, and a calendar that stops asserting things that
+are not true. From the same field review as 1.3.1.
+
+- **The reporter has a command line.** `python progress.py start|step|warn|metric|access|
+  complete …` — so a shell script, a scheduled task, a Makefile or an agent can report progress
+  without importing anything. One run spans many processes: `start` creates it, later commands
+  resume it from its file, `complete` closes it, and the run id, start time, warnings and metrics
+  carry across all of them. Exit codes are `0` / `1` (usage) / `2` (nothing to attach to), and
+  `complete` on a finished run is a no-op so a shell trap can call it unconditionally.
+  - Two runs can share a task name — two agents both running the same thing. `start --print-id`
+    hands back the run id and `--run <id>` on later calls makes a displaced run **fail loudly**
+    instead of silently writing its steps into the run that took the slot.
+- **Multi-phase processes.** A process can declare `subtasks`, and then reads `2 of 3 phases`
+  with a pip per phase until every phase has run successfully in the period. Previously a process
+  whose phases run on different days went green the moment the first one landed, which is worse
+  than showing nothing: it reported a state that was not true.
+- **A process that has never reported is "not wired yet", not overdue.** Permanent red for
+  something that was never connected trains you to ignore red, which costs the calendar the one
+  signal it exists to give. It is excluded from the overdue count and shown in its own muted state.
+- **`access()` takes a `detail`**: `p.access("table", "sales.orders", "write", detail="5 records
+  updated")`. The Access Map shows it under the resource name, so a write can say what it changed
+  rather than only that it happened.
+- **Optional local event file.** Turn on `scriptProgress.events.file` and the extension writes
+  `last_event.json` on complete / failed / stalled / exited, for a watcher outside VS Code. Off by
+  default, atomically written, and the only file the extension ever writes. There is deliberately
+  no webhook: an outbound request would break the no-network promise that makes this installable
+  where the alternatives are not.
+
+Reporter version 1.2.0. **Copy `python/progress.py` out of the installed extension again** — the
+command line only exists in this version.
+
 ## 1.3.1 — 2026-09-04
 
 Setup friction, all of it from a first independent install on someone else's machine. Nothing

@@ -44,6 +44,11 @@ const s = settings({
     { name: 'Demo Pipeline', label: 'Demo', frequency: 'daily', maxMinutes: 1 },
     { name: 'Nightly', label: 'Nightly', frequency: 'daily' },
     { name: 'Weekly Rollup', label: 'Weekly', frequency: 'weekly' },
+    // A multi-phase process and one nothing has ever reported: the two states you cannot
+    // produce from the demo log files alone.
+    { name: 'Quarter Close', label: 'Quarter Close', frequency: 'monthly', dayOfMonth: 25,
+      subtasks: ['Quarter Close Phase 1', 'Quarter Close Phase 2', 'Quarter Close Phase 3'] },
+    { name: 'Never Wired', label: 'Never Wired', frequency: 'daily' },
   ],
 });
 s.accessMap.starfield = false;

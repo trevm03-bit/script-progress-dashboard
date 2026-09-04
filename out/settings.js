@@ -148,6 +148,9 @@ function readSettings() {
             onSlow: bool('notifications.onSlow', false),
             mirrorProgress: bool('notifications.mirrorProgress', false),
         },
+        events: {
+            file: bool('events.file', false),
+        },
         statusBar: {
             enabled: bool('statusBar.enabled', true),
             idleMode: str('statusBar.idleMode', 'last', ['last', 'hidden']),

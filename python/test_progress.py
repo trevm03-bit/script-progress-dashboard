@@ -262,6 +262,122 @@ class ProgressTests(unittest.TestCase):
         r2 = subprocess.run([sys.executable, str(HERE / "progress.py"), str(self.tmp / "nowhere")], capture_output=True, text=True, timeout=30)
         self.assertEqual(r2.returncode, 1)
 
+
+    # ---- command line: reporting from things that are not Python -----------------------
+    def cli(self, *args, expect=0):
+        """Run progress.py as a separate process, the way a shell script or an agent would."""
+        r = subprocess.run(
+            [sys.executable, str(HERE / "progress.py"), *[str(a) for a in args], "--logs", str(self.logs)],
+            capture_output=True, text=True, timeout=30,
+        )
+        if expect is not None:
+            self.assertEqual(r.returncode, expect, "args={} stdout={} stderr={}".format(args, r.stdout, r.stderr))
+        return r
+
+    def test_cli_run_spans_separate_processes(self):
+        self.cli("start", "Shell Job", "--total", "3", "--quiet")
+        self.cli("step", "Shell Job", 1, 3, "Reading", "--quiet")
+        self.cli("warn", "Shell Job", "12 rows had no customer id", "--quiet")
+        self.cli("metric", "Shell Job", "rows_loaded", 3990, "--quiet")
+        self.cli("artifact", "Shell Job", "out/report.xlsx", "--quiet")
+        self.cli("delta", "Shell Job", "drift", 0.5, "--quiet")
+        self.cli("access", "Shell Job", "table", "sales.orders", "--mode", "write", "--detail", "5 rows", "--quiet")
+        # Mid-run, the slot is one coherent run, not six.
+        mid = self.read("progress.json")
+        self.assertEqual(mid["status"], "running")
+        self.assertEqual(mid["step"], 1)
+        self.assertEqual(mid["metrics"]["rows_loaded"], 3990)
+        self.assertEqual(len(mid["warnings"]), 1)
+        run_id = mid["runId"]
+
+        self.cli("complete", "Shell Job", "--summary", "INSERT: 3,990 rows", "--quiet")
+        rows = self.read("run_history.json")
+        self.assertEqual(len(rows), 1, "the whole CLI sequence must be ONE history row")
+        row = rows[0]
+        self.assertEqual(row["runId"], run_id, "the run id must survive across processes")
+        self.assertTrue(row["success"])
+        self.assertEqual(row["warnings"], 1)
+        self.assertEqual(row["metrics"]["rows_loaded"], 3990)
+        self.assertEqual(row["artifacts"], ["out/report.xlsx"])
+        self.assertIn("table:sales.orders", row["accessed"])
+        self.assertGreater(row["elapsed"], 0)
+        self.assertEqual(len(self.read("deltas.json")["drift"]), 1)
+        edge = [e for e in self.read("access.json")["edges"] if e["mode"] == "write"][0]
+        self.assertEqual(edge["detail"], "5 rows")
+
+    def test_cli_failure_is_recorded(self):
+        self.cli("start", "Bad Job", "--quiet")
+        self.cli("complete", "Bad Job", "--fail", "--summary", "source file missing", "--quiet")
+        row = self.read("run_history.json")[0]
+        self.assertFalse(row["success"])
+        self.assertEqual(row["summary"], "source file missing")
+
+    def test_cli_without_a_run_says_so_and_complete_is_a_no_op(self):
+        r = self.cli("step", "Ghost", 1, 2, "nope", expect=2)
+        self.assertIn("No run in progress", r.stderr)
+        # A shell trap should be able to call complete unconditionally.
+        self.cli("complete", "Ghost", expect=0)
+        self.assertFalse((self.logs / "run_history.json").exists())
+
+    def test_cli_task_name_from_environment(self):
+        env = dict(os.environ, PROGRESS_TASK="Env Job", PROGRESS_LOGS_DIR=str(self.logs))
+        def run(*args):
+            r = subprocess.run([sys.executable, str(HERE / "progress.py"), *[str(a) for a in args], "--quiet"],
+                               capture_output=True, text=True, timeout=30, env=env)
+            self.assertEqual(r.returncode, 0, r.stderr)
+        run("start")
+        run("step", 1, 2, "working")          # positionals are step args, not the task name
+        run("complete", "--summary", "done")
+        row = self.read("run_history.json")[0]
+        self.assertEqual(row["task"], "Env Job")
+        self.assertEqual(row["summary"], "done")
+
+    def test_cli_repeating_the_task_name_with_the_env_var_still_works(self):
+        env = dict(os.environ, PROGRESS_TASK="Env Job", PROGRESS_LOGS_DIR=str(self.logs))
+        for args in (("start",), ("step", "Env Job", 1, 2, "x"), ("complete", "Env Job", "--summary", "ok")):
+            r = subprocess.run([sys.executable, str(HERE / "progress.py"), *[str(a) for a in args], "--quiet"],
+                               capture_output=True, text=True, timeout=30, env=env)
+            self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.read("run_history.json")[0]["summary"], "ok")
+
+    def test_cli_run_id_guards_against_two_runs_sharing_a_name(self):
+        first = self.cli("start", "Same Name", "--print-id").stdout.strip()
+        self.assertTrue(first)
+        self.cli("step", "Same Name", "--run", first, 1, 2, "fine", "--quiet")
+        second = self.cli("start", "Same Name", "--print-id").stdout.strip()
+        self.assertNotEqual(first, second)
+        # The displaced run must NOT silently write into the run that took the slot.
+        r = self.cli("step", "Same Name", "--run", first, 2, 2, "should fail", expect=2)
+        self.assertIn("no longer the active one", r.stderr)
+        self.cli("complete", "Same Name", "--run", second, "--summary", "ok", "--quiet")
+        self.assertEqual(self.read("run_history.json")[0]["runId"], second)
+
+    def test_cli_rejects_a_typo_instead_of_treating_it_as_a_folder(self):
+        r = self.cli("frobnicate", expect=1)
+        self.assertIn("unknown command", r.stderr)
+
+    def test_resume_keeps_the_original_start_time(self):
+        with redirect_stdout(self.out):
+            p = Progress("Long Job", logs_dir=self.logs)
+        started = self.read("progress.json")["startedAt"]
+        r = Progress.resume("Long Job", logs_dir=self.logs)
+        self.assertEqual(r.started_at, started)
+        self.assertEqual(r.run_id, p.run_id)
+        with redirect_stdout(self.out):
+            r.complete(summary="done")
+        self.assertEqual(self.read("run_history.json")[0]["startedAt"], started)
+
+    def test_access_detail_is_optional_and_the_newest_wins(self):
+        with redirect_stdout(self.out):
+            p = Progress("Detail Job", logs_dir=self.logs)
+            p.access("table", "sales.orders", mode="write")
+            self.assertNotIn("detail", self.read("access.json")["edges"][0])
+            p.access("table", "sales.orders", mode="write", detail="5 records updated")
+            p.access("table", "sales.orders", mode="write", detail="9 records updated")
+        edge = self.read("access.json")["edges"][0]
+        self.assertEqual(edge["detail"], "9 records updated")
+        self.assertEqual(edge["count"], 3)
+
     # ---- logs folder resolution --------------------------------------------------------
     def test_resolve_explicit_arg_wins(self):
         self.assertEqual(resolve_logs_dir("C:/x/logs"), Path("C:/x/logs"))

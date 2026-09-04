@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Script Progress Dashboard - Python reporter (v1.1).
+Script Progress Dashboard - Python reporter (v1.2).
 
 Drop this file into your project (for example scripts/lib/progress.py) and call it from any
 long-running script. It writes small JSON files that the VS Code extension watches. Nothing
@@ -31,6 +31,16 @@ Also:
 
     python progress.py                             # prints the current status (no arguments)
 
+Not a Python script? Every call above has a command-line equivalent, so a shell script, a
+scheduled task or an agent can report too. One run spans many processes:
+
+    python progress.py start    "Nightly Load" --total 3
+    python progress.py step     "Nightly Load" 1 3 "Reading input"
+    python progress.py warn     "Nightly Load" "12 rows had no customer id"
+    python progress.py complete "Nightly Load" --summary "INSERT: 3,990 rows"
+
+See the command line section at the bottom of this file for every command and the flags.
+
 Files written (all in the logs folder, see below):
     progress.json            the most recently written task (status bar + Active Task)
     progress/<slug>.json     one file per task, so concurrent scripts each have a card
@@ -58,7 +68,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 __all__ = ["Progress", "resolve_logs_dir"]
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 # Windows consoles default to cp1252; a stray non-ASCII character in a summary must never
 # crash the script that is doing the real work.
@@ -104,16 +114,7 @@ def resolve_logs_dir(logs_dir=None, module_file=__file__) -> Path:
 
 class Progress:
     def __init__(self, task_name: str, logs_dir=None, quiet: bool = False):
-        self.task_name = task_name
-        self.quiet = quiet
-        self.logs_dir = resolve_logs_dir(logs_dir)
-        self.logs_dir.mkdir(parents=True, exist_ok=True)
-        self.slots_dir = self.logs_dir / "progress"
-        self.progress_file = self.logs_dir / "progress.json"
-        self.slot_file = self.slots_dir / (_slug(task_name) + ".json")
-        self.history_file = self.logs_dir / "run_history.json"
-        self.deltas_file = self.logs_dir / "deltas.json"
-        self.access_file = self.logs_dir / "access.json"
+        self._paths(task_name, logs_dir, quiet)
         self.run_id = datetime.now().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
         self.start_time = time.time()
         self.started_at = _now_iso()
@@ -127,6 +128,72 @@ class Progress:
         self._prior_durations = self._get_prior_durations()
         self._prune_slots()
         self._write()
+
+    def _paths(self, task_name, logs_dir, quiet):
+        """Everything a run needs to know about WHERE it writes. Shared by a new run and a resumed one."""
+        self.task_name = task_name
+        self.quiet = quiet
+        self.logs_dir = resolve_logs_dir(logs_dir)
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        self.slots_dir = self.logs_dir / "progress"
+        self.progress_file = self.logs_dir / "progress.json"
+        self.slot_file = self.slots_dir / (_slug(task_name) + ".json")
+        self.history_file = self.logs_dir / "run_history.json"
+        self.deltas_file = self.logs_dir / "deltas.json"
+        self.access_file = self.logs_dir / "access.json"
+
+    @classmethod
+    def resume(cls, task_name: str, logs_dir=None, quiet: bool = True, run_id: str = ""):
+        """
+        Reattach to a run that an earlier PROCESS started (this is what the command line uses).
+
+        The run lives in its slot file, so a shell script can call this module once per step and
+        every call adds to the same run: same run id, same start time, same accumulated warnings
+        and metrics. Raises LookupError when there is nothing running to attach to, because
+        silently starting a second run would corrupt the elapsed time and the history row.
+
+        `run_id` makes that safe when two runs can share a task name - two agents both running
+        "Morning Scan", say. The slot is keyed by NAME, so the second start takes it over; pass
+        the id that `start` printed and a call belonging to the displaced run fails loudly
+        instead of quietly writing its steps into the other run.
+        """
+        self = cls.__new__(cls)
+        self._paths(task_name, logs_dir, quiet)
+        data = self._read_json(self.slot_file, default=None)
+        if not isinstance(data, dict) or data.get("status") != "running":
+            raise LookupError(
+                f'No run in progress for "{task_name}". Start one first: '
+                f'python progress.py start "{task_name}"'
+            )
+        if run_id and data.get("runId") != run_id:
+            raise LookupError(
+                f'Run {run_id} of "{task_name}" is no longer the active one - the slot now holds '
+                f'{data.get("runId")}. Another run of the same task name took it over; give each '
+                f"concurrent run its own task name, or this run's steps would land in that one."
+            )
+        self.run_id = data.get("runId") or ""
+        self.started_at = data.get("startedAt") or _now_iso()
+        try:
+            self.start_time = datetime.fromisoformat(self.started_at).timestamp()
+        except (ValueError, OSError):
+            # Unparseable timestamp: fall back to the elapsed already recorded, so the clock
+            # keeps moving forward instead of resetting to zero.
+            self.start_time = time.time() - float(data.get("elapsed") or 0)
+        self.warnings = [w for w in (data.get("warnings") or []) if isinstance(w, dict)]
+        self.log_lines = [l for l in (data.get("log") or []) if isinstance(l, dict)]
+        self.metrics = dict(data.get("metrics") or {})
+        self.artifacts = list(data.get("artifacts") or [])
+        self.accessed = list(data.get("accessed") or [])
+        self.completed = False
+        self.current = {
+            "step": int(data.get("step") or 0),
+            "total": int(data.get("totalSteps") or 0),
+            "label": data.get("label") or "Running",
+            "detail": data.get("detail") or "",
+            "substep": data.get("substep"),
+        }
+        self._prior_durations = self._get_prior_durations()
+        return self
 
     # ------------------------------------------------------------------ reporting API
     def step(self, step_num: int, total_steps: int, label: str):
@@ -199,12 +266,15 @@ class Progress:
         deltas[metric_name] = series[-DELTA_KEEP:]
         self._safe_write(self.deltas_file, deltas)
 
-    def access(self, kind: str, name: str, mode: str = "read"):
+    def access(self, kind: str, name: str, mode: str = "read", detail: str = ""):
         """
         Record that this task touched a resource, for the Access Map.
-            kind: 'file' | 'table' | 'api' | 'other'
-            name: anything readable, e.g. 'input/orders.csv', 'sales.orders', 'CRM REST'
-            mode: 'read' (default) or 'write'
+            kind:   'file' | 'table' | 'api' | 'other'
+            name:   anything readable, e.g. 'input/orders.csv', 'sales.orders', 'CRM REST'
+            mode:   'read' (default) or 'write'
+            detail: optional, what was actually done - '5 records updated', 'full reload'.
+                    Shown on the link in the Access Map, so a write can say what it wrote
+                    rather than only that it wrote. The newest detail wins.
         Safe to call many times for the same resource: the edge count just goes up.
         """
         kind = kind if kind in ("file", "table", "api", "other") else "other"
@@ -221,13 +291,19 @@ class Progress:
         nodes[res_id] = {"id": res_id, "type": kind, "label": str(name), "lastSeen": now}
 
         edges = [e for e in graph.get("edges", []) if isinstance(e, dict)]
+        detail = str(detail)[:120] if detail else ""
         for e in edges:
             if e.get("from") == task_id and e.get("to") == res_id and e.get("mode") == mode:
                 e["count"] = int(e.get("count", 0)) + 1
                 e["lastSeen"] = now
+                if detail:
+                    e["detail"] = detail
                 break
         else:
-            edges.append({"from": task_id, "to": res_id, "mode": mode, "count": 1, "lastSeen": now})
+            edge = {"from": task_id, "to": res_id, "mode": mode, "count": 1, "lastSeen": now}
+            if detail:
+                edge["detail"] = detail
+            edges.append(edge)
 
         # Cap: keep every task node, then the most recently seen resources.
         tasks = [n for n in nodes.values() if n.get("type") == "task"]
@@ -455,5 +531,187 @@ def _print_status(logs_dir=None):
     return 0
 
 
+# ---------------------------------------------------------------------------- command line
+#
+# Why this exists: plenty of real work is not a Python script - a shell script, a scheduled
+# task, an agent workflow, a Makefile. Without this, none of it can appear on the dashboard at
+# all. Each command is a separate process, so the run is carried in its slot file rather than in
+# memory: `start` creates it, every later command resumes it, `complete` closes it.
+#
+#   python progress.py start    "Nightly Load" [--total 4]
+#   python progress.py step     "Nightly Load" 1 4 "Reading input"
+#   python progress.py detail   "Nightly Load" "3,990 rows"
+#   python progress.py substep  "Nightly Load" 0.5
+#   python progress.py log      "Nightly Load" "first row looks sane"
+#   python progress.py warn     "Nightly Load" "12 rows had no customer id"
+#   python progress.py metric   "Nightly Load" rows_loaded 3990
+#   python progress.py artifact "Nightly Load" output/report.xlsx
+#   python progress.py delta    "Nightly Load" reconciliation_delta 0.0
+#   python progress.py access   "Nightly Load" table sales.orders --mode write --detail "5 rows"
+#   python progress.py complete "Nightly Load" --summary "INSERT: 3,990 rows"
+#   python progress.py complete "Nightly Load" --fail --summary "source file missing"
+#   python progress.py status                       # what the dashboard would show
+#
+# The task name can be left out of every command after `start` if PROGRESS_TASK is set:
+#   export PROGRESS_TASK="Nightly Load"     (set PROGRESS_TASK=... on Windows)
+#   python progress.py step 1 4 "Reading input"
+# Passing it anyway still works, and --task "Nightly Load" is the explicit form.
+# --logs DIR overrides the logs folder anywhere, as does PROGRESS_LOGS_DIR.
+#
+# Concurrency: a run is identified by its TASK NAME, so two runs sharing a name would fight over
+# the same slot. If that can happen (two agents both running "Morning Scan"), capture the id and
+# pass it back, and a displaced call fails loudly instead of writing into the other run:
+#   RUN=$(python progress.py start "Morning Scan" --print-id)
+#   python progress.py step --run "$RUN" 1 2 "Scanning"
+#   python progress.py complete --run "$RUN" --summary "3 items"
+# Better still, give concurrent runs distinct task names - they are the key for the calendar,
+# history and ETA, so two things sharing one name are indistinguishable everywhere, not just here.
+#
+# Exit codes: 0 fine, 1 usage error, 2 no run to attach to. A reporting failure must never be
+# the reason a job stops, so `complete` is forgiving: closing an already-closed run is not an error.
+
+_COMMANDS = ("start", "step", "detail", "substep", "log", "warn", "metric",
+             "artifact", "delta", "access", "complete", "status")
+
+
+def _cli_usage(problem=""):
+    if problem:
+        print(f"progress.py: {problem}", file=sys.stderr)
+    print(__doc__.split("Files written")[0].strip().splitlines()[0], file=sys.stderr)
+    print("", file=sys.stderr)
+    print("Commands: " + ", ".join(_COMMANDS), file=sys.stderr)
+    print('Example:  python progress.py start "Nightly Load" --total 3', file=sys.stderr)
+    print("Full reference: the command line section at the bottom of this file.", file=sys.stderr)
+    return 1
+
+
+def _take_flag(args, name, has_value=True):
+    """Pull --name [value] out of args, returning the value (or True) and leaving the rest."""
+    if name not in args:
+        return None
+    i = args.index(name)
+    if not has_value:
+        args.pop(i)
+        return True
+    if i + 1 >= len(args):
+        return None
+    args.pop(i)
+    return args.pop(i)
+
+
+def _cli(argv) -> int:
+    args = list(argv)
+    cmd = args.pop(0) if args else "status"
+    if cmd in ("-h", "--help", "help"):
+        return _cli_usage()
+    if cmd not in _COMMANDS:
+        return _cli_usage(f'unknown command "{cmd}"')
+
+    logs_dir = _take_flag(args, "--logs")
+    quiet = _take_flag(args, "--quiet", has_value=False) is not None
+    run_id = _take_flag(args, "--run") or ""
+    print_id = _take_flag(args, "--print-id", has_value=False) is not None
+
+    if cmd == "status":
+        return _print_status(logs_dir or (args[0] if args else None))
+
+    # Which run are we talking about? --task wins; then PROGRESS_TASK; then the first
+    # positional. When PROGRESS_TASK is set, a positional that repeats it is accepted and
+    # skipped, so both documented forms work and neither silently eats a step number.
+    task = _take_flag(args, "--task") or ""
+    env_task = os.environ.get("PROGRESS_TASK", "")
+    if not task:
+        if env_task:
+            task = env_task
+            if args and args[0] == env_task:
+                args.pop(0)
+        elif args and not args[0].startswith("--"):
+            task = args.pop(0)
+    if not task:
+        return _cli_usage("no task name given, and PROGRESS_TASK is not set")
+
+    if cmd == "start":
+        total = _take_flag(args, "--total")
+        p = Progress(task, logs_dir=logs_dir, quiet=quiet)
+        if total:
+            try:
+                p.current["total"] = int(total)
+                p._write()
+            except ValueError:
+                pass
+        if print_id:
+            # Exactly the id and nothing else, so a script can capture it:
+            #   RUN=$(python progress.py start "Nightly Load" --print-id)
+            print(p.run_id)
+        elif not quiet:
+            print(f"[progress] started {task}  (run {p.run_id})")
+        return 0
+
+    try:
+        p = Progress.resume(task, logs_dir=logs_dir, quiet=quiet, run_id=run_id)
+    except LookupError as e:
+        # `complete` on a run that is already closed is a no-op, not a failure: a shell script
+        # with a trap should be able to call it unconditionally.
+        if cmd == "complete":
+            return 0
+        print(f"progress.py: {e}", file=sys.stderr)
+        return 2
+
+    try:
+        if cmd == "step":
+            if len(args) < 3:
+                return _cli_usage('step needs: <step> <total> "<label>"')
+            p.step(int(args[0]), int(args[1]), " ".join(args[2:]))
+        elif cmd == "detail":
+            p.detail(" ".join(args))
+        elif cmd == "substep":
+            p.substep(float(args[0]))
+        elif cmd == "log":
+            p.log(" ".join(args))
+        elif cmd == "warn":
+            p.warn(" ".join(args))
+        elif cmd == "metric":
+            if len(args) < 2:
+                return _cli_usage("metric needs: <name> <value>")
+            raw = " ".join(args[1:])
+            try:
+                value = float(raw)
+                if value.is_integer():
+                    value = int(value)
+            except ValueError:
+                value = raw
+            p.metric(args[0], value)
+        elif cmd == "artifact":
+            p.artifact(" ".join(args))
+        elif cmd == "delta":
+            if len(args) < 2:
+                return _cli_usage("delta needs: <metric> <value>")
+            p.track_delta(args[0], float(args[1]))
+        elif cmd == "access":
+            mode = _take_flag(args, "--mode") or "read"
+            detail = _take_flag(args, "--detail") or ""
+            if len(args) < 2:
+                return _cli_usage('access needs: <kind> <name> [--mode write] [--detail "..."]')
+            p.access(args[0], " ".join(args[1:]), mode=mode, detail=detail)
+        elif cmd == "complete":
+            summary = _take_flag(args, "--summary") or " ".join(args)
+            failed = _take_flag(args, "--fail", has_value=False) is not None
+            p.complete(success=not failed, summary=summary)
+    except (ValueError, IndexError) as e:
+        return _cli_usage(f"{cmd}: {e}")
+    return 0
+
+
 if __name__ == "__main__":
-    sys.exit(_print_status(sys.argv[1] if len(sys.argv) > 1 else None))
+    argv = sys.argv[1:]
+    # Backwards compatible: `python progress.py` and `python progress.py <logsdir>` still print
+    # the status, as they did before commands existed. A first argument that is neither a
+    # command nor an existing folder is a typo, and saying so beats reporting that some
+    # directory has no progress.json in it.
+    if not argv:
+        sys.exit(_print_status(None))
+    if argv[0] not in _COMMANDS and not argv[0].startswith("-"):
+        if Path(argv[0]).is_dir():
+            sys.exit(_print_status(argv[0]))
+        sys.exit(_cli_usage(f'unknown command "{argv[0]}" (and it is not a folder)'))
+    sys.exit(_cli(argv))

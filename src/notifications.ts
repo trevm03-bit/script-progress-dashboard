@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { DashboardData, ProgressData, Settings, TaskState } from './types';
 import { formatDuration, percent, taskState, liveElapsed } from './logic/time';
 import { durationVerdict, slaFor } from './logic/anomaly';
+import { writeEvent } from './eventFile';
 
 interface Seen {
   state: TaskState;
@@ -17,6 +18,8 @@ interface Seen {
 export class Notifier implements vscode.Disposable {
   private seen = new Map<string, Seen>();
   private primed = false;
+  /** Set by the extension; where the optional event file goes. */
+  logsDir = '';
   private mirror: { key: string; resolve: () => void; report: vscode.Progress<{ message?: string; increment?: number }>; pct: number } | undefined;
 
   update(data: DashboardData, settings: Settings): void {
@@ -41,6 +44,18 @@ export class Notifier implements vscode.Disposable {
       }
 
       if (prev.state !== state) {
+        // The event file mirrors the same transitions the notifications use, whether or not
+        // the matching notification is switched on: a watcher wants the event, not the toast.
+        if (settings.events.file && (state === 'complete' || state === 'failed' || state === 'stalled' || state === 'exited')) {
+          const o = state === 'exited' ? data.overlays.find(x => x.task === t.task) : undefined;
+          writeEvent(this.logsDir, {
+            event: state, task: t.task, at: new Date().toISOString(), runId: t.runId,
+            elapsed: t.elapsed, step: t.step, totalSteps: t.totalSteps, label: t.label,
+            detail: t.detail, warnings: t.warnings?.length ?? 0,
+            ...(o ? { exitCode: o.exitCode } : {}),
+            ...(t.metrics && Object.keys(t.metrics).length ? { metrics: t.metrics } : {}),
+          });
+        }
         if (state === 'complete' && n.onComplete) this.info(`✓ ${t.task} completed in ${formatDuration(t.elapsed)}${t.detail ? ` — ${t.detail}` : ''}`);
         if (state === 'complete' && n.onSlow && settings.runHistory.anomalies) {
           const rec = data.history.find(r => (t.runId && r.runId === t.runId) || (r.task === t.task && r.date === t.updatedAt));

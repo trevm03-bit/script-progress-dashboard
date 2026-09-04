@@ -217,6 +217,46 @@ python progress.py                 # reads the folder it would write to
 python progress.py /path/to/logs   # or an explicit one
 ```
 
+### Anything else: the command line
+
+Plenty of real work is not a Python script — a shell script, a scheduled task, a Makefile, an
+agent workflow. Every reporting call has a command-line form, so any of them can appear on the
+dashboard. One run spans many processes; the run lives in its file between calls.
+
+```bash
+python progress.py start    "Nightly Load" --total 3
+python progress.py step     "Nightly Load" 1 3 "Reading input"
+python progress.py access   "Nightly Load" table sales.orders --mode write --detail "5 rows"
+python progress.py warn     "Nightly Load" "12 rows had no customer id"
+python progress.py metric   "Nightly Load" rows_loaded 3990
+python progress.py complete "Nightly Load" --summary "INSERT: 3,990 rows"
+python progress.py complete "Nightly Load" --fail --summary "source file missing"
+```
+
+Also `detail`, `substep`, `log`, `artifact`, `delta`, and `status`. Set `PROGRESS_TASK` once and
+the name can be left off the rest; `--logs DIR` (or `PROGRESS_LOGS_DIR`) picks the logs folder.
+
+Exit codes: `0` fine, `1` a usage error, `2` there was no run to attach to. `complete` on a run
+that is already finished is a no-op, so a shell trap can call it unconditionally:
+
+```bash
+trap 'python progress.py complete "Nightly Load" --fail --summary "aborted"' EXIT
+```
+
+**Two runs sharing a task name.** A run is identified by its name, so a second `start` under the
+same name takes over. If that can happen — two agents both running `Morning Scan` — capture the
+id and pass it back, and a displaced call fails loudly instead of writing its steps into the
+other run:
+
+```bash
+RUN=$(python progress.py start "Morning Scan" --print-id)
+python progress.py step --run "$RUN" 1 2 "Scanning"
+python progress.py complete --run "$RUN" --summary "3 items"
+```
+
+Better still, give concurrent runs distinct names. The task name is the key for the calendar,
+history and ETA, so two things sharing one are indistinguishable everywhere, not just here.
+
 ### Node
 
 `reporters/progress.js` is the same contract with no dependencies (CommonJS). The methods match
@@ -341,6 +381,23 @@ A worked example, in workspace or user `settings.json` (every setting is describ
 | `daily` | `dueHour` (0–23, default 12) | Done if a successful run happened today. Overdue once the local clock passes that hour with no run. |
 | `weekly` | `dayOfWeek` (1 = Monday … 7 = Sunday, default end of week) | Done if a successful run happened since Monday. Overdue past the end of that weekday, or if a whole week was missed. |
 | `monthly` | `dayOfMonth` (1–31, default last day) | Done if a successful run happened this calendar month. Overdue past the end of that day. |
+
+A process that has **never** reported is shown as *not wired yet* rather than overdue. That is
+deliberate: a permanent red for something that was never connected teaches you to ignore red,
+which costs the calendar the only signal it exists to give.
+
+**Processes made of several phases.** When a process is not one script — phases that run on
+different days, sometimes waiting on someone else — list them in `subtasks`:
+
+```json
+{ "name": "Quarter Close", "label": "Quarter Close", "frequency": "monthly", "dayOfMonth": 25,
+  "subtasks": ["Quarter Close Phase 1", "Quarter Close Phase 2", "Quarter Close Phase 3"] }
+```
+
+Each name matches as a prefix, like `name` itself. The process reads `2 of 3 phases` with a pip
+per phase until every one has run successfully in the period, and only then says done. Without
+this, finishing the first phase reports the whole process as done — which is worse than showing
+nothing, because it asserts something untrue.
 
 All date math is local time. `scriptProgress.processCalendar.view` picks `list`, `grid` (a month
 grid per process) or `both`; `scriptProgress.processCalendar.upcoming` adds a "next due" line. A
@@ -536,6 +593,12 @@ The extension reads JSON files in your logs folder and renders them. It makes no
 requests, sends no telemetry, bundles no runtime dependencies, and calls no AI service. The only
 thing it ever executes is a Quick Action command you wrote yourself, in your own terminal — and
 not at all in an untrusted workspace.
+
+It writes nothing, with one opt-in exception: turn on `scriptProgress.events.file` and it writes
+`last_event.json` into your logs folder when a run completes, fails, stalls or exits, so a tool
+outside VS Code can watch for it. That is a local file. There is deliberately no webhook option —
+an outbound request would make the paragraph above false, and that promise is the reason this is
+installable in places that forbid the alternatives.
 
 It activates after startup in every window, and that costs one folder check and a file watcher.
 When the logs folder does not exist, nothing else runs until it appears.

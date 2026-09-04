@@ -40,10 +40,13 @@ exports.Notifier = void 0;
 const vscode = __importStar(require("vscode"));
 const time_1 = require("./logic/time");
 const anomaly_1 = require("./logic/anomaly");
+const eventFile_1 = require("./eventFile");
 class Notifier {
     constructor() {
         this.seen = new Map();
         this.primed = false;
+        /** Set by the extension; where the optional event file goes. */
+        this.logsDir = '';
         this.actions = ['Open Dashboard', 'Run History'];
     }
     update(data, settings) {
@@ -66,6 +69,18 @@ class Notifier {
                 }
             }
             if (prev.state !== state) {
+                // The event file mirrors the same transitions the notifications use, whether or not
+                // the matching notification is switched on: a watcher wants the event, not the toast.
+                if (settings.events.file && (state === 'complete' || state === 'failed' || state === 'stalled' || state === 'exited')) {
+                    const o = state === 'exited' ? data.overlays.find(x => x.task === t.task) : undefined;
+                    (0, eventFile_1.writeEvent)(this.logsDir, {
+                        event: state, task: t.task, at: new Date().toISOString(), runId: t.runId,
+                        elapsed: t.elapsed, step: t.step, totalSteps: t.totalSteps, label: t.label,
+                        detail: t.detail, warnings: t.warnings?.length ?? 0,
+                        ...(o ? { exitCode: o.exitCode } : {}),
+                        ...(t.metrics && Object.keys(t.metrics).length ? { metrics: t.metrics } : {}),
+                    });
+                }
                 if (state === 'complete' && n.onComplete)
                     this.info(`✓ ${t.task} completed in ${(0, time_1.formatDuration)(t.elapsed)}${t.detail ? ` — ${t.detail}` : ''}`);
                 if (state === 'complete' && n.onSlow && settings.runHistory.anomalies) {

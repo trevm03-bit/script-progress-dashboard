@@ -959,13 +959,15 @@
       const n = this.nodes.get(id);
       if (!n) { this.hideDetail(); return; }
       const lin = this.lineage && this.lineage.id === id ? this.lineage : this.computeLineage(id);
-      const row = (other, meta) => `<button class="det-row" data-node="${escapeHtml(other.id)}"><i class="sw" style="background:${css(TYPE_VAR[other.type] || TYPE_VAR.other, FALLBACK[other.type] || FALLBACK.other)}"></i><span class="det-name">${escapeHtml(other.label || other.id)}</span><span class="det-meta">${escapeHtml(meta)}</span></button>`;
+      const row = (other, meta, note) => `<button class="det-row" data-node="${escapeHtml(other.id)}"${note ? ` title="${escapeHtml(note)}"` : ''}><i class="sw" style="background:${css(TYPE_VAR[other.type] || TYPE_VAR.other, FALLBACK[other.type] || FALLBACK.other)}"></i><span class="det-name">${escapeHtml(other.label || other.id)}${note ? `<span class="det-note">${escapeHtml(note)}</span>` : ''}</span><span class="det-meta">${escapeHtml(meta)}</span></button>`;
       const list = (ids, title, cls) => {
         const arr = Array.from(ids).map(i => this.nodes.get(i)).filter(Boolean).sort((a, b) => (a.label || '').localeCompare(b.label || ''));
         if (!arr.length) return '';
         return `<div class="det-group ${cls}"><div class="det-h">${escapeHtml(title)} <span class="n">${arr.length}</span></div>${arr.slice(0, 30).map(o => {
           const e = this.edges.find(x => (x.from === id && x.to === o.id) || (x.to === id && x.from === o.id));
-          return row(o, e ? `${e.mode} ×${Number(e.count) || 1} · ${relTime(e.lastSeen)}` : '2 hops');
+          // e.detail is what the script said it actually did ("5 records updated"), which is
+          // the difference between knowing a write happened and knowing what it changed.
+          return row(o, e ? `${e.mode} ×${Number(e.count) || 1} · ${relTime(e.lastSeen)}` : '2 hops', e && e.detail);
         }).join('')}${arr.length > 30 ? `<div class="tip-type">+${arr.length - 30} more</div>` : ''}</div>`;
       };
       const isTask = n.type === 'task';

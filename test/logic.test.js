@@ -106,7 +106,12 @@ test('calendar: weekly uses the ISO week and dayOfWeek', () => {
   assert.equal(calendar.processStatus(proc, fixture.history, weekAfter).status, 'overdue');
   const byWed = { ...proc, dayOfWeek: 3 };
   assert.equal(calendar.processStatus(byWed, fixture.history, new Date(2026, 8, 10, 9)).status, 'overdue'); // Thu, missed Wed
-  assert.equal(calendar.processStatus({ name: 'Nope', label: 'N', frequency: 'weekly' }, fixture.history, NOW).status, 'overdue');
+  // A process nothing has ever reported is 'unseen', NOT overdue: it is almost always one that
+  // is not wired up yet, and a permanent red trains the reader to ignore every red.
+  const never = calendar.processStatus({ name: 'Nope', label: 'N', frequency: 'weekly' }, fixture.history, NOW);
+  assert.equal(never.status, 'unseen');
+  assert.equal(never.note, 'no run recorded yet');
+  assert.equal(never.lastSuccess, null);
 });
 
 test('calendar: monthly with dayOfMonth, failed last attempt, and nextDue', () => {
@@ -242,4 +247,62 @@ test('summary facts, daily text and CSV', () => {
   const exited = summary.summaryFacts({ ...fixture, overlays: [{ task: 'Demo Pipeline', exitCode: 1, when: '2026-09-02T10:00:25' }] }, s, NOW);
   assert.equal(exited.runningCount, 0);
   assert.equal(exited.stalledCount, 1);
+});
+
+// ---------------------------------------------------------------- multi-phase processes
+test('calendar: a multi-phase process is not done until every phase has run', () => {
+  const proc = {
+    name: 'Quarter Close', label: 'Close', frequency: 'monthly', dayOfMonth: 20,
+    subtasks: ['Quarter Close Phase 1', 'Quarter Close Phase 2', 'Quarter Close Phase 3'],
+  };
+  const run = (task, day, success = true) => ({ task, date: new Date(2026, 8, day, 10).toISOString(), success, elapsed: 5, summary: '', warnings: 0 });
+  const early = new Date(2026, 8, 10, 12);
+
+  // Phase 1 only: the old behaviour reported this as done, which was simply untrue.
+  const one = calendar.processStatus(proc, [run('Quarter Close Phase 1', 2)], early);
+  assert.equal(one.status, 'partial');
+  assert.match(one.note, /1 of 3 phases/);
+  assert.deepEqual(one.phases.map(p => p.done), [true, false, false]);
+
+  // Two of three, still not done.
+  const two = calendar.processStatus(proc, [run('Quarter Close Phase 1', 2), run('Quarter Close Phase 2', 5)], early);
+  assert.equal(two.status, 'partial');
+  assert.match(two.note, /2 of 3 phases/);
+
+  // All three: done, and the next due moves to the following period.
+  const all = calendar.processStatus(proc, [run('Quarter Close Phase 1', 2), run('Quarter Close Phase 2', 5), run('Quarter Close Phase 3', 9)], early);
+  assert.equal(all.status, 'done');
+  assert.match(all.note, /all 3 phases done/);
+  assert.equal(all.nextDue.getMonth(), 9); // October
+
+  // Past the due day with phases outstanding is overdue, and says how far it got.
+  const late = calendar.processStatus(proc, [run('Quarter Close Phase 1', 2)], new Date(2026, 8, 25, 12));
+  assert.equal(late.status, 'overdue');
+  assert.match(late.note, /1 of 3 phases/);
+});
+
+test('calendar: a phase that ran in the PREVIOUS period does not count for this one', () => {
+  const proc = { name: 'Rollup', label: 'Rollup', frequency: 'monthly', dayOfMonth: 20, subtasks: ['Rollup A', 'Rollup B'] };
+  const lastMonth = [{ task: 'Rollup A', date: new Date(2026, 7, 3, 10).toISOString(), success: true, elapsed: 5, summary: '', warnings: 0 }];
+  const r = calendar.processStatus(proc, lastMonth, new Date(2026, 8, 10, 12));
+  assert.equal(r.status, 'pending');
+  assert.match(r.note, /0 of 2 phases/);
+  assert.deepEqual(r.phases.map(p => p.done), [false, false]);
+});
+
+test('calendar: a failed phase run does not count as done', () => {
+  const proc = { name: 'Load', label: 'Load', frequency: 'daily', subtasks: ['Load A', 'Load B'] };
+  const hist = [
+    { task: 'Load A', date: new Date(2026, 8, 4, 9).toISOString(), success: false, elapsed: 5, summary: '', warnings: 0 },
+    { task: 'Load B', date: new Date(2026, 8, 4, 9).toISOString(), success: true, elapsed: 5, summary: '', warnings: 0 },
+  ];
+  const r = calendar.processStatus(proc, hist, new Date(2026, 8, 4, 10));
+  assert.match(r.note, /1 of 2 phases/);
+  assert.equal(r.phases[0].done, false);
+  assert.equal(r.phases[1].done, true);
+});
+
+test('calendar: phases only apply when subtasks are declared', () => {
+  const plain = { name: 'Demo Pipeline', label: 'Demo', frequency: 'daily' };
+  assert.deepEqual(calendar.processStatus(plain, fixture.history, NOW).phases, []);
 });

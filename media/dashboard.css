@@ -118,6 +118,17 @@ body.surface-map #sections { flex: 1; display: flex; flex-direction: column; min
 /* First warning shown inline in a Run History row: for diagnostic scripts the warning is the payload. */
 .row-warn { display: flex; align-items: flex-start; gap: 4px; margin-top: 2px; font-size: var(--sp-font-small); color: var(--sp-stalled); opacity: 0.95; }
 .row-warn .codicon { flex: none; margin-top: 1px; }
+
+/* Calendar: a part-done multi-phase process, and one that has never reported at all. */
+.calendar-partial { color: var(--sp-stalled); }
+.calendar-unseen { color: var(--sp-muted); opacity: 0.7; }
+.cal-unseen .cal-label, .cal-unseen .cal-note { opacity: 0.75; }
+.cal-phases { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; }
+.phase-pip { width: 6px; height: 6px; border-radius: 50%; border: 1px solid var(--sp-muted); display: inline-block; }
+.phase-pip.on { background: var(--sp-complete); border-color: var(--sp-complete); }
+
+/* What a run actually did to a resource, under its name in the Access Map detail card. */
+.det-note { display: block; font-size: 10px; color: var(--sp-muted); margin-top: 1px; }
 .es-icon { font-size: 28px; opacity: 0.5; margin-bottom: 8px; }
 .es-icon .codicon { font-size: 28px; }
 .es-title { font-size: 14px; font-weight: 600; color: var(--vscode-foreground); }

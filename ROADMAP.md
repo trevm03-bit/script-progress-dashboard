@@ -39,23 +39,23 @@ extension behaves once it is working.
       unavailable, and falling back to the Extensions UI when the CLI cannot reach the Marketplace
       through a corporate proxy. Both hit in the field.
 
-## 1.4.0 — coverage for work that is not a Python script
+## 1.4.0 — coverage for work that is not a Python script — **shipped 2026-09-04**
 
-- [ ] **CLI mode for the reporter.** `python progress.py start "<task>"`, `step`, `warn`, `metric`,
+- [x] **CLI mode for the reporter.** `python progress.py start "<task>"`, `step`, `warn`, `metric`,
       `complete` — so shell scripts, task runners, agent workflows and anything else can report
       without importing the module. Run identity persists in the existing progress file between
-      calls. *(FR-1, ranked first by the reviewer: their most-used daily workflow is not a Python
-      script and therefore cannot appear on the dashboard at all today.)*
-- [ ] **Multi-phase processes.** A process whose phases run on different days currently shows as done
+      calls. *(FR-1, ranked first by the reviewer.)* Shipped with `--print-id` / `--run` so two
+      runs sharing a task name cannot silently write into each other — raised during the build.
+- [x] **Multi-phase processes.** A process whose phases run on different days currently shows as done
       the moment the first phase lands, which is worse than showing nothing: it reports a state that
       is not true. Allow a process to declare required sub-tasks and render "2/3 complete" until all
       have run in the period. *(FR-4 — treated as a correctness bug, not a feature.)*
-- [ ] **Suppress overdue for processes that cannot yet report.** A process with no reporting source
+- [x] **Suppress overdue for processes that cannot yet report.** A process with no reporting source
       shows as permanently overdue, which trains the user to ignore the overdue colour — the one
       signal the calendar exists to give. Needs an explicit "not wired yet" state. *(4f.)*
-- [ ] **Detail on access edges.** `access(kind, name, mode, detail="...")` surfaced as a tooltip, so
+- [x] **Detail on access edges.** `access(kind, name, mode, detail="...")` surfaced as a tooltip, so
       a write edge can say what it wrote rather than only that it wrote. *(FR-2.)*
-- [ ] **Local event file for external integration.** Write `last_event.json` on fail / stall /
+- [x] **Local event file for external integration.** Write `last_event.json` on fail / stall /
       complete so another tool can watch for it. See the note below on why this is a file and not a
       webhook. *(FR-3, redesigned.)*
 

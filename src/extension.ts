@@ -63,6 +63,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const refresh = (force = false) => {
     data = reader.readAll();
     statusBar.logsDir = resolveLogsDir(settings);
+    notifier.logsDir = statusBar.logsDir;
     statusBar.update(data, settings);
     notifier.update(data, settings);
     view.refresh(force);

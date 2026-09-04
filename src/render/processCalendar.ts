@@ -8,8 +8,10 @@ import { problemsFor } from '../logic/validate';
 
 const MARK: Record<CalendarStatus, { icon: string; cls: string; text: string }> = {
   done: { icon: 'check', cls: 'calendar-done', text: 'done' },
+  partial: { icon: 'circle-half', cls: 'calendar-partial', text: 'part done' },
   pending: { icon: 'dash', cls: 'calendar-pending', text: 'pending' },
   overdue: { icon: 'close', cls: 'calendar-overdue', text: 'overdue' },
+  unseen: { icon: 'question', cls: 'calendar-unseen', text: 'never reported' },
 };
 
 export function renderProcessCalendar(data: DashboardData, settings: Settings, now: Date, opts: SectionOpts, narrow: boolean): string {
@@ -28,13 +30,23 @@ export function renderProcessCalendar(data: DashboardData, settings: Settings, n
   const renderRow = (r: (typeof rows)[number]) => {
     const m = MARK[r.status];
     const grid = view !== 'list' ? monthGridHtml(r.process, data, now) : '';
-    const next = settings.calendar.upcoming ? `<span class="cal-next muted">${esc(dueText(r.nextDue, now))}</span>` : '';
+    // An unseen process has no meaningful "next due" — nothing has ever reported it — but the
+    // column still has to exist so the rows stay aligned.
+    const next = !settings.calendar.upcoming ? ''
+      : r.status === 'unseen' ? '<span class="cal-next"></span>'
+      : `<span class="cal-next muted">${esc(dueText(r.nextDue, now))}</span>`;
+    const phases = r.phases.length
+      ? `<span class="cal-phases" title="${esc(r.phases.map(p => `${p.done ? 'done' : 'not yet'}: ${p.name}`).join(' · '))}">${r.phases.map(p => `<span class="phase-pip${p.done ? ' on' : ''}"></span>`).join('')}</span>`
+      : '';
+    const last = r.status === 'unseen'
+      ? `<span class="cal-last muted" title="No run has ever reported a task name starting with &quot;${esc(r.process.name)}&quot;">not wired yet</span>`
+      : `<span class="cal-last muted" title="Last successful run">${r.lastSuccess ? esc(relativeTime(r.lastSuccess.date, now)) : 'never'}</span>`;
     return `<div class="cal-row cal-${r.status}">
   <span class="cal-mark ${m.cls}" title="${m.text}">${icon(m.icon)}</span>
-  <span class="cal-label" title="${esc(r.process.name)}">${esc(r.process.label || r.process.name)}</span>
+  <span class="cal-label" title="${esc(r.process.name)}">${esc(r.process.label || r.process.name)}${phases}</span>
   <span class="cal-note muted">${esc(r.note)}</span>
   ${next}
-  <span class="cal-last muted" title="Last successful run">${r.lastSuccess ? esc(relativeTime(r.lastSuccess.date, now)) : 'never'}</span>
+  ${last}
   ${grid}
 </div>`;
   };
@@ -42,9 +54,10 @@ export function renderProcessCalendar(data: DashboardData, settings: Settings, n
     list.length ? `<div class="cal-group"><div class="cal-group-title">${esc(title)}</div>${list.map(renderRow).join('')}</div>` : '';
 
   const overdue = rows.filter(r => r.status === 'overdue').length;
+  const unseen = rows.filter(r => r.status === 'unseen').length;
   const title = 'Process Calendar';
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const aside = `${overdue ? `<span class="status-fail">${overdue} overdue</span> · ` : ''}<span class="muted">${months[now.getMonth()]} ${now.getFullYear()}</span>`;
+  const aside = `${overdue ? `<span class="status-fail">${overdue} overdue</span> · ` : ''}${unseen ? `<span class="muted">${unseen} not wired yet</span> · ` : ''}<span class="muted">${months[now.getMonth()]} ${now.getFullYear()}</span>`;
   const body = problemList(problems) + renderGroup('Daily', groups.daily) + renderGroup('Weekly', groups.weekly) + renderGroup('Monthly', groups.monthly);
   return section('processCalendar', title, body, { ...opts, cls: overdue ? 'has-overdue' : '', aside });
 }

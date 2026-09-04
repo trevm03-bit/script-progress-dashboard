@@ -5,6 +5,8 @@ exports.runsFor = runsFor;
 exports.startOfIsoWeek = startOfIsoWeek;
 exports.dueDate = dueDate;
 exports.nextPeriodDue = nextPeriodDue;
+exports.periodStart = periodStart;
+exports.phaseStates = phaseStates;
 exports.processStatus = processStatus;
 exports.calendarRows = calendarRows;
 exports.monthGrid = monthGrid;
@@ -73,11 +75,45 @@ function nextPeriodDue(process, now) {
         default: return dueDate(process, new Date(now.getFullYear(), now.getMonth() + 1, 1));
     }
 }
+/** Start of the period the process is measured in: today, this ISO week, or this month. */
+function periodStart(process, now) {
+    switch (process.frequency) {
+        case 'daily': return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        case 'weekly': return startOfIsoWeek(now);
+        case 'monthly':
+        default: return new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+}
+/** Phase-by-phase state for a process that declares `subtasks`. */
+function phaseStates(process, history, now) {
+    const names = (process.subtasks ?? []).filter(n => typeof n === 'string' && n.trim());
+    if (!names.length)
+        return [];
+    const start = periodStart(process, now);
+    return names.map(name => {
+        const lower = name.toLowerCase();
+        const runs = history
+            .filter(r => (r.task || '').toLowerCase().startsWith(lower))
+            .sort((a, b) => ((0, time_1.parseIso)(b.date)?.getTime() ?? 0) - ((0, time_1.parseIso)(a.date)?.getTime() ?? 0));
+        const lastSuccess = runs.find(r => r.success) ?? null;
+        const d = lastSuccess ? (0, time_1.parseIso)(lastSuccess.date) : null;
+        return { name, done: !!d && d >= start, lastSuccess };
+    });
+}
 function processStatus(process, history, now) {
     const runs = runsFor(process, history);
+    const phases = phaseStates(process, history, now);
     const lastRun = runs[0] ?? null;
     const lastSuccess = runs.find(r => r.success) ?? null;
     const lastSuccessDate = lastSuccess ? (0, time_1.parseIso)(lastSuccess.date) : null;
+    // Nothing has ever reported this name. Say that, rather than crying overdue forever.
+    if (!runs.length && !phases.some(ph => ph.lastSuccess)) {
+        return {
+            process, status: 'unseen', lastRun: null, lastSuccess: null, phases,
+            note: 'no run recorded yet',
+            nextDue: dueDate(process, now),
+        };
+    }
     let status = 'pending';
     let note = '';
     let donePeriod = false;
@@ -138,6 +174,29 @@ function processStatus(process, history, now) {
             break;
         }
     }
+    // A multi-phase process is only done when every declared phase has run this period. The
+    // whole point is that finishing phase 1 must not report the process as finished.
+    if (phases.length) {
+        const done = phases.filter(ph => ph.done).length;
+        donePeriod = done === phases.length;
+        const progress = `${done} of ${phases.length} phases`;
+        if (donePeriod) {
+            status = 'done';
+            note = `all ${phases.length} phases done`;
+        }
+        else if (now > dueDate(process, now)) {
+            status = 'overdue';
+            note = `${progress} · ${overdueNote(process, now)}`;
+        }
+        else if (done > 0) {
+            status = 'partial';
+            note = progress;
+        }
+        else {
+            status = 'pending';
+            note = `${progress} · ${pendingNote(process, now)}`;
+        }
+    }
     // A failed run after the last success is worth surfacing even when the status is fine.
     if (lastRun && !lastRun.success && lastRun !== lastSuccess) {
         const lr = (0, time_1.parseIso)(lastRun.date);
@@ -145,7 +204,21 @@ function processStatus(process, history, now) {
             note += (note ? ' · ' : '') + 'last attempt failed';
     }
     const nextDue = donePeriod ? nextPeriodDue(process, now) : dueDate(process, now);
-    return { process, status, lastRun, lastSuccess, note, nextDue };
+    return { process, status, lastRun, lastSuccess, note, nextDue, phases };
+}
+function overdueNote(process, now) {
+    switch (process.frequency) {
+        case 'daily': return 'not finished today';
+        case 'weekly': return 'missed this week';
+        default: return `was due by day ${process.dayOfMonth ?? daysInMonth(now.getFullYear(), now.getMonth())}`;
+    }
+}
+function pendingNote(process, now) {
+    switch (process.frequency) {
+        case 'daily': return `due today by ${String(process.dueHour ?? 12).padStart(2, '0')}:00`;
+        case 'weekly': return 'due this week';
+        default: return process.dayOfMonth !== undefined ? `due by day ${process.dayOfMonth}` : 'due this month';
+    }
 }
 function calendarRows(processes, history, now) {
     return processes.map(p => processStatus(p, history, now));
