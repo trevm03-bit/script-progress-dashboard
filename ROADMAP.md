@@ -59,6 +59,49 @@ extension behaves once it is working.
       complete so another tool can watch for it. See the note below on why this is a file and not a
       webhook. *(FR-3, redesigned.)*
 
+## 1.6.0 — make it actionable
+
+A third round, from watching 1.5.0 run against real work. Two bugs reported alongside these are
+**already fixed** and listed under *Fixed after 1.5.0* below.
+
+- [ ] **Target line on the Delta Tracker.** Thresholds already draw guides at `min` and `max`, but
+      the band is not the goal: with a range of ±5,000 and a target of 0, nothing on the chart says
+      where clean *is*. An explicit `target` per metric draws that line and lets the card answer
+      "are we at goal?" rather than only "which way is it moving?".
+- [ ] **Declared dependencies between processes.** `dependsOn: ["<task name>"]` on a calendar
+      process, giving a **blocked** state: *"waiting on Phase 1-2, which has not run this period"*.
+      Blocked is a better signal than overdue for a downstream process, because there is nothing
+      the reader can do about it yet — calling it overdue points the finger at the wrong step.
+      🔴 **Declared, never inferred** (see the note under 1.5.0), and its meaning is exactly "the
+      named process has not run in this period" — it cannot model a human round-trip, such as
+      waiting for someone to send a file back. Say that in the docs or it will be trusted for
+      something it does not know.
+- [ ] **Pending Actions.** `p.warn("...", actionable=True)` marks a warning as a thing to *do*
+      rather than a thing to note, and a section collects them. **Derived, not stored**: the list
+      is the actionable warnings from each task's most recent *successful* run, so it clears
+      itself correctly by construction and the extension keeps no state that can drift.
+      🔴 The originally proposed rule — clear an item when a later run does not repeat it — would
+      let a run that **failed early**, before reaching the check, silently mark real findings as
+      handled. Only a successful run may clear, and the section shows when each item was last seen.
+- [ ] **Buttons that know when they are pointless.** `enableWhen: { task, metric, … }` so a "fix"
+      button can go inactive when the last audit found nothing to fix, instead of costing a
+      two-minute run to discover that. **Disabled with the reason, not hidden**: a button that
+      vanishes leaves the reader wondering where it went, and the reason ("last run found 0
+      issues") is itself the information they wanted. The disable-while-running mechanism already
+      exists to build on.
+
+### Fixed after 1.5.0
+
+- [x] 🔴 **The summary strip contradicted the calendar.** A process that had never reported showed
+      as *not wired yet* in the Process Calendar while the strip announced it as `next: … overdue`.
+      Cause: 1.4.0 excluded `unseen` from the overdue *count* but left it eligible to be the "next
+      due" candidate, and its nominal due date is usually already past. Two views of one fact must
+      never disagree — a dashboard that contradicts itself is worse than one that says less.
+      Regression-tested, plus a guard that a "next due" can never be a past date.
+- [x] **Currency symbols sat on the wrong side of the number** (`-25,984.76$`). A one-character
+      unit was always appended; a currency symbol belongs before the digits and after the minus
+      sign. Fixed for `$ £ € ¥ ₹ ₽ ₩ R$ C$ A$`; `%` and word units are unchanged.
+
 ## Considered and deferred
 
 - **Append-only (JSONL) run history.** Would eliminate the read-modify-write race on simultaneous

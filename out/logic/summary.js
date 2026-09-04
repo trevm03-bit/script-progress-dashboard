@@ -18,8 +18,13 @@ function summaryFacts(data, settings, now) {
     const today = data.history.filter(r => isToday(r.date, now));
     const rows = (0, calendar_1.calendarRows)(settings.processes, data.history, now);
     const overdue = rows.filter(r => r.status === 'overdue').map(r => r.process.label || r.process.name);
+    // 'unseen' is excluded for the same reason it is not counted as overdue: nothing has ever
+    // reported it, so it has no meaningful next-due date — its nominal one is usually already in
+    // the past, which made the strip announce "next: X — overdue" while the calendar said
+    // "not wired yet". Two views of one fact must never disagree. The past-due guard is belt and
+    // braces: no other status can produce one, and if that ever changes this still cannot lie.
     const upcoming = rows
-        .filter(r => r.status !== 'overdue')
+        .filter(r => r.status !== 'overdue' && r.status !== 'unseen' && r.nextDue.getTime() >= now.getTime())
         .sort((a, b) => a.nextDue.getTime() - b.nextDue.getTime())[0];
     const health = settings.sections.scriptHealth ? (0, health_1.healthRows)(data.history, settings.staleHours, now, 0) : [];
     const metricsOutOfRange = [];

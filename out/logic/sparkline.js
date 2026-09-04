@@ -56,6 +56,8 @@ function sparklineY(values, value, h, pad = 2) {
     return pad + innerH - ((value - min) / span) * innerH;
 }
 /** Compact number for a metric card: 1234.5 -> "1,234.5", 0.00 -> "0", 15200000 -> "15.2M". */
+/** Symbols that precede the number rather than following it. */
+const CURRENCY = new Set(['$', '£', '€', '¥', '₹', '₽', '₩', 'R$', 'C$', 'A$']);
 function formatMetric(n, fmt) {
     if (typeof n !== 'number' || !isFinite(n))
         return '—';
@@ -76,8 +78,17 @@ function formatMetric(n, fmt) {
         else
             s = n.toLocaleString('en-US', { maximumFractionDigits: 2 });
     }
-    if (fmt?.unit)
-        s = fmt.unit === '%' || fmt.unit.length <= 1 ? s + fmt.unit : `${s} ${fmt.unit}`;
+    if (fmt?.unit) {
+        if (CURRENCY.has(fmt.unit)) {
+            // A currency symbol goes BEFORE the digits and AFTER the sign: -$25,984.76, never
+            // -25,984.76$ (and never -$25,984.76$, which is what suffixing a already-prefixed value
+            // produced). Only the symbol moves; everything else formats as before.
+            s = s.startsWith('-') ? `-${fmt.unit}${s.slice(1)}` : `${fmt.unit}${s}`;
+        }
+        else {
+            s = fmt.unit === '%' || fmt.unit.length <= 1 ? s + fmt.unit : `${s} ${fmt.unit}`;
+        }
+    }
     return s;
 }
 /** true when the value breaks a configured threshold. */

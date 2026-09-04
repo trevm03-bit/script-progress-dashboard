@@ -151,3 +151,16 @@ test('points without a run id cannot be paired and are skipped', () => {
   ];
   assert.deepEqual(withinRunPairs(pts), []);
 });
+
+// ---------------------------------------------------------------- reported 2026-09-04
+test('a currency unit goes before the digits and after the minus sign', () => {
+  const { formatMetric } = require('../out/logic/sparkline.js');
+  const usd = { unit: '$', decimals: 2 };
+  assert.equal(formatMetric(-25984.76, usd), '-$25,984.76', 'was "-25,984.76$"');
+  assert.equal(formatMetric(4408.67, usd), '$4,408.67', 'was "4,408.67$"');
+  assert.equal(formatMetric(0, usd), '$0.00');
+  // Non-currency units are unchanged.
+  assert.equal(formatMetric(12.5, { unit: '%', decimals: 1 }), '12.5%');
+  assert.equal(formatMetric(1200, { unit: 'rows' }), '1,200 rows');
+  assert.equal(formatMetric(-5, { unit: '%' }), '-5%');
+});

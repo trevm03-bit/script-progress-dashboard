@@ -118,3 +118,26 @@ test('metric rows carry a total and a mean for numeric series only', () => {
   assert.equal(rows.note.total, null, 'a text metric has no total');
   assert.equal(rows.note.mean, null);
 });
+
+// ---------------------------------------------------------------- reported 2026-09-04
+test('a never-reported process is never announced as "next due"', () => {
+  // The strip said "overdue · NEXT: Morning Scan" while the calendar said "not wired yet" for
+  // the same process. Two views of one fact disagreeing; the strip was wrong.
+  const { summaryFacts } = require('../out/logic/summary.js');
+  const processes = [{ name: 'Ghost', label: 'Ghost', frequency: 'daily', dueHour: 9 }];
+  const d = data();
+  const f = summaryFacts(d, S({ processes }), NOW);   // NOW is 12:00, so 09:00 is already past
+  assert.equal(f.nextDue, null, 'nothing has ever reported it, so it has no next due');
+  assert.deepEqual(f.overdue, [], 'and it is not overdue either');
+});
+
+test('"next due" is never a date already in the past', () => {
+  const { summaryFacts } = require('../out/logic/summary.js');
+  const processes = [
+    { name: 'Ghost', label: 'Ghost', frequency: 'daily', dueHour: 9 },
+    { name: 'Rec', label: 'Rec', frequency: 'daily', dueHour: 23 },
+  ];
+  const d = data({ history: [run({ task: 'Rec', date: at(9) })] });
+  const f = summaryFacts(d, S({ processes }), NOW);
+  if (f.nextDue) assert.doesNotMatch(f.nextDue.text, /overdue/, 'a "next" that is overdue is a contradiction');
+});
