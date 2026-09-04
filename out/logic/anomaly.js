@@ -5,6 +5,7 @@ exports.slaFor = slaFor;
 exports.overSla = overSla;
 exports.metricChanges = metricChanges;
 exports.previousRun = previousRun;
+exports.metricAnomalies = metricAnomalies;
 const calendar_1 = require("./calendar");
 const time_1 = require("./time");
 function median(values) {
@@ -60,5 +61,52 @@ function previousRun(run, history) {
     return history
         .filter(r => r !== run && r.task === run.task && ((0, time_1.parseIso)(r.date)?.getTime() ?? 0) < t)
         .sort((a, b) => ((0, time_1.parseIso)(b.date)?.getTime() ?? 0) - ((0, time_1.parseIso)(a.date)?.getTime() ?? 0))[0];
+}
+/**
+ * Metrics in `run` that are far from their own median across this task's previous runs.
+ *
+ * Duration anomalies catch infrastructure; THESE catch data. A row count that falls from 3,990
+ * to 200, or an issue count that jumps from 311 to 500, is the kind of thing that never fails a
+ * run and is exactly what someone needed to know.
+ *
+ * Requires at least `minSample` prior successful runs, because two data points have no
+ * meaningful median and a detector that fires on thin evidence is one that gets switched off.
+ * `ignore` holds metric names that are expected to vary (a timestamp, an id, a naturally noisy
+ * count) — without it, one restless number trains the reader to ignore all of them.
+ */
+function metricAnomalies(run, history, factor = 2, ignore = [], minSample = 4) {
+    const metrics = run.metrics;
+    if (!metrics)
+        return [];
+    const skip = new Set(ignore.map(s => s.toLowerCase()));
+    const t = (0, time_1.parseIso)(run.date)?.getTime() ?? 0;
+    const prior = history.filter(r => r !== run && r.task === run.task && r.success && ((0, time_1.parseIso)(r.date)?.getTime() ?? 0) < t);
+    const out = [];
+    for (const [key, raw] of Object.entries(metrics)) {
+        if (skip.has(key.toLowerCase()) || typeof raw !== 'number' || !isFinite(raw))
+            continue;
+        const series = prior
+            .map(r => r.metrics?.[key])
+            .filter((v) => typeof v === 'number' && isFinite(v))
+            .slice(-20);
+        if (series.length < minSample)
+            continue;
+        const baseline = median(series);
+        // A baseline of zero has no ratio. Only a move AWAY from zero is notable; staying at zero is
+        // the most normal thing a zero-valued metric can do.
+        if (baseline === 0) {
+            if (raw !== 0)
+                out.push({ key, value: raw, baseline, factor: 0, direction: 'up', sample: series.length });
+            continue;
+        }
+        const f = raw / baseline;
+        if (f >= factor)
+            out.push({ key, value: raw, baseline, factor: f, direction: 'up', sample: series.length });
+        else if (f > 0 && f <= 1 / factor)
+            out.push({ key, value: raw, baseline, factor: f, direction: 'down', sample: series.length });
+        else if (f <= 0 && baseline > 0)
+            out.push({ key, value: raw, baseline, factor: f, direction: 'down', sample: series.length });
+    }
+    return out;
 }
 //# sourceMappingURL=anomaly.js.map

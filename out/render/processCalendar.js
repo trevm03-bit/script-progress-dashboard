@@ -10,6 +10,7 @@ const MARK = {
     partial: { icon: 'circle-half', cls: 'calendar-partial', text: 'part done' },
     pending: { icon: 'dash', cls: 'calendar-pending', text: 'pending' },
     overdue: { icon: 'close', cls: 'calendar-overdue', text: 'overdue' },
+    blocked: { icon: 'circle-slash', cls: 'calendar-blocked', text: 'waiting on something upstream' },
     unseen: { icon: 'question', cls: 'calendar-unseen', text: 'never reported' },
 };
 function renderProcessCalendar(data, settings, now, opts, narrow) {
@@ -51,9 +52,10 @@ function renderProcessCalendar(data, settings, now, opts, narrow) {
     const renderGroup = (title, list) => list.length ? `<div class="cal-group"><div class="cal-group-title">${(0, html_1.esc)(title)}</div>${list.map(renderRow).join('')}</div>` : '';
     const overdue = rows.filter(r => r.status === 'overdue').length;
     const unseen = rows.filter(r => r.status === 'unseen').length;
+    const blocked = rows.filter(r => r.status === 'blocked').length;
     const title = 'Process Calendar';
     const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    const aside = `${overdue ? `<span class="status-fail">${overdue} overdue</span> · ` : ''}${unseen ? `<span class="muted">${unseen} not wired yet</span> · ` : ''}<span class="muted">${months[now.getMonth()]} ${now.getFullYear()}</span>`;
+    const aside = `${overdue ? `<span class="status-fail">${overdue} overdue</span> · ` : ''}${blocked ? `<span class="calendar-blocked">${blocked} blocked</span> · ` : ''}${unseen ? `<span class="muted">${unseen} not wired yet</span> · ` : ''}<span class="muted">${months[now.getMonth()]} ${now.getFullYear()}</span>`;
     const body = (0, html_1.problemList)(problems) + renderGroup('Daily', groups.daily) + renderGroup('Weekly', groups.weekly) + renderGroup('Monthly', groups.monthly);
     return (0, html_1.section)('processCalendar', title, body, { ...opts, cls: overdue ? 'has-overdue' : '', aside });
 }

@@ -7,6 +7,7 @@ exports.dueDate = dueDate;
 exports.nextPeriodDue = nextPeriodDue;
 exports.periodStart = periodStart;
 exports.phaseStates = phaseStates;
+exports.unmetDependencies = unmetDependencies;
 exports.processStatus = processStatus;
 exports.calendarRows = calendarRows;
 exports.monthGrid = monthGrid;
@@ -101,17 +102,36 @@ function phaseStates(process, history, now) {
         return { name, done: !!d && d >= start, lastSuccess };
     });
 }
+/** Declared dependencies with no successful run in the current period. */
+function unmetDependencies(process, history, now) {
+    const names = (process.dependsOn ?? []).filter(n => typeof n === 'string' && n.trim());
+    if (!names.length)
+        return [];
+    const start = periodStart(process, now);
+    return names.filter(name => {
+        const lower = name.toLowerCase();
+        return !history.some(r => {
+            if (!r.success || !(r.task || '').toLowerCase().startsWith(lower))
+                return false;
+            const d = (0, time_1.parseIso)(r.date);
+            return !!d && d >= start;
+        });
+    });
+}
 function processStatus(process, history, now) {
     const runs = runsFor(process, history);
     const phases = phaseStates(process, history, now);
+    const blockedBy = unmetDependencies(process, history, now);
     const lastRun = runs[0] ?? null;
     const lastSuccess = runs.find(r => r.success) ?? null;
     const lastSuccessDate = lastSuccess ? (0, time_1.parseIso)(lastSuccess.date) : null;
     // Nothing has ever reported this name. Say that, rather than crying overdue forever.
     if (!runs.length && !phases.some(ph => ph.lastSuccess)) {
         return {
-            process, status: 'unseen', lastRun: null, lastSuccess: null, phases,
-            note: 'no run recorded yet',
+            process, status: 'unseen', lastRun: null, lastSuccess: null, phases, blockedBy,
+            note: blockedBy.length
+                ? `no run recorded yet · waiting on ${blockedBy.join(', ')}`
+                : 'no run recorded yet',
             nextDue: dueDate(process, now),
         };
     }
@@ -198,6 +218,13 @@ function processStatus(process, history, now) {
             note = `${progress} · ${pendingNote(process, now)}`;
         }
     }
+    // Blocked beats overdue and pending, but never overrides done: if it ran this period, it ran,
+    // whatever the dependency says. Saying "overdue" when an upstream step has not happened points
+    // the reader at the wrong process and at something they cannot act on.
+    if (blockedBy.length && status !== 'done') {
+        status = 'blocked';
+        note = `waiting on ${blockedBy.join(', ')}`;
+    }
     // A failed run after the last success is worth surfacing even when the status is fine.
     if (lastRun && !lastRun.success && lastRun !== lastSuccess) {
         const lr = (0, time_1.parseIso)(lastRun.date);
@@ -205,7 +232,7 @@ function processStatus(process, history, now) {
             note += (note ? ' · ' : '') + 'last attempt failed';
     }
     const nextDue = donePeriod ? nextPeriodDue(process, now) : dueDate(process, now);
-    return { process, status, lastRun, lastSuccess, note, nextDue, phases };
+    return { process, status, lastRun, lastSuccess, note, nextDue, phases, blockedBy };
 }
 function overdueNote(process, now) {
     switch (process.frequency) {

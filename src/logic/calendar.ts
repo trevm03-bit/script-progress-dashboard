@@ -10,7 +10,7 @@ import { parseIso } from './time';
  * 'partial' belongs to multi-phase processes: some phases done, not all. Reporting those as
  * 'done' after the first phase (which is what happened before) asserts something untrue.
  */
-export type CalendarStatus = 'done' | 'partial' | 'pending' | 'overdue' | 'unseen';
+export type CalendarStatus = 'done' | 'partial' | 'pending' | 'overdue' | 'blocked' | 'unseen';
 
 /** One declared phase of a multi-phase process. */
 export interface PhaseState {
@@ -32,6 +32,8 @@ export interface CalendarRow {
   nextDue: Date;
   /** Declared phases, when the process has `subtasks`. Empty otherwise. */
   phases: PhaseState[];
+  /** Declared dependencies that have NOT run this period. Empty when nothing blocks it. */
+  blockedBy: string[];
 }
 
 /** One day cell of a month grid. */
@@ -141,9 +143,25 @@ export function phaseStates(process: ProcessConfig, history: RunRecord[], now: D
   });
 }
 
+/** Declared dependencies with no successful run in the current period. */
+export function unmetDependencies(process: ProcessConfig, history: RunRecord[], now: Date): string[] {
+  const names = (process.dependsOn ?? []).filter(n => typeof n === 'string' && n.trim());
+  if (!names.length) return [];
+  const start = periodStart(process, now);
+  return names.filter(name => {
+    const lower = name.toLowerCase();
+    return !history.some(r => {
+      if (!r.success || !(r.task || '').toLowerCase().startsWith(lower)) return false;
+      const d = parseIso(r.date);
+      return !!d && d >= start;
+    });
+  });
+}
+
 export function processStatus(process: ProcessConfig, history: RunRecord[], now: Date): CalendarRow {
   const runs = runsFor(process, history);
   const phases = phaseStates(process, history, now);
+  const blockedBy = unmetDependencies(process, history, now);
   const lastRun = runs[0] ?? null;
   const lastSuccess = runs.find(r => r.success) ?? null;
   const lastSuccessDate = lastSuccess ? parseIso(lastSuccess.date) : null;
@@ -151,8 +169,10 @@ export function processStatus(process: ProcessConfig, history: RunRecord[], now:
   // Nothing has ever reported this name. Say that, rather than crying overdue forever.
   if (!runs.length && !phases.some(ph => ph.lastSuccess)) {
     return {
-      process, status: 'unseen', lastRun: null, lastSuccess: null, phases,
-      note: 'no run recorded yet',
+      process, status: 'unseen', lastRun: null, lastSuccess: null, phases, blockedBy,
+      note: blockedBy.length
+        ? `no run recorded yet · waiting on ${blockedBy.join(', ')}`
+        : 'no run recorded yet',
       nextDue: dueDate(process, now),
     };
   }
@@ -201,6 +221,14 @@ export function processStatus(process: ProcessConfig, history: RunRecord[], now:
     else { status = 'pending'; note = `${progress} · ${pendingNote(process, now)}`; }
   }
 
+  // Blocked beats overdue and pending, but never overrides done: if it ran this period, it ran,
+  // whatever the dependency says. Saying "overdue" when an upstream step has not happened points
+  // the reader at the wrong process and at something they cannot act on.
+  if (blockedBy.length && status !== 'done') {
+    status = 'blocked';
+    note = `waiting on ${blockedBy.join(', ')}`;
+  }
+
   // A failed run after the last success is worth surfacing even when the status is fine.
   if (lastRun && !lastRun.success && lastRun !== lastSuccess) {
     const lr = parseIso(lastRun.date);
@@ -208,7 +236,7 @@ export function processStatus(process: ProcessConfig, history: RunRecord[], now:
   }
 
   const nextDue = donePeriod ? nextPeriodDue(process, now) : dueDate(process, now);
-  return { process, status, lastRun, lastSuccess, note, nextDue, phases };
+  return { process, status, lastRun, lastSuccess, note, nextDue, phases, blockedBy };
 }
 
 function overdueNote(process: ProcessConfig, now: Date): string {

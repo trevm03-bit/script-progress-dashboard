@@ -82,6 +82,7 @@ if hasattr(sys.stdout, "reconfigure"):
 HISTORY_KEEP = 100
 DELTA_KEEP = 50
 ACCESS_NODE_KEEP = 150
+IMPACT_KEEP = 500
 WARNINGS_IN_PROGRESS = 10
 WARNINGS_IN_HISTORY = 20
 LOG_KEEP = 20
@@ -113,6 +114,49 @@ def resolve_logs_dir(logs_dir=None, module_file=__file__) -> Path:
     return Path.cwd() / "logs"
 
 
+
+def _current_user() -> str:
+    """
+    Who is running this, best-effort. Used only to attribute a run when several people share the
+    same scripts. Never raises: `os.getlogin()` fails outright in a service or a detached
+    terminal, which is exactly where a reporter must not be the thing that breaks.
+    Set PROGRESS_USER to override, or PROGRESS_NO_USER=1 to record nobody.
+    """
+    if os.environ.get("PROGRESS_NO_USER"):
+        return ""
+    override = os.environ.get("PROGRESS_USER")
+    if override:
+        return str(override)[:60]
+    for key in ("USERNAME", "USER", "LOGNAME"):
+        v = os.environ.get(key)
+        if v:
+            return str(v)[:60]
+    try:
+        return str(os.getlogin())[:60]
+    except Exception:
+        return ""
+
+
+def _git_commit(start: Path) -> str:
+    """
+    The commit the scripts are running from, so a change in behaviour can be lined up against a
+    change in code. Best-effort and CHEAP: a short timeout, no shell, failure is silence. A
+    reporter that hangs waiting for git is worse than one that never knew the commit.
+    """
+    if os.environ.get("PROGRESS_NO_GIT"):
+        return ""
+    try:
+        import subprocess
+        out = subprocess.run(
+            ["git", "-C", str(start), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=3,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return out.stdout.strip()[:40] if out.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
 class Progress:
     def __init__(self, task_name: str, logs_dir=None, quiet: bool = False):
         self._paths(task_name, logs_dir, quiet)
@@ -126,6 +170,9 @@ class Progress:
         self.accessed = []            # node ids touched this run, in order
         self.completed = False
         self.category = ""
+        self.impacts = {}
+        self.user = _current_user()
+        self.commit = _git_commit(self.logs_dir.parent)
         self.current = {"step": 0, "total": 0, "label": "Starting", "detail": "", "substep": None}
         self._prior_durations = self._get_prior_durations()
         self._prune_slots()
@@ -143,6 +190,7 @@ class Progress:
         self.history_file = self.logs_dir / "run_history.json"
         self.deltas_file = self.logs_dir / "deltas.json"
         self.access_file = self.logs_dir / "access.json"
+        self.impact_file = self.logs_dir / "impact.json"
 
     @classmethod
     def resume(cls, task_name: str, logs_dir=None, quiet: bool = True, run_id: str = ""):
@@ -188,6 +236,9 @@ class Progress:
         self.accessed = list(data.get("accessed") or [])
         self.completed = False
         self.category = ""
+        self.impacts = dict(data.get("impacts") or {})
+        self.user = data.get("user") or ""
+        self.commit = data.get("commit") or ""
         self.current = {
             "step": int(data.get("step") or 0),
             "total": int(data.get("totalSteps") or 0),
@@ -230,11 +281,41 @@ class Progress:
         self._write()
         self._say(f"  {message}")
 
-    def warn(self, message: str):
-        """Record a warning. Shows up in the dashboard and counts in run history."""
-        self.warnings.append({"time": _now_iso(), "msg": str(message)})
+    def warn(self, message: str, count=None, category: str = "", severity: str = "",
+             actionable: bool = False):
+        """
+        Record a warning. Shows up in the dashboard and counts in run history.
+
+        The extra fields are all optional and all backward compatible - `p.warn("text")` behaves
+        exactly as before. They exist because free text can only be grouped by exact match, so
+        "Section 6: 310 issues" and "Section 6: 311 issues" look like two unrelated problems:
+
+            count      how many things this warning is about, so a steady 310 reads as steady
+                       rather than as a new warning every run
+            category   your own word for the KIND of finding, so it can be grouped and trended
+            severity   'info' | 'warn' | 'error' - your judgement, nothing here infers it
+            actionable True when this is something a HUMAN must go and do, as opposed to
+                       something merely worth knowing. Actionable items are collected separately
+                       so they do not drown in the noise of ordinary warnings.
+        """
+        item = {"time": _now_iso(), "msg": str(message)}
+        if count is not None:
+            try:
+                item["count"] = int(count)
+            except (TypeError, ValueError):
+                pass
+        if category:
+            item["category"] = str(category)[:60]
+        if severity in ("info", "warn", "error"):
+            item["severity"] = severity
+        if actionable:
+            item["actionable"] = True
+        self.warnings.append(item)
         self._write()
-        self._say(f"  WARNING: {message}")
+        extra = ""
+        if item.get("count") is not None:
+            extra = f" ({item['count']})"
+        self._say(f"  WARNING{extra}: {message}")
 
     def metric(self, name: str, value):
         """Record a named metric for this run (number or short string). Shown as a card, kept in history."""
@@ -270,6 +351,44 @@ class Progress:
         series.append({"date": _now_iso(), "value": v, "task": self.task_name, "runId": self.run_id})
         deltas[metric_name] = series[-DELTA_KEEP:]
         self._safe_write(self.deltas_file, deltas)
+
+    def impact(self, metric: str, value, label: str = ""):
+        """
+        Record a CONTRIBUTION this run made, to be accumulated across runs.
+
+        The difference from `track_delta` is the question each answers. A delta is *current
+        state*: "the discrepancy is now 0". An impact is *what this run contributed*: "this run
+        identified 1,204 of discrepancy". Deltas are charted and replaced; impacts are summed.
+
+            p.impact("corrections_found", 1204.50, label="Reconciliation corrections")
+
+        🔴 Be precise about what the number counts, and write it down next to the script. A total
+        is only as defensible as its definition, and "identified" is the word that gets
+        questioned first - a discrepancy that passed through a check is not money recovered.
+        """
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return
+        if not math.isfinite(v):
+            return
+        entry = {"date": _now_iso(), "value": v, "task": self.task_name, "runId": self.run_id}
+        if label:
+            entry["label"] = str(label)[:80]
+        data = self._read_json(self.impact_file, default={})
+        if not isinstance(data, dict):
+            data = {}
+        series = data.setdefault(str(metric), [])
+        if not isinstance(series, list):
+            series = []
+        series.append(entry)
+        data[str(metric)] = series[-IMPACT_KEEP:]
+        self._safe_write(self.impact_file, data)
+        self.impacts[str(metric)] = self.impacts.get(str(metric), 0.0) + v
+        # Persist the running total to the slot as well as the series file: a CLI run resumes
+        # from the slot on every call, so a total held only in memory dies with the process.
+        self._write()
+        self._say(f"  + {metric}: {v:,.2f}{f' ({label})' if label else ''}")
 
     def access(self, kind: str, name: str, mode: str = "read", detail: str = ""):
         """
@@ -404,7 +523,12 @@ class Progress:
             "runId": self.run_id,
             "startedAt": self.started_at,
             "updatedAt": _now_iso(),
+            "impacts": dict(self.impacts),
         }
+        if self.user:
+            data["user"] = self.user
+        if self.commit:
+            data["commit"] = self.commit
         self._safe_write(self.progress_file, data)
         try:
             self.slots_dir.mkdir(parents=True, exist_ok=True)
@@ -469,6 +593,12 @@ class Progress:
             "accessed": list(self.accessed),
             "artifacts": list(self.artifacts),
         }
+        if getattr(self, "user", ""):
+            row["user"] = self.user
+        if getattr(self, "commit", ""):
+            row["commit"] = self.commit
+        if getattr(self, "impacts", None):
+            row["impacts"] = dict(self.impacts)
         if getattr(self, "category", ""):
             row["category"] = self.category
         for attempt in range(3):
@@ -567,6 +697,8 @@ def _print_status(logs_dir=None):
 #   python progress.py metric   "Nightly Load" rows_loaded 3990
 #   python progress.py artifact "Nightly Load" output/report.xlsx
 #   python progress.py delta    "Nightly Load" reconciliation_delta 0.0
+#   python progress.py impact   "Nightly Load" corrections_found 1204.50 --label "Corrections"
+#   python progress.py warn     "Nightly Load" "Section 6" --count 310 --category drift --actionable
 #   python progress.py access   "Nightly Load" table sales.orders --mode write --detail "5 rows"
 #   python progress.py complete "Nightly Load" --summary "INSERT: 3,990 rows"
 #   python progress.py complete "Nightly Load" --fail --summary "source file missing" --category auth
@@ -591,7 +723,7 @@ def _print_status(logs_dir=None):
 # the reason a job stops, so `complete` is forgiving: closing an already-closed run is not an error.
 
 _COMMANDS = ("start", "step", "detail", "substep", "log", "warn", "metric",
-             "artifact", "delta", "access", "complete", "status")
+             "artifact", "delta", "impact", "access", "complete", "status")
 
 
 def _cli_usage(problem=""):
@@ -689,7 +821,11 @@ def _cli(argv) -> int:
         elif cmd == "log":
             p.log(" ".join(args))
         elif cmd == "warn":
-            p.warn(" ".join(args))
+            count = _take_flag(args, "--count")
+            category = _take_flag(args, "--category") or ""
+            severity = _take_flag(args, "--severity") or ""
+            actionable = _take_flag(args, "--actionable", has_value=False) is not None
+            p.warn(" ".join(args), count=count, category=category, severity=severity, actionable=actionable)
         elif cmd == "metric":
             if len(args) < 2:
                 return _cli_usage("metric needs: <name> <value>")
@@ -707,6 +843,11 @@ def _cli(argv) -> int:
             if len(args) < 2:
                 return _cli_usage("delta needs: <metric> <value>")
             p.track_delta(args[0], float(args[1]))
+        elif cmd == "impact":
+            label = _take_flag(args, "--label") or ""
+            if len(args) < 2:
+                return _cli_usage('impact needs: <metric> <value> [--label "..."]')
+            p.impact(args[0], float(args[1]), label=label)
         elif cmd == "access":
             mode = _take_flag(args, "--mode") or "read"
             detail = _take_flag(args, "--detail") or ""

@@ -32,6 +32,13 @@ export interface ProgressData {
 export interface Warning {
   time: string;
   msg: string;
+  /** How many things this warning is about, so a steady count reads as steady. */
+  count?: number;
+  /** The reporter's own word for the kind of finding, for grouping and trending. */
+  category?: string;
+  severity?: 'info' | 'warn' | 'error';
+  /** True when a human has to go and do something about it, not merely know about it. */
+  actionable?: boolean;
 }
 
 export interface LogLine {
@@ -55,6 +62,12 @@ export interface RunRecord {
   artifacts?: string[];
   /** Free-text kind of failure the script named, e.g. "auth", "quota". Failures only. */
   category?: string;
+  /** Who ran it (OS username), when the reporter was allowed to record it. */
+  user?: string;
+  /** Short commit the scripts were on, so behaviour can be lined up against code. */
+  commit?: string;
+  /** Cumulative contributions this run made, by metric. */
+  impacts?: Record<string, number>;
 }
 
 /** deltas.json: metric name -> points. */
@@ -66,6 +79,16 @@ export interface DeltaPoint {
   runId?: string;
 }
 export type DeltaSeries = Record<string, DeltaPoint[]>;
+
+/** impact.json — what each run contributed, accumulated rather than replaced. */
+export interface ImpactPoint {
+  date: string;
+  value: number;
+  task: string;
+  runId?: string;
+  label?: string;
+}
+export type ImpactSeries = Record<string, ImpactPoint[]>;
 
 /** access.json — which tasks touch which resources. */
 export type AccessNodeType = 'task' | 'file' | 'table' | 'api' | 'other';
@@ -109,6 +132,7 @@ export interface DashboardData {
   tasks: ProgressData[];
   history: RunRecord[];
   deltas: DeltaSeries;
+  impact: ImpactSeries;
   access: AccessGraph | null;
   overlays: RunOverlay[];
   /** Absolute folder the files were read from. */
@@ -130,6 +154,14 @@ export interface ProcessConfig {
   maxMinutes?: number;
   /** Notify this many days before the due date, instead of only once it has been missed. */
   reminderDays?: number;
+  /**
+   * Task-name prefixes that must have run successfully THIS PERIOD before this process can.
+   * A process whose dependency has not run is reported as blocked, not overdue — there is
+   * nothing the reader can do about it yet, and calling it overdue blames the wrong step.
+   * It means exactly "the named process has not run in this period"; it cannot know about a
+   * human step, such as waiting for someone to send a file back.
+   */
+  dependsOn?: string[];
   /**
    * Task names of the phases this process is made of, when it is not one script. The process
    * counts as done only when every phase has run successfully in the period; until then it

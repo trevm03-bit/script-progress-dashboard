@@ -4,13 +4,14 @@
 // card. No vscode import, so it is testable with plain Node.
 import * as fs from 'fs';
 import * as path from 'path';
-import { AccessGraph, DashboardData, DeltaSeries, ProgressData, RunOverlay, RunRecord } from './types';
+import { AccessGraph, DashboardData, DeltaSeries, ImpactSeries, ProgressData, RunOverlay, RunRecord } from './types';
 import { parseIso } from './logic/time';
 
 export const FILES = {
   progress: 'progress.json',
   history: 'run_history.json',
   deltas: 'deltas.json',
+  impact: 'impact.json',
   access: 'access.json',
 } as const;
 export const SLOTS_DIR = 'progress';
@@ -40,6 +41,7 @@ export class DataReader {
     const progress = this.readJson<ProgressData>(FILES.progress, readErrors);
     const history = this.readJson<RunRecord[]>(FILES.history, readErrors);
     const deltas = this.readJson<DeltaSeries>(FILES.deltas, readErrors);
+    const impact = this.readJson<ImpactSeries>(FILES.impact, readErrors);
     const access = this.readJson<AccessGraph>(FILES.access, readErrors);
     const main = isProgress(progress) ? progress : null;
     const tasks = this.readSlots(readErrors, main);
@@ -54,6 +56,7 @@ export class DataReader {
       tasks,
       history: Array.isArray(history) ? history.filter(isRun) : [],
       deltas: deltas && typeof deltas === 'object' && !Array.isArray(deltas) ? deltas : {},
+      impact: impact && typeof impact === 'object' && !Array.isArray(impact) ? impact : {},
       access: access && Array.isArray((access as AccessGraph).nodes) ? access : null,
       overlays: this.overlays,
       logsDir: this.logsDir,
