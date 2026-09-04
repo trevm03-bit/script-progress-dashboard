@@ -24,8 +24,12 @@ import * as path from 'path';
  * powershell.exe would then run as the user the first time anyone copied a digest.
  */
 function powershellPath(): string | null {
-  const root = process.env.SystemRoot || process.env.windir || 'C:\Windows';
+  // 🔴 `'C:\Windows'` is NOT that path: \W is not an escape, so the literal is "C:Windows" — a
+  // DRIVE-RELATIVE path that resolves against the working directory, which is the exact hazard
+  // this function exists to avoid. Escape the separator, and refuse anything not absolute.
+  const root = process.env.SystemRoot || process.env.windir || 'C:\\Windows';
   const exe = path.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  if (!path.isAbsolute(exe)) return null;
   try { return fs.existsSync(exe) ? exe : null; } catch { return null; }
 }
 
@@ -40,9 +44,8 @@ export interface RichCopyResult {
  * with a reason everywhere else, and never throws or hangs (hard 10s cap).
  */
 export function copyHtmlRich(html: string): Promise<RichCopyResult> {
-  if (process.platform !== 'win32') {
-    return Promise.resolve({ ok: false, reason: 'formatted copy needs Windows' });
-  }
+  if (process.platform === 'darwin') return copyMac(html);
+  if (process.platform !== 'win32') return copyLinux(html);
   const exe = powershellPath();
   if (!exe) return Promise.resolve({ ok: false, reason: 'PowerShell was not found where Windows keeps it' });
   const script = powershell();
@@ -79,6 +82,60 @@ export function copyHtmlRich(html: string): Promise<RichCopyResult> {
     } catch (e) {
       clearTimeout(timer);
       done({ ok: false, reason: `could not send the content: ${(e as Error).message}` });
+    }
+  });
+}
+
+/**
+ * macOS: osascript puts «class HTML» on the pasteboard. The data has to arrive as hex, so the
+ * markup is passed on stdin and turned into a hex string by the script itself rather than being
+ * interpolated into AppleScript source (where a quote in a task name would end the string).
+ */
+function copyMac(html: string): Promise<RichCopyResult> {
+  const hex = Buffer.from(html, 'utf8').toString('hex');
+  return runTool('/usr/bin/osascript',
+    ['-e', `set the clipboard to «data HTML${hex}»`],
+    undefined, 'the macOS clipboard tool did not accept it');
+}
+
+/**
+ * Linux: xclip if it is there, otherwise say so. There is deliberately no silent fallback to
+ * plain text here — the caller offers "open the rendered page and copy from there", which
+ * actually produces formatted output, and quietly putting markup on the clipboard instead is
+ * how a colleague ends up receiving a wall of tags.
+ */
+function copyLinux(html: string): Promise<RichCopyResult> {
+  for (const exe of ['/usr/bin/xclip', '/bin/xclip', '/usr/local/bin/xclip']) {
+    try { if (fs.existsSync(exe)) return runTool(exe, ['-selection', 'clipboard', '-t', 'text/html'], html, 'xclip did not accept it'); } catch { /* keep looking */ }
+  }
+  return Promise.resolve({ ok: false, reason: 'formatted copy needs xclip (apt install xclip)' });
+}
+
+/** Spawn a clipboard helper with an absolute path, a hard timeout, and no unhandled stdin error. */
+function runTool(exe: string, args: string[], stdin: string | undefined, fallbackReason: string): Promise<RichCopyResult> {
+  if (!path.isAbsolute(exe)) return Promise.resolve({ ok: false, reason: 'clipboard helper path is not absolute' });
+  try { if (!fs.existsSync(exe)) return Promise.resolve({ ok: false, reason: `${path.basename(exe)} was not found` }); } catch { /* fall through */ }
+  return new Promise<RichCopyResult>(resolve => {
+    let settled = false;
+    const done = (r: RichCopyResult) => { if (!settled) { settled = true; resolve(r); } };
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(exe, args, { stdio: [stdin === undefined ? 'ignore' : 'pipe', 'ignore', 'pipe'] });
+    } catch (e) {
+      return done({ ok: false, reason: `${path.basename(exe)} could not start: ${(e as Error).message}` });
+    }
+    const timer = setTimeout(() => { try { child.kill(); } catch { /* already gone */ } done({ ok: false, reason: `${path.basename(exe)} did not respond` }); }, 10000);
+    let stderr = '';
+    child.stderr?.on('data', d => { stderr += String(d); });
+    child.stdin?.on('error', () => { /* the close handler reports the real outcome */ });
+    child.on('error', e => { clearTimeout(timer); done({ ok: false, reason: `${path.basename(exe)} could not start: ${e.message}` }); });
+    child.on('close', code => {
+      clearTimeout(timer);
+      if (code === 0) return done({ ok: true, reason: '' });
+      done({ ok: false, reason: (stderr.trim().split('\n')[0] || fallbackReason).slice(0, 120) });
+    });
+    if (stdin !== undefined) {
+      try { child.stdin?.end(stdin, 'utf8'); } catch (e) { clearTimeout(timer); done({ ok: false, reason: `could not send the content: ${(e as Error).message}` }); }
     }
   });
 }

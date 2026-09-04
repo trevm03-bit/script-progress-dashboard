@@ -1,712 +1,1369 @@
 {
-
   "name": "script-progress-dashboard",
-
   "displayName": "Script Progress — Data Ops Dashboard",
-
   "description": "One dashboard for your recurring jobs: did it run, what did it find, and is the trend improving. Live progress, run history, failure patterns, and a map of what each script reads and writes. Local files only: no server, no telemetry.",
-
   "version": "1.6.0",
-
   "publisher": "trevor-marshall",
-
   "license": "MIT",
-
   "icon": "media/icon.png",
-
-  "galleryBanner": { "color": "#152a30", "theme": "dark" },
-
-  "engines": { "vscode": "^1.80.0" },
-
-  "categories": ["Visualization", "Data Science", "Other"],
-
-  "keywords": ["etl", "etl monitoring", "data operations", "reconciliation", "pipeline", "data engineering", "python", "job monitoring", "run history", "scheduled jobs", "long running scripts", "dashboard"],
-
-  "repository": { "type": "git", "url": "https://github.com/trevm03-bit/script-progress-dashboard.git" },
-
-  "bugs": { "url": "https://github.com/trevm03-bit/script-progress-dashboard/issues" },
-
+  "galleryBanner": {
+    "color": "#152a30",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Visualization",
+    "Data Science",
+    "Other"
+  ],
+  "keywords": [
+    "etl",
+    "etl monitoring",
+    "data operations",
+    "reconciliation",
+    "pipeline",
+    "data engineering",
+    "python",
+    "job monitoring",
+    "run history",
+    "scheduled jobs",
+    "long running scripts",
+    "dashboard"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/trevm03-bit/script-progress-dashboard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/trevm03-bit/script-progress-dashboard/issues"
+  },
   "homepage": "https://github.com/trevm03-bit/script-progress-dashboard#readme",
-
   "qna": "marketplace",
-
-  "activationEvents": ["onStartupFinished"],
-
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
-
   "capabilities": {
-
     "untrustedWorkspaces": {
-
       "supported": "limited",
-
       "description": "Quick Action buttons run shell commands from settings, and logsPath + events.file together let settings choose a folder this extension writes a file into. In an untrusted workspace all three are ignored: no command runs and nothing is written.",
-
-      "restrictedConfigurations": ["scriptProgress.quickActions.buttons", "scriptProgress.logsPath", "scriptProgress.events.file"]
-
+      "restrictedConfigurations": [
+        "scriptProgress.quickActions.buttons",
+        "scriptProgress.logsPath",
+        "scriptProgress.events.file"
+      ]
     }
-
   },
-
   "contributes": {
-
     "commands": [
-
-      { "command": "scriptProgress.openPanel", "title": "Open Dashboard", "category": "Script Progress", "icon": "$(link-external)" },
-
-      { "command": "scriptProgress.openMap", "title": "Open Access Map", "category": "Script Progress", "icon": "$(graph)" },
-
-      { "command": "scriptProgress.focusSidebar", "title": "Show Sidebar", "category": "Script Progress" },
-
-      { "command": "scriptProgress.showHistory", "title": "Show Run History (text)", "category": "Script Progress" },
-
-      { "command": "scriptProgress.refresh", "title": "Refresh", "category": "Script Progress", "icon": "$(refresh)" },
-
-      { "command": "scriptProgress.openLogsFolder", "title": "Open Logs Folder", "category": "Script Progress", "icon": "$(folder-opened)" },
-
-      { "command": "scriptProgress.runQuickAction", "title": "Run Quick Action…", "category": "Script Progress", "icon": "$(play)" },
-
-      { "command": "scriptProgress.runFile", "title": "Run with Script Progress", "category": "Script Progress" },
-
-      { "command": "scriptProgress.copyDailySummary", "title": "Copy Daily Summary", "category": "Script Progress", "icon": "$(clippy)" },
-
-      { "command": "scriptProgress.exportHistoryCsv", "title": "Export Run History (CSV)", "category": "Script Progress" },
-
-      { "command": "scriptProgress.exportReport", "title": "Export HTML Report", "category": "Script Progress", "icon": "$(file-pdf)" },
-
-      { "command": "scriptProgress.archiveHistory", "title": "Archive Run History", "category": "Script Progress" },
-
-      { "command": "scriptProgress.clearHistory", "title": "Clear Run History…", "category": "Script Progress" },
-
-      { "command": "scriptProgress.toggleSections", "title": "Choose Dashboard Sections…", "category": "Script Progress", "icon": "$(checklist)" },
-
-      { "command": "scriptProgress.simulateRun", "title": "Simulate a Demo Run", "category": "Script Progress", "icon": "$(beaker)" },
-
-      { "command": "scriptProgress.statusMenu", "title": "Status Menu", "category": "Script Progress" },
-
-      { "command": "scriptProgress.openSettings", "title": "Open Settings", "category": "Script Progress", "icon": "$(settings-gear)" },
-
-      { "command": "scriptProgress.openWalkthrough", "title": "Open Getting Started", "category": "Script Progress" },
-
-      { "command": "scriptProgress.compareRuns", "title": "Compare Two Runs…", "category": "Script Progress", "icon": "$(git-compare)" },
-
-      { "command": "scriptProgress.copyWeeklyDigest", "title": "Copy Weekly Digest", "category": "Script Progress", "icon": "$(mail)" },
-
-      { "command": "scriptProgress.importDeltas", "title": "Import Delta History…", "category": "Script Progress", "icon": "$(cloud-upload)" },
-
-      { "command": "scriptProgress.generateRunbook", "title": "Generate Runbook", "category": "Script Progress", "icon": "$(book)" },
-
-      { "command": "scriptProgress.copyDigestHtml", "title": "Copy Digest for Email (formatted)", "category": "Script Progress", "icon": "$(mail)" },
-      { "command": "scriptProgress.chooseLayout", "title": "Choose a Layout…", "category": "Script Progress", "icon": "$(layout)" }
-
+      {
+        "command": "scriptProgress.openPanel",
+        "title": "Open Dashboard",
+        "category": "Script Progress",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "scriptProgress.openMap",
+        "title": "Open Access Map",
+        "category": "Script Progress",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "scriptProgress.focusSidebar",
+        "title": "Show Sidebar",
+        "category": "Script Progress"
+      },
+      {
+        "command": "scriptProgress.showHistory",
+        "title": "Show Run History (text)",
+        "category": "Script Progress"
+      },
+      {
+        "command": "scriptProgress.refresh",
+        "title": "Refresh",
+        "category": "Script Progress",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "scriptProgress.openLogsFolder",
+        "title": "Open Logs Folder",
+        "category": "Script Progress",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "scriptProgress.runQuickAction",
+        "title": "Run Quick Action…",
+        "category": "Script Progress",
+        "icon": "$(play)"
+      },
+      {
+        "command": "scriptProgress.runFile",
+        "title": "Run with Script Progress",
+        "category": "Script Progress"
+      },
+      {
+        "command": "scriptProgress.copyDailySummary",
+        "title": "Copy Daily Summary",
+        "category": "Script Progress",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "scriptProgress.exportHistoryCsv",
+        "title": "Export Run History (CSV)",
+        "category": "Script Progress"
+      },
+      {
+        "command": "scriptProgress.exportReport",
+        "title": "Export HTML Report",
+        "category": "Script Progress",
+        "icon": "$(file-pdf)"
+      },
+      {
+        "command": "scriptProgress.archiveHistory",
+        "title": "Archive Run History",
+        "category": "Script Progress"
+      },
+      {
+        "command": "scriptProgress.clearHistory",
+        "title": "Clear Run History…",
+        "category": "Script Progress"
+      },
+      {
+        "command": "scriptProgress.toggleSections",
+        "title": "Choose Dashboard Sections…",
+        "category": "Script Progress",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "scriptProgress.openReporter",
+        "title": "Open the Reporter File",
+        "category": "Script Progress",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "scriptProgress.simulateRun",
+        "title": "Simulate a Demo Run",
+        "category": "Script Progress",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "scriptProgress.statusMenu",
+        "title": "Status Menu",
+        "category": "Script Progress"
+      },
+      {
+        "command": "scriptProgress.openSettings",
+        "title": "Open Settings",
+        "category": "Script Progress",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "scriptProgress.openWalkthrough",
+        "title": "Open Getting Started",
+        "category": "Script Progress"
+      },
+      {
+        "command": "scriptProgress.compareRuns",
+        "title": "Compare Two Runs…",
+        "category": "Script Progress",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "scriptProgress.copyWeeklyDigest",
+        "title": "Copy Weekly Digest",
+        "category": "Script Progress",
+        "icon": "$(mail)"
+      },
+      {
+        "command": "scriptProgress.importDeltas",
+        "title": "Import Delta History…",
+        "category": "Script Progress",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "scriptProgress.generateRunbook",
+        "title": "Generate Runbook",
+        "category": "Script Progress",
+        "icon": "$(book)"
+      },
+      {
+        "command": "scriptProgress.copyDigestHtml",
+        "title": "Copy Digest for Email (formatted)",
+        "category": "Script Progress",
+        "icon": "$(mail)"
+      },
+      {
+        "command": "scriptProgress.chooseLayout",
+        "title": "Choose a Layout…",
+        "category": "Script Progress",
+        "icon": "$(layout)"
+      }
     ],
-
     "keybindings": [
-
-      { "command": "scriptProgress.openPanel", "key": "ctrl+alt+shift+d", "mac": "cmd+alt+shift+d" },
-
-      { "command": "scriptProgress.runQuickAction", "key": "ctrl+alt+shift+r", "mac": "cmd+alt+shift+r" }
-
+      {
+        "command": "scriptProgress.openPanel",
+        "key": "ctrl+alt+shift+d",
+        "mac": "cmd+alt+shift+d"
+      },
+      {
+        "command": "scriptProgress.runQuickAction",
+        "key": "ctrl+alt+shift+r",
+        "mac": "cmd+alt+shift+r"
+      }
     ],
-
     "viewsContainers": {
-
       "activitybar": [
-
-        { "id": "scriptProgress", "title": "Script Progress", "icon": "media/icon.svg" }
-
+        {
+          "id": "scriptProgress",
+          "title": "Script Progress",
+          "icon": "media/icon.svg"
+        }
       ]
-
     },
-
     "views": {
-
       "scriptProgress": [
-
-        { "id": "scriptProgress.dashboard", "name": "Dashboard", "type": "webview" }
-
+        {
+          "id": "scriptProgress.dashboard",
+          "name": "Dashboard",
+          "type": "webview"
+        }
       ]
-
     },
-
     "menus": {
-
       "view/title": [
-
-        { "command": "scriptProgress.openPanel", "when": "view == scriptProgress.dashboard", "group": "navigation@1" },
-
-        { "command": "scriptProgress.runQuickAction", "when": "view == scriptProgress.dashboard && config.scriptProgress.sections.quickActions", "group": "navigation@2" },
-
-        { "command": "scriptProgress.refresh", "when": "view == scriptProgress.dashboard", "group": "navigation@3" },
-
-        { "command": "scriptProgress.toggleSections", "when": "view == scriptProgress.dashboard", "group": "1_sections@1" },
-
-        { "command": "scriptProgress.openMap", "when": "view == scriptProgress.dashboard", "group": "1_sections@2" },
-
-        { "command": "scriptProgress.copyDailySummary", "when": "view == scriptProgress.dashboard", "group": "2_data@1" },
-
-        { "command": "scriptProgress.exportHistoryCsv", "when": "view == scriptProgress.dashboard", "group": "2_data@2" },
-
-        { "command": "scriptProgress.exportReport", "when": "view == scriptProgress.dashboard", "group": "2_data@3" },
-
-        { "command": "scriptProgress.archiveHistory", "when": "view == scriptProgress.dashboard", "group": "2_data@3" },
-
-        { "command": "scriptProgress.clearHistory", "when": "view == scriptProgress.dashboard", "group": "2_data@4" },
-
-        { "command": "scriptProgress.openLogsFolder", "when": "view == scriptProgress.dashboard", "group": "3_misc@1" },
-
-        { "command": "scriptProgress.simulateRun", "when": "view == scriptProgress.dashboard", "group": "3_misc@2" },
-
-        { "command": "scriptProgress.openSettings", "when": "view == scriptProgress.dashboard", "group": "3_misc@3" },
-
-        { "command": "scriptProgress.openWalkthrough", "when": "view == scriptProgress.dashboard", "group": "3_misc@4" }
-
+        {
+          "command": "scriptProgress.openPanel",
+          "when": "view == scriptProgress.dashboard",
+          "group": "navigation@1"
+        },
+        {
+          "command": "scriptProgress.runQuickAction",
+          "when": "view == scriptProgress.dashboard && config.scriptProgress.sections.quickActions",
+          "group": "navigation@2"
+        },
+        {
+          "command": "scriptProgress.refresh",
+          "when": "view == scriptProgress.dashboard",
+          "group": "navigation@3"
+        },
+        {
+          "command": "scriptProgress.toggleSections",
+          "when": "view == scriptProgress.dashboard",
+          "group": "1_sections@1"
+        },
+        {
+          "command": "scriptProgress.openMap",
+          "when": "view == scriptProgress.dashboard",
+          "group": "1_sections@2"
+        },
+        {
+          "command": "scriptProgress.copyDailySummary",
+          "when": "view == scriptProgress.dashboard",
+          "group": "2_data@1"
+        },
+        {
+          "command": "scriptProgress.exportHistoryCsv",
+          "when": "view == scriptProgress.dashboard",
+          "group": "2_data@2"
+        },
+        {
+          "command": "scriptProgress.exportReport",
+          "when": "view == scriptProgress.dashboard",
+          "group": "2_data@3"
+        },
+        {
+          "command": "scriptProgress.archiveHistory",
+          "when": "view == scriptProgress.dashboard",
+          "group": "2_data@3"
+        },
+        {
+          "command": "scriptProgress.clearHistory",
+          "when": "view == scriptProgress.dashboard",
+          "group": "2_data@4"
+        },
+        {
+          "command": "scriptProgress.openLogsFolder",
+          "when": "view == scriptProgress.dashboard",
+          "group": "3_misc@1"
+        },
+        {
+          "command": "scriptProgress.simulateRun",
+          "when": "view == scriptProgress.dashboard",
+          "group": "3_misc@2"
+        },
+        {
+          "command": "scriptProgress.openSettings",
+          "when": "view == scriptProgress.dashboard",
+          "group": "3_misc@3"
+        },
+        {
+          "command": "scriptProgress.openWalkthrough",
+          "when": "view == scriptProgress.dashboard",
+          "group": "3_misc@4"
+        }
       ],
-
       "explorer/context": [
-
-        { "command": "scriptProgress.runFile", "when": "config.scriptProgress.quickActions.contextMenu && resourceExtname =~ /\\.(py|js|ts|ps1|sh|cmd|bat|r|R)$/", "group": "navigation@9" }
-
+        {
+          "command": "scriptProgress.runFile",
+          "when": "config.scriptProgress.quickActions.contextMenu && resourceExtname =~ /\\.(py|js|ts|ps1|sh|cmd|bat|r|R)$/",
+          "group": "navigation@9"
+        }
       ],
-
       "editor/title/context": [
-
-        { "command": "scriptProgress.runFile", "when": "config.scriptProgress.quickActions.contextMenu && resourceExtname =~ /\\.(py|js|ts|ps1|sh|cmd|bat|r|R)$/", "group": "1_run@9" }
-
+        {
+          "command": "scriptProgress.runFile",
+          "when": "config.scriptProgress.quickActions.contextMenu && resourceExtname =~ /\\.(py|js|ts|ps1|sh|cmd|bat|r|R)$/",
+          "group": "1_run@9"
+        }
       ],
-
       "commandPalette": [
-
-        { "command": "scriptProgress.statusMenu", "when": "false" },
-
-        { "command": "scriptProgress.runFile", "when": "resourceExtname =~ /\\.(py|js|ts|ps1|sh|cmd|bat|r|R)$/" }
-
+        {
+          "command": "scriptProgress.statusMenu",
+          "when": "false"
+        },
+        {
+          "command": "scriptProgress.runFile",
+          "when": "resourceExtname =~ /\\.(py|js|ts|ps1|sh|cmd|bat|r|R)$/"
+        }
       ]
-
     },
-
     "taskDefinitions": [
-
       {
-
         "type": "scriptProgress",
-
-        "required": ["action"],
-
+        "required": [
+          "action"
+        ],
         "properties": {
-
-          "action": { "type": "string", "description": "Label of the Quick Action to run (from scriptProgress.quickActions.buttons)." }
-
+          "action": {
+            "type": "string",
+            "description": "Label of the Quick Action to run (from scriptProgress.quickActions.buttons)."
+          }
         }
-
       }
-
     ],
-
     "jsonValidation": [
-
-      { "fileMatch": "progress.json", "url": "./schemas/progress.schema.json" },
-
-      { "fileMatch": "progress/*.json", "url": "./schemas/progress.schema.json" },
-
-      { "fileMatch": "run_history.json", "url": "./schemas/run_history.schema.json" },
-
-      { "fileMatch": "deltas.json", "url": "./schemas/deltas.schema.json" },
-
-      { "fileMatch": "access.json", "url": "./schemas/access.schema.json" }
-
+      {
+        "fileMatch": "progress.json",
+        "url": "./schemas/progress.schema.json"
+      },
+      {
+        "fileMatch": "progress/*.json",
+        "url": "./schemas/progress.schema.json"
+      },
+      {
+        "fileMatch": "run_history.json",
+        "url": "./schemas/run_history.schema.json"
+      },
+      {
+        "fileMatch": "deltas.json",
+        "url": "./schemas/deltas.schema.json"
+      },
+      {
+        "fileMatch": "access.json",
+        "url": "./schemas/access.schema.json"
+      },
+      {
+        "fileMatch": "impact.json",
+        "url": "./schemas/impact.schema.json"
+      }
     ],
-
     "snippets": [
-
-      { "language": "python", "path": "./snippets/python.json" },
-
-      { "language": "javascript", "path": "./snippets/javascript.json" },
-
-      { "language": "shellscript", "path": "./snippets/shellscript.json" },
-
-      { "language": "powershell", "path": "./snippets/shellscript.json" }
-
+      {
+        "language": "python",
+        "path": "./snippets/python.json"
+      },
+      {
+        "language": "javascript",
+        "path": "./snippets/javascript.json"
+      },
+      {
+        "language": "shellscript",
+        "path": "./snippets/shellscript.json"
+      },
+      {
+        "language": "powershell",
+        "path": "./snippets/powershell.json"
+      }
     ],
-
     "colors": [
-
-      { "id": "scriptProgress.running", "description": "Running task colour (progress bar, badge, map pulse).", "defaults": { "dark": "progressBar.background", "light": "progressBar.background", "highContrast": "progressBar.background", "highContrastLight": "progressBar.background" } },
-
-      { "id": "scriptProgress.complete", "description": "Completed task colour.", "defaults": { "dark": "testing.iconPassed", "light": "testing.iconPassed", "highContrast": "#89d185", "highContrastLight": "#1e7f4f" } },
-
-      { "id": "scriptProgress.failed", "description": "Failed task colour.", "defaults": { "dark": "testing.iconFailed", "light": "testing.iconFailed", "highContrast": "#f48771", "highContrastLight": "#b5200d" } },
-
-      { "id": "scriptProgress.stalled", "description": "Stalled task colour.", "defaults": { "dark": "editorWarning.foreground", "light": "editorWarning.foreground", "highContrast": "#ffcc00", "highContrastLight": "#bf8803" } }
-
+      {
+        "id": "scriptProgress.running",
+        "description": "Running task colour (progress bar, badge, map pulse).",
+        "defaults": {
+          "dark": "progressBar.background",
+          "light": "progressBar.background",
+          "highContrast": "progressBar.background",
+          "highContrastLight": "progressBar.background"
+        }
+      },
+      {
+        "id": "scriptProgress.complete",
+        "description": "Completed task colour.",
+        "defaults": {
+          "dark": "testing.iconPassed",
+          "light": "testing.iconPassed",
+          "highContrast": "#89d185",
+          "highContrastLight": "#1e7f4f"
+        }
+      },
+      {
+        "id": "scriptProgress.failed",
+        "description": "Failed task colour.",
+        "defaults": {
+          "dark": "testing.iconFailed",
+          "light": "testing.iconFailed",
+          "highContrast": "#f48771",
+          "highContrastLight": "#b5200d"
+        }
+      },
+      {
+        "id": "scriptProgress.stalled",
+        "description": "Stalled task colour.",
+        "defaults": {
+          "dark": "editorWarning.foreground",
+          "light": "editorWarning.foreground",
+          "highContrast": "#ffcc00",
+          "highContrastLight": "#bf8803"
+        }
+      }
     ],
-
     "walkthroughs": [
-
       {
-
         "id": "scriptProgress.gettingStarted",
-
         "title": "Script Progress Dashboard",
-
         "description": "See what your scripts are doing without leaving the editor.",
-
         "steps": [
-
-          { "id": "sim", "title": "See it working in 10 seconds", "description": "Run a simulated job that writes the same files a real script would.\n[Simulate a Demo Run](command:scriptProgress.simulateRun)\nThen watch the status bar and the Script Progress sidebar.", "media": { "markdown": "media/walkthrough/1-simulate.md" }, "completionEvents": ["onCommand:scriptProgress.simulateRun"] },
-
-          { "id": "logs", "title": "Point it at your logs folder", "description": "Scripts write four small JSON files into one folder. Tell the dashboard where.\n[Open Settings](command:scriptProgress.openSettings)", "media": { "markdown": "media/walkthrough/2-logs-folder.md" }, "completionEvents": ["onSettingChanged:scriptProgress.logsPath"] },
-
-          { "id": "report", "title": "Add five lines to a script", "description": "Copy the reporter into your project and wrap a job with it. Type `progress` in a Python file for the snippet.", "media": { "markdown": "media/walkthrough/3-reporter.md" } },
-
-          { "id": "sections", "title": "Choose your sections", "description": "Every section is a switch. Keep the core ones in the sidebar and everything in the tab.\n[Choose Dashboard Sections](command:scriptProgress.toggleSections)", "media": { "markdown": "media/walkthrough/4-sections.md" }, "completionEvents": ["onCommand:scriptProgress.toggleSections"] },
-
-          { "id": "actions", "title": "Wire buttons and a calendar", "description": "Quick Actions run your scripts from a button or `Terminal → Run Task`; the Process Calendar tells you what has not run yet.\n[Open Dashboard](command:scriptProgress.openPanel)", "media": { "markdown": "media/walkthrough/5-actions-calendar.md" }, "completionEvents": ["onCommand:scriptProgress.openPanel"] }
-
+          {
+            "id": "sim",
+            "title": "See it working in 10 seconds",
+            "description": "Run a simulated job that writes the same files a real script would.\n[Simulate a Demo Run](command:scriptProgress.simulateRun)\nThen watch the status bar and the Script Progress sidebar.",
+            "media": {
+              "markdown": "media/walkthrough/1-simulate.md"
+            },
+            "completionEvents": [
+              "onCommand:scriptProgress.simulateRun"
+            ]
+          },
+          {
+            "id": "logs",
+            "title": "Point it at your logs folder",
+            "description": "Scripts write four small JSON files into one folder. Tell the dashboard where.\n[Open Settings](command:scriptProgress.openSettings)",
+            "media": {
+              "markdown": "media/walkthrough/2-logs-folder.md"
+            },
+            "completionEvents": [
+              "onSettingChanged:scriptProgress.logsPath"
+            ]
+          },
+          {
+            "id": "report",
+            "title": "Add five lines to a script",
+            "description": "Copy the reporter into your project and wrap a job with it. Type `progress` in a Python file for the snippet, or [open the bundled reporter](command:scriptProgress.openReporter).",
+            "media": {
+              "markdown": "media/walkthrough/3-reporter.md"
+            },
+            "completionEvents": [
+              "onCommand:scriptProgress.openReporter"
+            ]
+          },
+          {
+            "id": "sections",
+            "title": "Choose your sections",
+            "description": "Every section is a switch. Keep the core ones in the sidebar and everything in the tab.\n[Choose Dashboard Sections](command:scriptProgress.toggleSections)",
+            "media": {
+              "markdown": "media/walkthrough/4-sections.md"
+            },
+            "completionEvents": [
+              "onCommand:scriptProgress.toggleSections"
+            ]
+          },
+          {
+            "id": "actions",
+            "title": "Wire buttons and a calendar",
+            "description": "Quick Actions run your scripts from a button or `Terminal → Run Task`; the Process Calendar tells you what has not run yet.\n[Open Dashboard](command:scriptProgress.openPanel)",
+            "media": {
+              "markdown": "media/walkthrough/5-actions-calendar.md"
+            },
+            "completionEvents": [
+              "onCommand:scriptProgress.openPanel"
+            ]
+          }
         ]
-
       }
-
     ],
-
     "configuration": [
-
       {
-
         "title": "General",
-
         "order": 1,
-
         "properties": {
-
-          "scriptProgress.logsPath": { "type": "string", "default": "logs", "order": 1, "markdownDescription": "Folder holding `progress.json`, `run_history.json`, `deltas.json` and `access.json`. Relative paths resolve against the first workspace folder; absolute paths are used as-is." },
-
-          "scriptProgress.refreshInterval": { "type": "number", "default": 2000, "minimum": 500, "order": 2, "description": "Fallback poll interval in milliseconds. File changes are picked up immediately by a watcher; this catches anything the watcher misses." },
-
-          "scriptProgress.staleRunningMinutes": { "type": "number", "default": 30, "minimum": 1, "order": 3, "description": "If a task still says 'running' but has not been updated for this many minutes, it is shown as STALLED (the script probably died without reporting)." }
-
+          "scriptProgress.logsPath": {
+            "type": "string",
+            "default": "logs",
+            "order": 1,
+            "markdownDescription": "Folder holding `progress.json`, `run_history.json`, `deltas.json` and `access.json`. Relative paths resolve against the first workspace folder; absolute paths are used as-is."
+          },
+          "scriptProgress.refreshInterval": {
+            "type": "number",
+            "default": 2000,
+            "minimum": 500,
+            "order": 2,
+            "description": "Fallback poll interval in milliseconds. File changes are picked up immediately by a watcher; this catches anything the watcher misses."
+          },
+          "scriptProgress.staleRunningMinutes": {
+            "type": "number",
+            "default": 30,
+            "minimum": 1,
+            "order": 3,
+            "description": "If a task still says 'running' but has not been updated for this many minutes, it is shown as STALLED (the script probably died without reporting)."
+          },
+          "scriptProgress.coverage.weights.schedule": {
+            "type": "number",
+            "default": 2,
+            "minimum": 0,
+            "maximum": 10,
+            "markdownDescription": "Coverage weight: did each scheduled process run in its period?\n\nThe coverage figure is a weighted average of three inputs; these are their weights. Set one to `0` to leave that input out. **Setting all three to `0` removes the figure entirely** — there is nothing left to average."
+          },
+          "scriptProgress.coverage.weights.success": {
+            "type": "number",
+            "default": 2,
+            "minimum": 0,
+            "maximum": 10,
+            "markdownDescription": "Coverage weight: did those runs succeed?\n\nThe coverage figure is a weighted average of three inputs; these are their weights. Set one to `0` to leave that input out. **Setting all three to `0` removes the figure entirely** — there is nothing left to average."
+          },
+          "scriptProgress.coverage.weights.metrics": {
+            "type": "number",
+            "default": 1,
+            "minimum": 0,
+            "maximum": 10,
+            "markdownDescription": "Coverage weight: are the metrics you set thresholds for inside them?\n\nThe coverage figure is a weighted average of three inputs; these are their weights. Set one to `0` to leave that input out. **Setting all three to `0` removes the figure entirely** — there is nothing left to average."
+          }
         }
-
       },
-
       {
-
         "title": "Sections",
-
         "order": 2,
-
         "properties": {
-
-          "scriptProgress.sections.summary": { "type": "boolean", "default": true, "order": 0, "description": "Summary strip at the top: runs today, failures, warnings, next due, stale scripts, metrics out of range." },
-
-          "scriptProgress.sections.activeTask": { "type": "boolean", "default": true, "order": 1, "description": "Active Task: progress, step, live elapsed, ETA, log tail, metrics; one card per running script." },
-
-          "scriptProgress.sections.warnings": { "type": "boolean", "default": true, "order": 2, "description": "Warnings raised by the running script (hidden automatically when there are none)." },
-
-          "scriptProgress.sections.lastCompleted": { "type": "boolean", "default": true, "order": 3, "description": "Last Completed: status, duration, warnings and the metrics the script reported." },
-
-          "scriptProgress.sections.runHistory": { "type": "boolean", "default": true, "order": 4, "description": "Run History table with filters, sorting and click-to-expand detail." },
-
-          "scriptProgress.sections.processCalendar": { "type": "boolean", "default": true, "order": 5, "description": "Process Calendar: expected daily / weekly / monthly processes, whether they have run, month grids, SLAs." },
-
-          "scriptProgress.sections.timeline": { "type": "boolean", "default": true, "order": 6, "description": "Run Timeline: a Gantt-style strip of when each script ran over the last hours or days, with overlaps, failures and slow runs visible." },
-
-          "scriptProgress.sections.quickActions": { "type": "boolean", "default": false, "order": 7, "description": "Quick Action buttons that run commands in a terminal or as a task." },
-
-          "scriptProgress.sections.deltaTracker": { "type": "boolean", "default": false, "order": 8, "description": "Delta Tracker sparkline charts with thresholds." },
-
-          "scriptProgress.sections.metrics": { "type": "boolean", "default": false, "order": 9, "description": "Metrics Explorer: every value reported with Progress.metric(), per task across recent runs, with change vs the previous run." },
-
-          "scriptProgress.sections.warningTrends": { "type": "boolean", "default": false, "order": 10, "description": "Warning Trends: recurring warning messages grouped and counted, and warnings per day." },
-
-          "scriptProgress.sections.scriptHealth": { "type": "boolean", "default": true, "order": 11, "description": "Script Health: last run per script, result dots, failure rate, duration trend, stale detection." },
-
-          "scriptProgress.sections.pendingActions": { "type": "boolean", "default": true, "markdownDescription": "Findings your scripts marked `actionable=True`, taken from each script's most recent **successful** run. A failed run never clears an item." },
-
-          "scriptProgress.sections.impact": { "type": "boolean", "default": false, "markdownDescription": "Running totals of what your scripts have contributed, from `Progress.impact()`." },
-
-          "scriptProgress.pendingActions.maxAgeDays": { "type": "number", "default": 90, "minimum": 1, "description": "Ignore actionable findings from runs older than this." },
-
-          "scriptProgress.coverage.show": { "type": "boolean", "default": true, "markdownDescription": "Show the coverage figure in the summary strip. It combines schedule adherence, run success and metrics-in-range, and always shows those inputs in its tooltip. It measures whether your jobs ran and what they reported — **not** the quality of the underlying data." },
-
-          "scriptProgress.runHistory.ignoreMetrics": { "type": "array", "items": { "type": "string" }, "default": [], "description": "Metric names to exclude from regression detection — anything naturally variable, such as a timestamp or an id." },
-
-          "scriptProgress.sections.accessMap": { "type": "boolean", "default": false, "order": 12, "description": "Access Map: which scripts touch which files, tables and services, drawn as a constellation with data lineage." },
-
-          "scriptProgress.dashboard.sectionOrder": { "type": "array", "items": { "type": "string", "enum": ["summary", "activeTask", "warnings", "lastCompleted", "quickActions", "processCalendar", "timeline", "deltaTracker", "metrics", "runHistory", "warningTrends", "scriptHealth", "accessMap"] }, "default": ["summary", "activeTask", "pendingActions", "warnings", "lastCompleted", "quickActions", "processCalendar", "timeline", "deltaTracker", "metrics", "runHistory", "warningTrends", "scriptHealth", "impact", "accessMap"], "order": 13, "description": "Order of sections top to bottom. Sections not listed go last." },
-
-          "scriptProgress.dashboard.sidebarSections": { "type": "array", "items": { "type": "string", "enum": ["summary", "activeTask", "warnings", "lastCompleted", "quickActions", "processCalendar", "timeline", "deltaTracker", "metrics", "runHistory", "warningTrends", "scriptHealth", "accessMap"] }, "default": [], "order": 14, "markdownDescription": "Sections to show in the **sidebar** (the narrow view). Empty = the same sections as the dashboard tab. Use this to keep only the core in the sidebar." },
-
-          "scriptProgress.dashboard.collapsible": { "type": "boolean", "default": true, "order": 12, "description": "Click a section title to collapse it; the choice is remembered." },
-
-          "scriptProgress.dashboard.density": { "type": "string", "enum": ["comfortable", "compact"], "default": "comfortable", "order": 13, "description": "Spacing and font size of the dashboard." }
-
+          "scriptProgress.sections.summary": {
+            "type": "boolean",
+            "default": true,
+            "order": 1,
+            "description": "Summary strip at the top: runs today, failures, warnings, next due, stale scripts, metrics out of range."
+          },
+          "scriptProgress.sections.activeTask": {
+            "type": "boolean",
+            "default": true,
+            "order": 2,
+            "description": "Active Task: progress, step, live elapsed, ETA, log tail, metrics; one card per running script."
+          },
+          "scriptProgress.sections.warnings": {
+            "type": "boolean",
+            "default": true,
+            "order": 3,
+            "description": "Warnings raised by the running script (hidden automatically when there are none)."
+          },
+          "scriptProgress.sections.lastCompleted": {
+            "type": "boolean",
+            "default": true,
+            "order": 4,
+            "description": "Last Completed: status, duration, warnings and the metrics the script reported."
+          },
+          "scriptProgress.sections.runHistory": {
+            "type": "boolean",
+            "default": true,
+            "order": 5,
+            "description": "Run History table with filters, sorting and click-to-expand detail."
+          },
+          "scriptProgress.sections.processCalendar": {
+            "type": "boolean",
+            "default": true,
+            "order": 6,
+            "description": "Process Calendar: expected daily / weekly / monthly processes, whether they have run, month grids, SLAs."
+          },
+          "scriptProgress.sections.timeline": {
+            "type": "boolean",
+            "default": true,
+            "order": 7,
+            "description": "Run Timeline: a Gantt-style strip of when each script ran over the last hours or days, with overlaps, failures and slow runs visible."
+          },
+          "scriptProgress.sections.quickActions": {
+            "type": "boolean",
+            "default": false,
+            "order": 8,
+            "description": "Quick Action buttons that run commands in a terminal or as a task."
+          },
+          "scriptProgress.sections.deltaTracker": {
+            "type": "boolean",
+            "default": false,
+            "order": 9,
+            "description": "Delta Tracker sparkline charts with thresholds."
+          },
+          "scriptProgress.sections.metrics": {
+            "type": "boolean",
+            "default": false,
+            "order": 10,
+            "description": "Metrics Explorer: every value reported with Progress.metric(), per task across recent runs, with change vs the previous run."
+          },
+          "scriptProgress.sections.warningTrends": {
+            "type": "boolean",
+            "default": false,
+            "order": 11,
+            "description": "Warning Trends: recurring warning messages grouped and counted, and warnings per day."
+          },
+          "scriptProgress.sections.scriptHealth": {
+            "type": "boolean",
+            "default": true,
+            "order": 12,
+            "description": "Script Health: last run per script, result dots, failure rate, duration trend, stale detection."
+          },
+          "scriptProgress.sections.pendingActions": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Findings your scripts marked `actionable=True`, taken from each script's most recent **successful** run. A failed run never clears an item.",
+            "order": 13
+          },
+          "scriptProgress.sections.impact": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "Running totals of what your scripts have contributed, from `Progress.impact()`.",
+            "order": 14
+          },
+          "scriptProgress.pendingActions.maxAgeDays": {
+            "type": "number",
+            "default": 90,
+            "minimum": 1,
+            "description": "Ignore actionable findings from runs older than this.",
+            "maximum": 3650,
+            "order": 15
+          },
+          "scriptProgress.coverage.show": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "Show the coverage figure in the summary strip. It combines schedule adherence, run success and metrics-in-range, and always shows those inputs in its tooltip. It measures whether your jobs ran and what they reported — **not** the quality of the underlying data.",
+            "order": 16
+          },
+          "scriptProgress.runHistory.ignoreMetrics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "description": "Metric names to exclude from regression detection — anything naturally variable, such as a timestamp or an id.",
+            "order": 17
+          },
+          "scriptProgress.sections.accessMap": {
+            "type": "boolean",
+            "default": false,
+            "order": 18,
+            "description": "Access Map: which scripts touch which files, tables and services, drawn as a constellation with data lineage."
+          },
+          "scriptProgress.dashboard.sectionOrder": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "summary",
+                "activeTask",
+                "pendingActions",
+                "warnings",
+                "lastCompleted",
+                "quickActions",
+                "processCalendar",
+                "timeline",
+                "deltaTracker",
+                "metrics",
+                "runHistory",
+                "warningTrends",
+                "scriptHealth",
+                "impact",
+                "accessMap"
+              ]
+            },
+            "default": [
+              "summary",
+              "activeTask",
+              "pendingActions",
+              "warnings",
+              "lastCompleted",
+              "quickActions",
+              "processCalendar",
+              "timeline",
+              "deltaTracker",
+              "metrics",
+              "runHistory",
+              "warningTrends",
+              "scriptHealth",
+              "impact",
+              "accessMap"
+            ],
+            "order": 19,
+            "description": "Order of sections top to bottom. Sections not listed go last."
+          },
+          "scriptProgress.dashboard.sidebarSections": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "summary",
+                "activeTask",
+                "pendingActions",
+                "warnings",
+                "lastCompleted",
+                "quickActions",
+                "processCalendar",
+                "timeline",
+                "deltaTracker",
+                "metrics",
+                "runHistory",
+                "warningTrends",
+                "scriptHealth",
+                "impact",
+                "accessMap"
+              ]
+            },
+            "default": [],
+            "order": 20,
+            "markdownDescription": "Sections to show in the **sidebar** (the narrow view). Empty = the same sections as the dashboard tab. Use this to keep only the core in the sidebar."
+          },
+          "scriptProgress.dashboard.collapsible": {
+            "type": "boolean",
+            "default": true,
+            "order": 21,
+            "description": "Click a section title to collapse it; the choice is remembered."
+          },
+          "scriptProgress.dashboard.density": {
+            "type": "string",
+            "enum": [
+              "comfortable",
+              "compact"
+            ],
+            "default": "comfortable",
+            "order": 22,
+            "description": "Spacing and font size of the dashboard."
+          }
         }
-
       },
-
       {
-
         "title": "Active Task",
-
         "order": 3,
-
         "properties": {
-
-          "scriptProgress.activeTask.showLog": { "type": "boolean", "default": true, "description": "Show the last few log lines the script reported with Progress.log()." },
-
-          "scriptProgress.activeTask.logLines": { "type": "number", "default": 6, "minimum": 1, "maximum": 50, "description": "How many log lines to show." },
-
-          "scriptProgress.activeTask.showMetrics": { "type": "boolean", "default": true, "description": "Show metric chips reported with Progress.metric() while running." },
-
-          "scriptProgress.activeTask.showArtifacts": { "type": "boolean", "default": true, "description": "Show links to files the script reported with Progress.artifact()." }
-
+          "scriptProgress.activeTask.showLog": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show the last few log lines the script reported with Progress.log()."
+          },
+          "scriptProgress.activeTask.logLines": {
+            "type": "number",
+            "default": 6,
+            "minimum": 1,
+            "maximum": 50,
+            "description": "How many log lines to show."
+          },
+          "scriptProgress.activeTask.showMetrics": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show metric chips reported with Progress.metric() while running."
+          },
+          "scriptProgress.activeTask.showArtifacts": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show links to files the script reported with Progress.artifact()."
+          }
         }
-
       },
-
       {
-
         "title": "Run History",
-
         "order": 4,
-
         "properties": {
-
-          "scriptProgress.runHistory.maxRows": { "type": "number", "default": 15, "minimum": 1, "description": "Maximum rows to show." },
-
-          "scriptProgress.runHistory.filters": { "type": "boolean", "default": true, "description": "Show the search box and status chips above the table." },
-
-          "scriptProgress.runHistory.detail": { "type": "boolean", "default": true, "description": "Click a row to expand its warnings, metrics, resources and artifacts." },
-
-          "scriptProgress.runHistory.trend": { "type": "boolean", "default": true, "description": "Show a duration trend sparkline per task in Script Health and the detail row." },
-
-          "scriptProgress.runHistory.anomalies": { "type": "boolean", "default": true, "description": "Flag runs that took much longer than the task's usual duration (needs 3 prior runs)." },
-
-          "scriptProgress.runHistory.anomalyFactor": { "type": "number", "default": 2, "minimum": 1.1, "description": "A run is 'slow' when it takes at least this many times the task's median duration." }
-
+          "scriptProgress.runHistory.maxRows": {
+            "type": "number",
+            "default": 15,
+            "minimum": 1,
+            "description": "Maximum rows to show."
+          },
+          "scriptProgress.runHistory.filters": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show the search box and status chips above the table."
+          },
+          "scriptProgress.runHistory.detail": {
+            "type": "boolean",
+            "default": true,
+            "description": "Click a row to expand its warnings, metrics, resources and artifacts."
+          },
+          "scriptProgress.runHistory.trend": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show a duration trend sparkline per task in Script Health and the detail row."
+          },
+          "scriptProgress.runHistory.anomalies": {
+            "type": "boolean",
+            "default": true,
+            "description": "Flag runs that took much longer than the task's usual duration (needs 3 prior runs)."
+          },
+          "scriptProgress.runHistory.anomalyFactor": {
+            "type": "number",
+            "default": 2,
+            "minimum": 1.1,
+            "description": "A run is 'slow' when it takes at least this many times the task's median duration."
+          }
         }
-
       },
-
       {
-
         "title": "Run Timeline",
-
         "order": 4.5,
-
         "properties": {
-
-          "scriptProgress.timeline.windowHours": { "type": "number", "default": 24, "minimum": 1, "description": "How many hours the timeline covers (24 = today, 168 = a week)." },
-
-          "scriptProgress.timeline.showFailed": { "type": "boolean", "default": true, "description": "Draw failed runs (in the failure colour) as well as successful ones." }
-
+          "scriptProgress.timeline.windowHours": {
+            "type": "number",
+            "default": 24,
+            "minimum": 1,
+            "description": "How many hours the timeline covers (24 = today, 168 = a week)."
+          },
+          "scriptProgress.timeline.showFailed": {
+            "type": "boolean",
+            "default": true,
+            "description": "Draw failed runs (in the failure colour) as well as successful ones."
+          }
         }
-
       },
-
       {
-
         "title": "Metrics Explorer",
-
         "order": 7.5,
-
         "properties": {
-
-          "scriptProgress.metricsExplorer.maxRuns": { "type": "number", "default": 12, "minimum": 2, "maximum": 100, "description": "How many recent runs per task to show as columns." },
-
-          "scriptProgress.metricsExplorer.metrics": { "type": "array", "default": [], "items": { "type": "string" }, "description": "Metric names to show. Empty = every metric any run reported." }
-
+          "scriptProgress.metricsExplorer.maxRuns": {
+            "type": "number",
+            "default": 12,
+            "minimum": 2,
+            "maximum": 100,
+            "description": "How many recent runs per task to show as columns."
+          },
+          "scriptProgress.metricsExplorer.metrics": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "description": "Metric names to show. Empty = every metric any run reported."
+          }
         }
-
       },
-
       {
-
         "title": "Warning Trends",
-
         "order": 7.6,
-
         "properties": {
-
-          "scriptProgress.warningTrends.days": { "type": "number", "default": 14, "minimum": 1, "maximum": 365, "description": "How many days of warnings to analyse." },
-
-          "scriptProgress.warningTrends.top": { "type": "number", "default": 8, "minimum": 1, "maximum": 50, "description": "How many recurring messages to list." }
-
+          "scriptProgress.warningTrends.days": {
+            "type": "number",
+            "default": 14,
+            "minimum": 1,
+            "maximum": 365,
+            "description": "How many days of warnings to analyse."
+          },
+          "scriptProgress.warningTrends.top": {
+            "type": "number",
+            "default": 8,
+            "minimum": 1,
+            "maximum": 50,
+            "description": "How many recurring messages to list."
+          }
         }
-
       },
-
       {
-
         "title": "Process Calendar",
-
         "order": 5,
-
         "properties": {
-
           "scriptProgress.processCalendar.processes": {
-
-            "type": "array", "default": [],
-
+            "type": "array",
+            "default": [],
             "markdownDescription": "Expected processes. `name` is matched against the **start** of task names in run history, case-insensitively.",
-
-            "items": { "type": "object", "required": ["name", "label", "frequency"], "properties": {
-
-              "name": { "type": "string", "description": "Prefix of the task name to match (e.g. 'Nightly Load' matches 'Nightly Load Phase 2')." },
-
-              "label": { "type": "string", "description": "Display label." },
-
-              "frequency": { "type": "string", "enum": ["monthly", "weekly", "daily"], "default": "monthly" },
-
-              "dayOfMonth": { "type": "number", "minimum": 1, "maximum": 31, "description": "Monthly only: the day by which the process is expected." },
-
-              "dayOfWeek": { "type": "number", "minimum": 1, "maximum": 7, "description": "Weekly only: ISO weekday it is due by (1 = Monday … 7 = Sunday). Default: end of the week." },
-
-              "dueHour": { "type": "number", "minimum": 0, "maximum": 23, "description": "Daily only: hour (local) after which a missing run is overdue. Default 12." },
-
-              "maxMinutes": { "type": "number", "minimum": 1, "description": "SLA: a run of this process longer than this is flagged as over its time budget (and notified when notifications.onSlow is on)." },
-
-              "reminderDays": { "type": "number", "minimum": 1, "description": "Notify when the due date is this many days away, instead of only once it has been missed. Fires once per due date." },
-
-              "subtasks": { "type": "array", "items": { "type": "string" }, "markdownDescription": "Task-name prefixes of the phases this process is made of, when it is not one script. The process counts as done only once **every** phase has run successfully in the period; until then it shows `2 of 3 phases`. Leave it out for a single-script process." }
-
-            } }
-
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "label",
+                "frequency"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Prefix of the task name to match (e.g. 'Nightly Load' matches 'Nightly Load Phase 2')."
+                },
+                "label": {
+                  "type": "string",
+                  "description": "Display label."
+                },
+                "frequency": {
+                  "type": "string",
+                  "enum": [
+                    "monthly",
+                    "weekly",
+                    "daily"
+                  ],
+                  "default": "monthly"
+                },
+                "dayOfMonth": {
+                  "type": "number",
+                  "minimum": 1,
+                  "maximum": 31,
+                  "description": "Monthly only: the day by which the process is expected."
+                },
+                "dayOfWeek": {
+                  "type": "number",
+                  "minimum": 1,
+                  "maximum": 7,
+                  "description": "Weekly only: ISO weekday it is due by (1 = Monday … 7 = Sunday). Default: end of the week."
+                },
+                "dueHour": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 23,
+                  "description": "Daily only: hour (local) after which a missing run is overdue. Default 12."
+                },
+                "maxMinutes": {
+                  "type": "number",
+                  "minimum": 1,
+                  "description": "SLA: a run of this process longer than this is flagged as over its time budget (and notified when notifications.onSlow is on)."
+                },
+                "reminderDays": {
+                  "type": "number",
+                  "minimum": 1,
+                  "description": "Notify when the due date is this many days away, instead of only once it has been missed. Fires once per due date."
+                },
+                "subtasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "markdownDescription": "Task-name prefixes of the phases this process is made of, when it is not one script. The process counts as done only once **every** phase has run successfully in the period; until then it shows `2 of 3 phases`. Leave it out for a single-script process."
+                },
+                "dependsOn": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "markdownDescription": "Names of processes that must have run in this period first. While one has not, this process shows as **blocked** rather than overdue.\n\n⚠️ A name that matches no configured process leaves this permanently blocked — and a blocked process counts as neither overdue nor missing, so a typo here quietly *raises* your coverage figure. The dashboard reports an unmatched name as a problem."
+                }
+              }
+            }
           },
-
-          "scriptProgress.processCalendar.view": { "type": "string", "enum": ["list", "grid", "both"], "default": "both", "description": "List of processes, a month grid per process, or both." },
-
-          "scriptProgress.processCalendar.compliance": { "type": "boolean", "default": true, "description": "Show how often each process has run over recent periods, as a row of dots with a percentage. Periods before a process first ran are shown hollow and excluded from the figure." },
-
-          "scriptProgress.processCalendar.compliancePeriods": { "type": "number", "default": 12, "minimum": 3, "maximum": 36, "description": "How many complete periods the compliance figure covers." },
-
-          "scriptProgress.processCalendar.upcoming": { "type": "boolean", "default": true, "description": "Show the 'next due' line under each process." }
-
+          "scriptProgress.processCalendar.view": {
+            "type": "string",
+            "enum": [
+              "list",
+              "grid",
+              "both"
+            ],
+            "default": "both",
+            "description": "List of processes, a month grid per process, or both."
+          },
+          "scriptProgress.processCalendar.compliance": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show how often each process has run over recent periods, as a row of dots with a percentage. Periods before a process first ran are shown hollow and excluded from the figure."
+          },
+          "scriptProgress.processCalendar.compliancePeriods": {
+            "type": "number",
+            "default": 12,
+            "minimum": 3,
+            "maximum": 36,
+            "description": "How many complete periods the compliance figure covers."
+          },
+          "scriptProgress.processCalendar.upcoming": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show the 'next due' line under each process."
+          }
         }
-
       },
-
       {
-
         "title": "Quick Actions",
-
         "order": 6,
-
         "properties": {
-
           "scriptProgress.quickActions.buttons": {
-
-            "type": "array", "default": [],
-
+            "type": "array",
+            "default": [],
             "markdownDescription": "Buttons. In `command`, write `${prompt:Your question}` anywhere you want to be asked for a value when the button is clicked.",
-
-            "items": { "type": "object", "required": ["label", "command"], "properties": {
-
-              "label": { "type": "string" },
-
-              "command": { "type": "string", "description": "Shell command. ${prompt:Label} tokens ask for input first. ${file} = the active editor's file." },
-
-              "icon": { "type": "string", "description": "Codicon name, e.g. 'play', 'sync', 'beaker', 'mail'." },
-
-              "confirm": { "type": "boolean", "default": true, "description": "Ask for confirmation before running." },
-
-              "group": { "type": "string", "description": "Group heading." },
-
-              "cwd": { "type": "string", "description": "Working directory (relative to the workspace folder). Default: the workspace folder." },
-
-              "task": { "type": "string", "description": "The task name this button starts (so the button can show its last run and be disabled while it runs)." },
-
-              "enableWhen": { "type": "object", "required": ["metric"], "markdownDescription": "Only offer this button when the last **successful** run says it is worth it — e.g. `{ \"metric\": \"issues\", \"gt\": 0 }` on a fix button. The button stays visible and is disabled with the reason, never hidden. If the metric or the run is missing, the button stays enabled.", "properties": {
-
-                "task": { "type": "string", "description": "Task whose last successful run is inspected. Defaults to this button's own 'task'." },
-
-                "metric": { "type": "string", "description": "Metric name to read from that run." },
-
-                "gt": { "type": "number" }, "gte": { "type": "number" }, "lt": { "type": "number" }, "lte": { "type": "number" },
-
-                "eq": { "description": "Exact match, number or string." }
-
-              } }
-
-            } }
-
+            "items": {
+              "type": "object",
+              "required": [
+                "label",
+                "command"
+              ],
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "command": {
+                  "type": "string",
+                  "description": "Shell command. ${prompt:Label} tokens ask for input first. ${file} = the active editor's file."
+                },
+                "icon": {
+                  "type": "string",
+                  "description": "Codicon name, e.g. 'play', 'sync', 'beaker', 'mail'."
+                },
+                "confirm": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "Ask for confirmation before running."
+                },
+                "group": {
+                  "type": "string",
+                  "description": "Group heading."
+                },
+                "cwd": {
+                  "type": "string",
+                  "description": "Working directory (relative to the workspace folder). Default: the workspace folder."
+                },
+                "task": {
+                  "type": "string",
+                  "description": "The task name this button starts (so the button can show its last run and be disabled while it runs)."
+                },
+                "enableWhen": {
+                  "type": "object",
+                  "required": [
+                    "metric"
+                  ],
+                  "markdownDescription": "Only offer this button when the last **successful** run says it is worth it — e.g. `{ \"metric\": \"issues\", \"gt\": 0 }` on a fix button. The button stays visible and is disabled with the reason, never hidden. If the metric or the run is missing, the button stays enabled.",
+                  "properties": {
+                    "task": {
+                      "type": "string",
+                      "description": "Task whose last successful run is inspected. Defaults to this button's own 'task'."
+                    },
+                    "metric": {
+                      "type": "string",
+                      "description": "Metric name to read from that run."
+                    },
+                    "gt": {
+                      "type": "number"
+                    },
+                    "gte": {
+                      "type": "number"
+                    },
+                    "lt": {
+                      "type": "number"
+                    },
+                    "lte": {
+                      "type": "number"
+                    },
+                    "eq": {
+                      "description": "Exact match, number or string."
+                    }
+                  }
+                }
+              }
+            }
           },
-
-          "scriptProgress.quickActions.runVia": { "type": "string", "enum": ["terminal", "task"], "default": "terminal", "markdownDescription": "`terminal`: send the command to a reusable *Script Progress* terminal. `task`: run it as a VS Code task (appears in Terminal → Run Task, and the exit code is captured)." },
-
-          "scriptProgress.quickActions.asTasks": { "type": "boolean", "default": true, "description": "Also expose every button as a VS Code task (type 'scriptProgress')." },
-
-          "scriptProgress.quickActions.contextMenu": { "type": "boolean", "default": true, "description": "Add 'Run with Script Progress' to the Explorer and editor context menus for script files." },
-
-          "scriptProgress.quickActions.disableWhileRunning": { "type": "boolean", "default": true, "description": "Disable a button while the task it starts (see 'task') is running." },
-
-          "scriptProgress.quickActions.interpreters": { "type": "object", "default": { ".py": "python", ".js": "node", ".ts": "npx tsx", ".ps1": "powershell -ExecutionPolicy Bypass -File", ".sh": "bash", ".cmd": "", ".bat": "", ".r": "Rscript", ".R": "Rscript" }, "additionalProperties": { "type": "string" }, "description": "How 'Run with Script Progress' runs each file type (command prefix by extension)." }
-
+          "scriptProgress.quickActions.runVia": {
+            "type": "string",
+            "enum": [
+              "terminal",
+              "task"
+            ],
+            "default": "terminal",
+            "markdownDescription": "`terminal`: send the command to a reusable *Script Progress* terminal. `task`: run it as a VS Code task (appears in Terminal → Run Task, and the exit code is captured)."
+          },
+          "scriptProgress.quickActions.asTasks": {
+            "type": "boolean",
+            "default": true,
+            "description": "Also expose every button as a VS Code task (type 'scriptProgress')."
+          },
+          "scriptProgress.quickActions.contextMenu": {
+            "type": "boolean",
+            "default": true,
+            "description": "Add 'Run with Script Progress' to the Explorer and editor context menus for script files."
+          },
+          "scriptProgress.quickActions.disableWhileRunning": {
+            "type": "boolean",
+            "default": true,
+            "description": "Disable a button while the task it starts (see 'task') is running."
+          },
+          "scriptProgress.quickActions.interpreters": {
+            "type": "object",
+            "default": {
+              ".py": "python",
+              ".js": "node",
+              ".ts": "npx tsx",
+              ".ps1": "powershell -ExecutionPolicy Bypass -File",
+              ".sh": "bash",
+              ".cmd": "",
+              ".bat": "",
+              ".r": "Rscript",
+              ".R": "Rscript"
+            },
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "How 'Run with Script Progress' runs each file type (command prefix by extension)."
+          }
         }
-
       },
-
       {
-
         "title": "Delta Tracker",
-
         "order": 7,
-
         "properties": {
-
-          "scriptProgress.deltaTracker.metrics": { "type": "array", "default": [], "items": { "type": "string" }, "description": "Metric names from deltas.json to chart. Empty = every metric present." },
-
-          "scriptProgress.deltaTracker.formats": { "type": "object", "default": {}, "additionalProperties": { "type": "object", "properties": { "unit": { "type": "string" }, "decimals": { "type": "number" }, "label": { "type": "string" } } }, "markdownDescription": "Per-metric display: `{ \"reconciliation_delta\": { \"unit\": \"%\", \"decimals\": 2, \"label\": \"Reconciliation Δ\" } }`." },
-
-          "scriptProgress.deltaTracker.thresholds": { "type": "object", "default": {}, "additionalProperties": { "type": "object", "properties": { "min": { "type": "number" }, "max": { "type": "number" }, "target": { "type": "number", "description": "The value this metric is aiming at. Drawn as its own line on the chart — an acceptable band is not the same thing as a goal." } } }, "markdownDescription": "Per-metric acceptable range and goal: `{ \"reconciliation_delta\": { \"min\": -0.5, \"max\": 0.5, \"target\": 0 } }`. Out-of-range values are highlighted and counted in the summary strip; the target is drawn as a separate line." },
-
-          "scriptProgress.deltaTracker.points": { "type": "number", "default": 50, "minimum": 2, "description": "How many recent points to chart per metric." }
-
+          "scriptProgress.deltaTracker.metrics": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "description": "Metric names from deltas.json to chart. Empty = every metric present."
+          },
+          "scriptProgress.deltaTracker.formats": {
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "unit": {
+                  "type": "string"
+                },
+                "decimals": {
+                  "type": "number"
+                },
+                "label": {
+                  "type": "string"
+                }
+              }
+            },
+            "markdownDescription": "Per-metric display: `{ \"reconciliation_delta\": { \"unit\": \"%\", \"decimals\": 2, \"label\": \"Reconciliation Δ\" } }`."
+          },
+          "scriptProgress.deltaTracker.thresholds": {
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "min": {
+                  "type": "number"
+                },
+                "max": {
+                  "type": "number"
+                },
+                "target": {
+                  "type": "number",
+                  "description": "The value this metric is aiming at. Drawn as its own line on the chart — an acceptable band is not the same thing as a goal."
+                }
+              }
+            },
+            "markdownDescription": "Per-metric acceptable range and goal: `{ \"reconciliation_delta\": { \"min\": -0.5, \"max\": 0.5, \"target\": 0 } }`. Out-of-range values are highlighted and counted in the summary strip; the target is drawn as a separate line."
+          },
+          "scriptProgress.deltaTracker.points": {
+            "type": "number",
+            "default": 50,
+            "minimum": 2,
+            "description": "How many recent points to chart per metric."
+          }
         }
-
       },
-
       {
-
         "title": "Script Health",
-
         "order": 8,
-
         "properties": {
-
-          "scriptProgress.scriptHealth.staleHours": { "type": "number", "default": 168, "minimum": 1, "description": "Hours after which a task with no run is considered stale (default 7 days)." },
-
-          "scriptProgress.scriptHealth.resultDots": { "type": "number", "default": 5, "minimum": 0, "maximum": 20, "description": "How many recent results to show as dots per task (0 = none)." }
-
+          "scriptProgress.scriptHealth.staleHours": {
+            "type": "number",
+            "default": 168,
+            "minimum": 1,
+            "description": "Hours after which a task with no run is considered stale (default 7 days)."
+          },
+          "scriptProgress.scriptHealth.resultDots": {
+            "type": "number",
+            "default": 5,
+            "minimum": 0,
+            "maximum": 20,
+            "description": "How many recent results to show as dots per task (0 = none)."
+          }
         }
-
       },
-
       {
-
         "title": "Access Map",
-
         "order": 9,
-
         "properties": {
-
-          "scriptProgress.accessMap.maxNodes": { "type": "number", "default": 150, "minimum": 10, "description": "Cap on nodes drawn (least recently seen are dropped first)." },
-
-          "scriptProgress.accessMap.layout": { "type": "string", "enum": ["force", "radial"], "default": "force", "description": "force: physics-settled constellation. radial: scripts on an inner ring, resources on an outer ring grouped by type." },
-
-          "scriptProgress.accessMap.timeWindowDays": { "type": "number", "default": 0, "minimum": 0, "description": "Only draw nodes and links seen in the last N days (0 = everything)." },
-
-          "scriptProgress.accessMap.labels": { "type": "string", "enum": ["auto", "all", "scripts"], "default": "auto", "description": "Which labels to draw. auto = scripts always, resources when the map is small or on hover/focus." },
-
-          "scriptProgress.accessMap.sidebarPreview": { "type": "boolean", "default": true, "description": "Draw a small live preview of the map in the sidebar." },
-
-          "scriptProgress.accessMap.replay": { "type": "boolean", "default": true, "description": "When a run completes, replay its path through the map." },
-
-          "scriptProgress.accessMap.ambient": { "type": "boolean", "default": true, "description": "Traffic particles along the links a running script is using right now — script→resource for writes, resource→script for reads. Nothing moves when nothing is running." },
-
-          "scriptProgress.accessMap.halos": { "type": "boolean", "default": true, "description": "Soft coloured halos behind each script hub and its resources." },
-
-          "scriptProgress.accessMap.glyphs": { "type": "boolean", "default": true, "description": "Draw a small type glyph inside each node (script, table, file, service)." },
-
-          "scriptProgress.accessMap.minimap": { "type": "boolean", "default": true, "description": "Show a mini-map inset with the current viewport when zoomed in." },
-
-          "scriptProgress.accessMap.starfield": { "type": "boolean", "default": false, "description": "A faint static starfield behind the map. Off by default; purely decorative and never animated." }
-
+          "scriptProgress.accessMap.maxNodes": {
+            "type": "number",
+            "default": 150,
+            "minimum": 10,
+            "description": "Cap on nodes drawn (least recently seen are dropped first)."
+          },
+          "scriptProgress.accessMap.layout": {
+            "type": "string",
+            "enum": [
+              "force",
+              "radial"
+            ],
+            "default": "force",
+            "description": "force: physics-settled constellation. radial: scripts on an inner ring, resources on an outer ring grouped by type."
+          },
+          "scriptProgress.accessMap.timeWindowDays": {
+            "type": "number",
+            "default": 0,
+            "minimum": 0,
+            "description": "Only draw nodes and links seen in the last N days (0 = everything)."
+          },
+          "scriptProgress.accessMap.labels": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "all",
+              "scripts"
+            ],
+            "default": "auto",
+            "description": "Which labels to draw. auto = scripts always, resources when the map is small or on hover/focus."
+          },
+          "scriptProgress.accessMap.sidebarPreview": {
+            "type": "boolean",
+            "default": true,
+            "description": "Draw a small live preview of the map in the sidebar."
+          },
+          "scriptProgress.accessMap.replay": {
+            "type": "boolean",
+            "default": true,
+            "description": "When a run completes, replay its path through the map."
+          },
+          "scriptProgress.accessMap.ambient": {
+            "type": "boolean",
+            "default": true,
+            "description": "Traffic particles along the links a running script is using right now — script→resource for writes, resource→script for reads. Nothing moves when nothing is running."
+          },
+          "scriptProgress.accessMap.halos": {
+            "type": "boolean",
+            "default": true,
+            "description": "Soft coloured halos behind each script hub and its resources."
+          },
+          "scriptProgress.accessMap.glyphs": {
+            "type": "boolean",
+            "default": true,
+            "description": "Draw a small type glyph inside each node (script, table, file, service)."
+          },
+          "scriptProgress.accessMap.minimap": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show a mini-map inset with the current viewport when zoomed in."
+          },
+          "scriptProgress.accessMap.starfield": {
+            "type": "boolean",
+            "default": false,
+            "description": "A faint static starfield behind the map. Off by default; purely decorative and never animated."
+          }
         }
-
       },
-
       {
-
         "title": "Notifications",
-
         "order": 10,
-
         "properties": {
-
-          "scriptProgress.notifications.onComplete": { "type": "boolean", "default": false, "description": "Notify when a task completes successfully." },
-
-          "scriptProgress.notifications.onFail": { "type": "boolean", "default": true, "description": "Notify when a task fails." },
-
-          "scriptProgress.notifications.onStall": { "type": "boolean", "default": true, "description": "Notify when a running task is detected as stalled." },
-
-          "scriptProgress.notifications.onWarning": { "type": "boolean", "default": false, "description": "Notify on each new warning while a task runs." },
-
-          "scriptProgress.notifications.onExit": { "type": "boolean", "default": true, "description": "Notify when a Quick Action's process exits with a non-zero code." },
-
-          "scriptProgress.notifications.onSlow": { "type": "boolean", "default": false, "description": "Notify when a run finishes far slower than usual or over its SLA (maxMinutes)." },
-
-          "scriptProgress.notifications.mirrorProgress": { "type": "boolean", "default": false, "description": "Mirror the running task into a native VS Code progress notification with a percentage." }
-
+          "scriptProgress.notifications.onComplete": {
+            "type": "boolean",
+            "default": false,
+            "description": "Notify when a task completes successfully."
+          },
+          "scriptProgress.notifications.onFail": {
+            "type": "boolean",
+            "default": true,
+            "description": "Notify when a task fails."
+          },
+          "scriptProgress.notifications.onStall": {
+            "type": "boolean",
+            "default": true,
+            "description": "Notify when a running task is detected as stalled."
+          },
+          "scriptProgress.notifications.onWarning": {
+            "type": "boolean",
+            "default": false,
+            "description": "Notify on each new warning while a task runs."
+          },
+          "scriptProgress.notifications.onExit": {
+            "type": "boolean",
+            "default": true,
+            "description": "Notify when a Quick Action's process exits with a non-zero code."
+          },
+          "scriptProgress.notifications.onSlow": {
+            "type": "boolean",
+            "default": false,
+            "description": "Notify when a run finishes far slower than usual or over its SLA (maxMinutes)."
+          },
+          "scriptProgress.notifications.mirrorProgress": {
+            "type": "boolean",
+            "default": false,
+            "description": "Mirror the running task into a native VS Code progress notification with a percentage."
+          }
         }
-
       },
-
       {
-
         "title": "Events",
-
         "properties": {
-
-          "scriptProgress.metricsExplorer.totals": { "type": "boolean", "default": true, "description": "Show a total and mean per metric across the runs in view. Useful for anything worth accumulating, such as a per-run cost." },
-
-          "scriptProgress.report.includeIdentity": { "type": "boolean", "default": false, "markdownDescription": "Include the username and git commit of each run in the **exported HTML report** and the **formatted digest**. Off by default: those are the outputs you send to other people." },
-          "scriptProgress.events.file": { "type": "boolean", "default": false, "markdownDescription": "Write `last_event.json` into the logs folder whenever a run completes, fails, stalls or exits, so a tool outside VS Code can watch for it. Off by default: this is the only file the extension writes. It stays local — the extension makes no network requests of any kind." }
-
-        }
-
+          "scriptProgress.metricsExplorer.totals": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show a total and mean per metric across the runs in view. Useful for anything worth accumulating, such as a per-run cost."
+          },
+          "scriptProgress.report.includeIdentity": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "Include the username and git commit of each run in the **exported HTML report**.\n\nOff by default: the report is the output you send to other people. The formatted digest never contains either, and the CSV export never has."
+          },
+          "scriptProgress.events.file": {
+            "type": "boolean",
+            "default": false,
+            "markdownDescription": "Write `last_event.json` into the logs folder whenever a run completes, fails, stalls or exits, so a tool outside VS Code can watch for it. Off by default: this is the only file the extension writes. It stays local — the extension makes no network requests of any kind."
+          }
+        },
+        "order": 10.5
       },
-
       {
-
         "title": "Status Bar",
-
         "order": 11,
-
         "properties": {
-
-          "scriptProgress.statusBar.enabled": { "type": "boolean", "default": true, "description": "Show the current task in the status bar." },
-
-          "scriptProgress.statusBar.idleMode": { "type": "string", "enum": ["last", "hidden"], "default": "last", "description": "When nothing is running: show the last result, or hide the item." },
-
-          "scriptProgress.statusBar.clickAction": { "type": "string", "enum": ["menu", "dashboard"], "default": "menu", "description": "Clicking the status bar item opens a menu of actions, or the dashboard directly." },
-
-          "scriptProgress.badge": { "type": "string", "enum": ["running", "failures", "off"], "default": "running", "description": "Number shown on the Activity Bar icon: running tasks, failed runs today, or nothing." }
-
+          "scriptProgress.statusBar.enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show the current task in the status bar."
+          },
+          "scriptProgress.statusBar.idleMode": {
+            "type": "string",
+            "enum": [
+              "last",
+              "hidden"
+            ],
+            "default": "last",
+            "description": "When nothing is running: show the last result, or hide the item."
+          },
+          "scriptProgress.statusBar.clickAction": {
+            "type": "string",
+            "enum": [
+              "menu",
+              "dashboard"
+            ],
+            "default": "menu",
+            "description": "Clicking the status bar item opens a menu of actions, or the dashboard directly."
+          },
+          "scriptProgress.badge": {
+            "type": "string",
+            "enum": [
+              "running",
+              "failures",
+              "off"
+            ],
+            "default": "running",
+            "description": "Number shown on the Activity Bar icon: running tasks, failed runs today, or nothing."
+          }
         }
-
       }
-
     ]
-
   },
-
   "scripts": {
-
     "compile": "node scripts/copy-codicons.js && tsc -p ./",
-
     "watch": "tsc -watch -p ./",
-
     "test": "node --test \"test/*.test.js\"",
-
     "package": "npx --yes @vscode/vsce@latest package -o dist/ --allow-missing-repository --baseImagesUrl https://raw.githubusercontent.com/trevm03-bit/script-progress-dashboard/main/",
-
-    "vscode:prepublish": "npm run compile"
-
+    "smoke": "node scripts/smoke.js",
+    "vscode:prepublish": "npm run compile",
+    "test:python": "python python/test_progress.py && python python/test_regressions.py",
+    "test:all": "npm run compile && npm test && npm run test:python"
   },
-
   "devDependencies": {
-
     "@types/node": "^18.19.0",
-
     "@types/vscode": "1.80.0",
-
     "@vscode/codicons": "^0.0.36",
-
     "typescript": "^5.5.0"
-
   }
-
 }
-

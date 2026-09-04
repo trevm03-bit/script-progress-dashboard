@@ -10,6 +10,10 @@ const { settings } = require('./fixtures/settings.js');
 // Wed 2026-09-02 10:00:30 local — the same pinned clock the other suites use.
 const NOW = new Date(2026, 8, 2, 10, 0, 30);
 const HOUR = 3600 * 1000;
+// The window ends at the START OF THE MINUTE containing "now", not at now itself: an unrounded
+// right edge changed every tick position on every render, so this was the one section that could
+// never match its previous output - which switched off the dashboard's no-change gate entirely.
+const EDGE = new Date(2026, 8, 2, 10, 0, 0);
 
 /** The shared fixture settings plus the timeline/anomaly keys it predates. */
 function S(o = {}) {
@@ -24,8 +28,11 @@ const lane = (m, task) => m.lanes.find(l => l.task === task);
 
 test('window is windowHours long and ends at now; bad values fall back to 24h', () => {
   const m = timelineModel(fixture, S(), NOW);
-  assert.equal(m.end.getTime(), NOW.getTime());
-  assert.equal(m.start.getTime(), NOW.getTime() - 24 * HOUR);
+  assert.equal(m.end.getTime(), EDGE.getTime());
+  assert.equal(m.start.getTime(), EDGE.getTime() - 24 * HOUR);
+  // Stability is the point: two renders inside the same minute must be byte-identical.
+  const later = timelineModel(fixture, S(), new Date(2026, 8, 2, 10, 0, 59));
+  assert.equal(later.end.getTime(), EDGE.getTime());
   assert.equal(m.windowHours, 24);
   assert.equal(windowHoursOf({ timeline: { windowHours: 0 } }), 24);
   assert.equal(windowHoursOf({}), 24);
@@ -49,7 +56,8 @@ test('bars come from history and from a running task', () => {
   const derived = demo.bars.find(b => b.end.getTime() === new Date(2026, 8, 1, 22, 0, 0).getTime());
   assert.equal(derived.start.getTime(), new Date(2026, 8, 1, 22, 0, 0).getTime() - 30000);
 
-  // The running task ends at now and is measured with liveElapsed (09:55:00 -> 10:00:30).
+  // The running task ends at now and is measured with liveElapsed (09:55:00 -> 10:00:30) - the
+  // window edge is quantised, but a bar keeps its true times and is clipped only in x.
   const live = lane(m, 'Nightly Sync').bars.find(b => b.running);
   assert.equal(live.end.getTime(), NOW.getTime());
   assert.equal(live.start.getTime(), new Date(2026, 8, 2, 9, 55, 0).getTime());
@@ -79,8 +87,8 @@ test('bars are clipped to the window and runs longer than it survive', () => {
   // The true times are kept even though the drawing is clipped.
   assert.equal(edge.start.getTime(), new Date(2026, 8, 1, 9, 30, 0).getTime());
   assert.equal(edge.seconds, 5400);
-  // Ends 11:00, window opens 10:00:30 -> 59.5 of the window's 1440 minutes are used.
-  assert.ok(Math.abs(edge.x1 - (59.5 * 60 * 1000) / (24 * HOUR)) < 1e-9);
+  // Ends 11:00, window opens 10:00 (the minute the clock is in) -> 60 of its 1440 minutes.
+  assert.ok(Math.abs(edge.x1 - (60 * 60 * 1000) / (24 * HOUR)) < 1e-9);
 
   // A two-day run inside a one-day window: clipped at the left, still visible.
   const long = lane(m, 'Long Job').bars[0];
@@ -137,8 +145,10 @@ test('ticks: hourly for 24h, six-hourly for 168h', () => {
   const m24 = timelineModel(fixture, S(), NOW);
   assert.equal(m24.stepHours, 1);
   assert.equal(tickStepHours(24), 1);
-  assert.equal(m24.ticks.length, 24); // 11:00 on the 1st through 10:00 on the 2nd
-  assert.equal(m24.ticks[0].at.getHours(), 11);
+  // 25, not 24: quantising the right edge to the minute leaves the window hour-ALIGNED, so both
+  // endpoints land on a tick. Ragged windows used to drop the first one.
+  assert.equal(m24.ticks.length, 25); // 10:00 on the 1st through 10:00 on the 2nd
+  assert.equal(m24.ticks[0].at.getHours(), 10);
   assert.equal(m24.ticks[m24.ticks.length - 1].at.getHours(), 10);
   assert.ok(m24.ticks.every(t => t.at.getMinutes() === 0 && t.x >= 0 && t.x <= 1));
   assert.ok(m24.ticks.every(t => t.at >= m24.start && t.at <= m24.end));
@@ -165,7 +175,7 @@ test('empty history and a single run', () => {
   const m = timelineModel(empty, S(), NOW);
   assert.deepEqual(m.lanes, []);
   assert.equal(m.runs, 0);
-  assert.equal(m.ticks.length, 24);
+  assert.equal(m.ticks.length, 25);
 
   const one = { ...empty, history: [{ task: 'Solo', date: '2026-09-02T09:00:00', success: true, elapsed: 60, summary: '', warnings: 0 }] };
   const m1 = timelineModel(one, S(), NOW);

@@ -16,7 +16,10 @@ test('event file is written atomically and replaced', () => {
 });
 
 test('an unwritable folder never throws', () => {
-  assert.doesNotThrow(() => writeEvent('\0bad', { event: 'failed', task: 'T', at: 'x' }));
+  // `trusted` passed explicitly. Omitting it left the argument undefined, i.e. falsy, so this
+  // asserted that an UNTRUSTED write does not throw - which it cannot, because it never writes.
+  // The case the test is named for was never exercised.
+  assert.doesNotThrow(() => writeEvent('\0bad', { event: 'failed', task: 'T', at: 'x' }, true));
 });
 
 test('an untrusted workspace is never written to', () => {

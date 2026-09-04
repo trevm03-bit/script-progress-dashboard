@@ -57,10 +57,13 @@ function keyCell(row: MetricsRow): string {
   const spark = row.numeric && row.series.length > 0
     ? `<svg class="mx-spark" viewBox="0 0 ${SPARK_W} ${SPARK_H}" preserveAspectRatio="none" aria-hidden="true"><path class="sparkline" d="${sparklinePath(row.series, SPARK_W, SPARK_H, 2)}"/></svg>`
     : '';
+  // The NAME goes in the tooltip first. The cell is capped at 200px (110px in the sidebar) with
+  // an ellipsis, and the metric name appears nowhere else - so a long one was unrecoverable, and
+  // the only tooltip on it described the value range instead of saying what the row was.
   const range = row.min !== null && row.max !== null
-    ? ` title="min ${esc(formatMetric(row.min))} · max ${esc(formatMetric(row.max))}"`
+    ? ` · min ${esc(formatMetric(row.min))} · max ${esc(formatMetric(row.max))}`
     : '';
-  return `<td class="mx-key"><span class="mx-key-name"${range}>${esc(row.key)}</span>${spark}</td>`;
+  return `<td class="mx-key"><span class="mx-key-name" title="${esc(row.key)}${range}">${esc(row.key)}</span>${spark}</td>`;
 }
 
 function runHeader(run: MetricsRunRef): string {

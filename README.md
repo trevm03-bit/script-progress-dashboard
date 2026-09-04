@@ -44,19 +44,26 @@ Python and Node reporters are just the two that ship.
 
 ## The views
 
-Fifteen sections. **Nine are on out of the box** — enough to answer *did it run, what did it find,
-is it holding together* the moment a script reports — and the rest are one click away.
+There are fifteen sections, and **you start with nine of them on**. That set has a name —
+**Operations** — so you always know where you are:
 
-**Script Progress: Choose a Layout…** switches the whole set in one go:
+| Layout | Sections | What you get |
+|---|---|---|
+| **Essentials** | 7 | What is running and what happened: the summary strip, Active Task, Pending Actions, Warnings, Last Completed, Run History and the Run Timeline. |
+| **Operations** ← *this is the default* | 9 | Everything in Essentials, plus **Process Calendar** (did each expected job run in its period?) and **Script Health** (is anything stale or failing?). |
+| **Everything** | 15 | Everything in Operations, plus Quick Actions, Delta Tracker, Metrics Explorer, Warning Trends, Impact Summary and the Access Map. |
 
-| Layout | For |
-|---|---|
-| **Essentials** | Just what is running and what happened — progress, warnings, history, timeline. |
-| **Operations** | Essentials plus the schedule, health, buttons, metrics and trends. The default shape, plus the parts that need a little configuration. |
-| **Everything** | Every section, including the Access Map, Metrics Explorer and Impact Summary. |
+Each is a superset of the one above it. Switch with **Script Progress: Choose a Layout…**, which
+ticks the one you are currently on. Two of the fifteen need a little configuration before they
+show anything — **Process Calendar** wants your list of expected processes, **Quick Actions**
+wants your buttons — and both say so in place rather than sitting blank.
 
-Or turn them on individually in **Choose Dashboard Sections…** or Settings. Every section can be
-reordered, collapsed, and shown or hidden independently in the sidebar and the editor tab.
+You are never limited to the three: **Choose Dashboard Sections…** toggles any section
+individually, and every one can be reordered, collapsed, and shown or hidden independently in the
+sidebar and the editor tab.
+
+**Before any script has reported**, none of this appears — you get a single panel offering a demo
+run, the getting-started walkthrough, or the layout picker.
 
 ### On by default
 
@@ -353,11 +360,11 @@ reads *"X ran it at 10:08"* and a change in behaviour can be lined up against a 
 Both are best-effort and never interrupt a run.
 
 Opt out with `PROGRESS_NO_USER=1` and `PROGRESS_NO_GIT=1`, or set `PROGRESS_USER` to something
-else. ⚠️ The username is a personal identifier. It is stored in `run_history.json` and appears in
-the **HTML report** and the **formatted digest** — so it reaches anyone you send those to. It is
-*not* in the CSV export. `scriptProgress.report.includeIdentity` (off by default) controls whether
-it is included when you export or copy; the environment variables control whether it is recorded at
-all.
+else. ⚠️ The username is a personal identifier. It is stored in `run_history.json` and, unless you
+turn it off below, in the **HTML report** — so it reaches anyone you send that to. It is
+*not* in the CSV export, and *not* in the formatted digest. `scriptProgress.report.includeIdentity`
+(off by default) controls whether it appears in the exported HTML report; the environment variables
+control whether it is recorded at all.
 
 ### Comparing two runs
 

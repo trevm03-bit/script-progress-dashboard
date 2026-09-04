@@ -53,7 +53,10 @@ class StatusBarManager {
         this.item.command = settings.statusBar.clickAction === 'menu' ? 'scriptProgress.statusMenu' : 'scriptProgress.openPanel';
         this.render();
         const now = new Date();
-        const running = data.tasks.some(t => (0, time_1.taskState)(t, settings.staleRunningMinutes, now, data.overlays) === 'running');
+        // Only tick when there is a visible clock to advance. A disabled status bar was still running
+        // a one-second timer whose render() returned immediately.
+        const running = settings.statusBar.enabled
+            && data.tasks.some(t => (0, time_1.taskState)(t, settings.staleRunningMinutes, now, data.overlays) === 'running');
         if (running && !this.timer)
             this.timer = setInterval(() => this.render(), 1000);
         if (!running && this.timer) {
@@ -61,7 +64,20 @@ class StatusBarManager {
             this.timer = undefined;
         }
     }
+    /**
+     * Neutralise Markdown in text that came out of a file. Task names, labels and details are
+     * workspace-controlled, and every other surface routes them through esc(); this one built a
+     * MarkdownString by interpolation, so a name containing *, _, [](), # or a blank line rewrote
+     * the tooltip's layout - and an image link would have been an outbound request from a product
+     * whose headline promise is that nothing leaves the machine.
+     */
+    static mdEsc(value) {
+        return String(value ?? '')
+            .replace(/[\\`*_{}\[\]()#+\-.!|<>~$]/g, m => '\\' + m)
+            .replace(/\r?\n/g, ' ');
+    }
     render() {
+        const E = StatusBarManager.mdEsc;
         const data = this.data;
         const settings = this.settings;
         if (!data || !settings || !settings.statusBar.enabled) {
@@ -83,7 +99,7 @@ class StatusBarManager {
             this.item.text = `$(sync~spin) ${step}${truncate(p.label, 28)} · ${(0, time_1.formatDuration)((0, time_1.liveElapsed)(p, now))}${pct}${more}`;
             for (const { t } of running) {
                 const eta = (0, time_1.liveEta)(t, now);
-                md.appendMarkdown(`**${t.task}** — ${t.label}${t.detail ? ` — ${t.detail}` : ''}\n\nElapsed ${(0, time_1.formatDuration)((0, time_1.liveElapsed)(t, now))}${eta !== null ? ` · ~${(0, time_1.formatDuration)(eta)} left` : ''}${t.warnings?.length ? ` · $(warning) ${t.warnings.length}` : ''}\n\n`);
+                md.appendMarkdown(`**${E(t.task)}** — ${E(t.label)}${t.detail ? ` — ${E(t.detail)}` : ''}\n\nElapsed ${(0, time_1.formatDuration)((0, time_1.liveElapsed)(t, now))}${eta !== null ? ` · ~${(0, time_1.formatDuration)(eta)} left` : ''}${t.warnings?.length ? ` · $(warning) ${t.warnings.length}` : ''}\n\n`);
             }
             if (stalled.length)
                 md.appendMarkdown(`$(warning) ${stalled.length} stalled\n\n`);
@@ -93,7 +109,7 @@ class StatusBarManager {
             const label = stalled[0].s === 'exited' ? 'Exited' : 'Stalled';
             this.item.text = `$(warning) ${label} ${Math.round((0, time_1.minutesSinceUpdate)(p, now))}m · ${truncate(p.task, 24)}`;
             this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
-            md.appendMarkdown(`**${p.task}** still marked running but ${stalled[0].s === 'exited' ? 'its process exited' : `not updated for ${Math.round((0, time_1.minutesSinceUpdate)(p, now))} minutes`}.\n\nLast step: ${p.label}\n\n`);
+            md.appendMarkdown(`**${E(p.task)}** still marked running but ${stalled[0].s === 'exited' ? 'its process exited' : `not updated for ${Math.round((0, time_1.minutesSinceUpdate)(p, now))} minutes`}.\n\nLast step: ${E(p.label)}\n\n`);
         }
         else {
             if (settings.statusBar.idleMode === 'hidden') {
@@ -119,11 +135,11 @@ Watching \`${this.logsHint()}\` for progress files. Run **Script Progress: Simul
             if (state === 'failed') {
                 this.item.text = `$(error) FAILED ${truncate(p.task, 22)}`;
                 this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
-                md.appendMarkdown(`**${p.task}** failed at ${(0, time_1.clockTime)(p.updatedAt)} after ${(0, time_1.formatDuration)(p.elapsed)}${p.detail ? `\n\n${p.detail}` : ''}\n\n`);
+                md.appendMarkdown(`**${E(p.task)}** failed at ${(0, time_1.clockTime)(p.updatedAt)} after ${(0, time_1.formatDuration)(p.elapsed)}${p.detail ? `\n\n${E(p.detail)}` : ''}\n\n`);
             }
             else {
                 this.item.text = `$(check) ${truncate(p.task, 24)} ${(0, time_1.clockTime)(p.updatedAt)}`;
-                md.appendMarkdown(`**${p.task}** completed at ${(0, time_1.clockTime)(p.updatedAt)} in ${(0, time_1.formatDuration)(p.elapsed)}${p.detail ? `\n\n${p.detail}` : ''}\n\n`);
+                md.appendMarkdown(`**${E(p.task)}** completed at ${(0, time_1.clockTime)(p.updatedAt)} in ${(0, time_1.formatDuration)(p.elapsed)}${p.detail ? `\n\n${E(p.detail)}` : ''}\n\n`);
             }
         }
         md.appendMarkdown(settings.statusBar.clickAction === 'menu' ? '_Click for actions_' : '_Click to open the dashboard_');

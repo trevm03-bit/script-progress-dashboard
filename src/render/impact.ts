@@ -17,7 +17,10 @@ export function renderImpact(data: DashboardData, settings: Settings, now: Date,
             { msg: 'walkthrough', label: 'Getting started', icon: 'book' }), opts);
   }
 
-  const cards = totals.map(t => {
+  // 24 cards is already a wall; beyond that the section stops being a summary.
+  const MAX_CARDS = 24;
+  const hidden = Math.max(0, totals.length - MAX_CARDS);
+  const cards = totals.slice(0, MAX_CARDS).map(t => {
     const fmt = settings.deltas.formats?.[t.metric];
     // An unrenderable total (an overflow) must not then claim a monthly figure it cannot show.
     const showMonth = isFinite(t.thisMonth) && t.thisMonth !== 0 && isFinite(t.total);
@@ -38,5 +41,6 @@ export function renderImpact(data: DashboardData, settings: Settings, now: Date,
   // later.
   const foot = `<div class="muted small imp-foot">${icon('info')}<span>Totals are what your scripts reported, using their own definition of each measure.</span></div>`;
 
-  return section('impact', 'Impact Summary', `<div class="imp-grid">${cards}</div>${foot}`, opts);
+  const more = hidden ? `<div class="muted small list-more">${icon('ellipsis')} ${hidden} more measure${hidden === 1 ? '' : 's'} not shown.</div>` : '';
+  return section('impact', 'Impact Summary', `<div class="imp-grid">${cards}</div>${more}${foot}`, opts);
 }

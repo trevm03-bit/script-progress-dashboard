@@ -38,16 +38,26 @@ export function buttonEnabled(rule: EnableWhen | undefined, fallbackTask: string
   const shown = typeof value === 'number' ? String(value) : `"${value}"`;
   const fail = (test: string) => ({ enabled: false, reason: `last run had ${rule.metric} = ${shown}, ${test}` });
 
+  // 🔴 The guard has to come BEFORE eq, not after it: eq returned early, so '' and null were
+  // still compared and disabled the button with a nonsense reason. And a numeric comparison must
+  // accept a number reported as a string — the reporter stringifies anything that is not a bare
+  // int/float, so a perfectly ordinary metric can arrive as "0".
+  const asNumber = typeof value === 'number' ? value
+    : (typeof value === 'string' && value.trim() !== '' && isFinite(Number(value))) ? Number(value)
+    : null;
   if (rule.eq !== undefined) {
-    const same = typeof rule.eq === 'number' ? value === rule.eq : String(value) === String(rule.eq);
-    return same ? OK : fail(`expected ${typeof rule.eq === 'number' ? rule.eq : `"${rule.eq}"`}`);
+    if (typeof rule.eq === 'number') {
+      if (asNumber === null) return OK;           // nothing numeric to compare against
+      return asNumber === rule.eq ? OK : fail(`expected ${rule.eq}`);
+    }
+    return String(value) === String(rule.eq) ? OK : fail(`expected "${rule.eq}"`);
   }
+  if (asNumber === null) return OK;
   // 🔴 Only a real number may be compared. Number('') and Number(null) are both 0, which made an
   // empty or absent value disable the button with the nonsense reason
   // 'last run had issues = "", needs more than 0'. Anything not numeric leaves it enabled: an
   // unnecessary run costs far less than a control nobody can use.
-  if (typeof value !== 'number' || !isFinite(value)) return OK;
-  const num = value;
+  const num = asNumber;
   if (rule.gt !== undefined && !(num > rule.gt)) return fail(`needs more than ${rule.gt}`);
   if (rule.gte !== undefined && !(num >= rule.gte)) return fail(`needs at least ${rule.gte}`);
   if (rule.lt !== undefined && !(num < rule.lt)) return fail(`needs less than ${rule.lt}`);

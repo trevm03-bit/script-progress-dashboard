@@ -66,9 +66,15 @@ function activate(context) {
             // Attach the exit ONLY to the task the button named (prefix match, like the calendar and
             // the buttons themselves). An unnamed button's exit is reported against its label alone —
             // never pinned to "whatever happens to be running".
-            const named = overlay.task && data.tasks.some(t => (0, time_1.taskMatches)(t.task, overlay.task) && t.status === 'running');
-            if (named) {
-                reader.addOverlay(overlay);
+            // Resolve the button's task name to the ONE running script it belongs to, and store that.
+            // A button named "Nightly" is a prefix of "Nightly Load" AND "Nightly Refresh"; left
+            // unresolved, one process ending reported both as crashed. If the prefix is ambiguous we
+            // genuinely do not know which script exited, and saying nothing beats blaming the wrong one.
+            const matches = overlay.task
+                ? data.tasks.filter(t => (0, time_1.taskMatches)(t.task, overlay.task) && (0, time_1.taskState)(t, settings.staleRunningMinutes, new Date(), data.overlays) === 'running')
+                : [];
+            if (matches.length === 1) {
+                reader.addOverlay({ ...overlay, task: matches[0].task });
                 refresh(true); // the notifier sees the 'exited' transition and reports it
             }
             else if (settings.notifications.onExit) {
@@ -123,6 +129,10 @@ function activate(context) {
     context.subscriptions.push({ dispose: () => { for (const w of watchers)
             w.dispose(); watchers = []; } });
     let pollTimer;
+    // A non-recursive watcher over a directory that does not exist never starts and never retries,
+    // and the folder not existing yet IS the first-run case. Track it so the watchers can be armed
+    // the moment the first script creates it, instead of the window running on the poll all day.
+    let watchedDirExisted = data.logsDirExists;
     let lastMtime = reader.latestMtime();
     let lastPoll = 0;
     let lastFullRefresh = Date.now();
@@ -137,6 +147,10 @@ function activate(context) {
             const now = Date.now();
             if (now - lastPoll >= settings.refreshInterval) {
                 lastPoll = now;
+                if (!watchedDirExisted && data.logsDirExists) {
+                    watchedDirExisted = true;
+                    startWatchers();
+                }
                 const m = reader.latestMtime();
                 if (m !== lastMtime) {
                     lastMtime = m;
@@ -145,7 +159,10 @@ function activate(context) {
                     return;
                 }
             }
-            const running = data.tasks.some(t => t.status === 'running');
+            // taskState, not the raw file field. `status` stays "running" forever in a file left by a
+            // script that was Ctrl-C'd, so trusting it pinned this to a full re-render every second for
+            // the life of the window - while the UI itself was correctly showing "stalled".
+            const running = data.tasks.some(t => (0, time_1.taskState)(t, settings.staleRunningMinutes, new Date(now), data.overlays) === 'running');
             if (running || now - lastFullRefresh >= 60000) {
                 lastFullRefresh = now;
                 refresh();

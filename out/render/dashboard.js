@@ -26,11 +26,19 @@ function renderSections(data, settings, ctx) {
     const narrow = ctx.surface === 'sidebar';
     const enabled = (id) => settings.sections[id] && (!narrow || settings.sidebarSections.length === 0 || settings.sidebarSections.includes(id));
     const collapsed = new Set(ctx.collapsed ?? []);
-    const o = (id) => ({ collapsed: collapsed.has(id), collapsible: settings.dashboard.collapsible, icon: types_1.SECTION_ICONS[id] });
+    const o = (id) => ({ collapsed: collapsed.has(id), collapsible: settings.dashboard.collapsible, icon: types_1.SECTION_ICONS[id], identity: ctx.identity });
     // Before anything has ever reported, eight empty cards is a worse answer than one clear one.
     // This is the first thing a Marketplace installer sees, and the sections have nothing to say
     // yet by definition — so say what to do instead of showing eight ways of saying "nothing".
-    const nothingEverReported = !data.progress && data.tasks.length === 0 && data.history.length === 0;
+    // Every source of content, not just history: track_delta / impact / access all write the
+    // moment they are called, so a run killed before complete() leaves real data with no history
+    // row — and hiding it behind "nothing has reported yet" would be a plain falsehood.
+    const nothingEverReported = !data.progress
+        && data.tasks.length === 0
+        && data.history.length === 0
+        && Object.keys(data.deltas ?? {}).length === 0
+        && Object.keys(data.impact ?? {}).length === 0
+        && !(data.access?.nodes?.length);
     if (nothingEverReported && !data.readErrors.length) {
         const where = data.logsDirExists ? `Watching <code>${(0, html_1.esc)(data.logsDir)}</code>.` : `It will watch <code>${(0, html_1.esc)(data.logsDir)}</code>, which does not exist yet.`;
         return `<div class="empty-state">
@@ -47,9 +55,11 @@ function renderSections(data, settings, ctx) {
     if (data.readErrors.length) {
         parts.push(`<div class="read-errors">${(0, html_1.icon)('info')} ${data.readErrors.map(html_1.esc).join('<br>')}</div>`);
     }
+    const drawn = new Set();
     for (const id of settings.sectionOrder) {
-        if (!enabled(id))
+        if (!enabled(id) || drawn.has(id))
             continue;
+        drawn.add(id);
         switch (id) {
             case 'summary':
                 parts.push((0, summary_1.renderSummary)(data, settings, ctx.now, narrow));
@@ -99,7 +109,16 @@ function renderSections(data, settings, ctx) {
         }
     }
     const attempted = settings.sectionOrder.some(enabled);
-    if (!attempted) {
+    // Two different empty states, because they need two different fixes. When sections ARE enabled
+    // but the sidebar's own allow-list hides all of them, "every section is switched off" is simply
+    // untrue - the panel is showing thirteen of them at that moment - and the button it offered
+    // opened the wrong setting.
+    const narrowFilterHidesAll = narrow && !attempted
+        && settings.sidebarSections.length > 0 && settings.sectionOrder.some(id => settings.sections[id]);
+    if (narrowFilterHidesAll) {
+        parts.push(`<div class="empty-state"><div class="es-icon">${(0, html_1.icon)('layout')}</div><div class="es-title">Nothing is on the sidebar list</div><div class="es-text">Sections are switched on, but <code>dashboard.sidebarSections</code> is limiting the sidebar to a set that is all hidden. Clear it to show everything here.</div><button class="btn" data-msg="settings">${(0, html_1.icon)('settings-gear')}<span>Open settings</span></button></div>`);
+    }
+    else if (!attempted) {
         parts.push(`<div class="empty-state"><div class="es-icon">${(0, html_1.icon)('layout')}</div><div class="es-title">Every section is switched off</div><div class="es-text">Pick the ones you want to see.</div><button class="btn" data-msg="sections">${(0, html_1.icon)('checklist')}<span>Choose sections</span></button></div>`);
     }
     else if (parts.filter(Boolean).length === 0) {

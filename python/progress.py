@@ -60,6 +60,7 @@ import functools
 import json
 import math
 import os
+import hashlib
 import re
 import sys
 import time
@@ -69,7 +70,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 __all__ = ["Progress", "resolve_logs_dir"]
-__version__ = "1.3.0"
+__version__ = "1.6.0"
 
 # Windows consoles default to cp1252; a stray non-ASCII character in a summary must never
 # crash the script that is doing the real work.
@@ -80,6 +81,20 @@ if hasattr(sys.stdout, "reconfigure"):
         pass
 
 HISTORY_KEEP = 100
+# 🔴 Text caps. Nothing truncated a warning, a summary or a metric value, so five 1 MB warnings
+# plus a 1 MB summary produced a 7 MB progress.json AND a 7 MB history row - and a history row is
+# kept 100 times over and rewritten in full on every completion. A message nobody can read at
+# 4,000 characters is not made more useful at a million.
+MAX_TEXT = 4000
+# Per-run list caps for the HISTORY row. access.json already caps its graph at 150 nodes; the row
+# it came from kept all 1,500.
+MAX_ACCESSED = 200
+MAX_ARTIFACTS = 100
+MAX_METRICS = 200
+# Actionable warnings are deliberately never trimmed to the display limit - but "never trimmed"
+# is not the same as "unbounded". At 3,000 the slot file is rewritten in full on every warn(),
+# which is quadratic; this is a ceiling nobody legitimately reaches.
+MAX_ACTIONABLE = 500
 DELTA_KEEP = 50
 ACCESS_NODE_KEEP = 150
 IMPACT_KEEP = 500
@@ -95,9 +110,59 @@ def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+def _cli_number(text):
+    """
+    A CLI argument as the number it actually is.
+
+    🔴 int FIRST. Everything went through float(), so `metric T id 9007199254740993` was recorded
+    as ...992, a thirty-digit key came back mangled, and `-0.0` became `0` - silently, in the file
+    the dashboard reads. Python ints are arbitrary precision; floats are not. Underscores are
+    rejected too: `1_000` is Python literal syntax, not something a shell meant to type.
+    """
+    s = str(text).strip()
+    if "_" in s:
+        raise ValueError(f"{s!r} is not a number (underscores are Python syntax, not shell input)")
+    try:
+        return int(s)
+    except ValueError:
+        return float(s)
+
+
+def _iso_seconds(value):
+    """An ISO timestamp as a unix time, or None. Never raises."""
+    try:
+        return datetime.fromisoformat(str(value)).timestamp()
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+def _as_int(value, default=0):
+    """int() that never raises - the reporter must survive a caller's typo and a corrupt slot."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _clip(value, limit=MAX_TEXT):
+    """Cap a piece of free text, saying so, rather than carrying megabytes into every file."""
+    s = str(value)
+    return s if len(s) <= limit else s[:limit] + f"... [{len(s) - limit} more characters]"
+
+
 def _slug(name: str) -> str:
-    s = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
-    return s[:60] or "task"
+    """
+    Slot-file name for a task.
+
+    🔴 The readable part is a hint; the HASH is what makes it unique. Stripping everything outside
+    [a-z0-9] collapsed "Nightly Load", "Nightly-Load" and "NIGHTLY_LOAD" onto one slot - and every
+    non-ASCII name in the system ("夜間ロード", "Отчёт", an emoji) onto the single slot "task", so
+    two unrelated Japanese-named scripts silently overwrote each other's runs.
+    """
+    raw = name or ""
+    s = re.sub(r"[^a-z0-9]+", "-", raw.lower()).strip("-")[:48]
+    tag = hashlib.sha1(raw.encode("utf-8", errors="replace")).hexdigest()[:8]
+    return f"{s}-{tag}" if s else f"task-{tag}"
 
 
 def resolve_logs_dir(logs_dir=None, module_file=__file__) -> Path:
@@ -189,6 +254,9 @@ class Progress:
         self.start_time = time.time()
         self.started_at = _now_iso()
         self.warnings = []
+        # How many warn() calls this run has made, across every process that resumed it. The list
+        # above is trimmed; this is not, so the recorded count stays true.
+        self.warnings_total = 0
         self.log_lines = []
         self.metrics = {}
         self.artifacts = []
@@ -208,7 +276,15 @@ class Progress:
         self.task_name = task_name
         self.quiet = quiet
         self.logs_dir = resolve_logs_dir(logs_dir)
-        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        # Never raise out of the constructor. PROGRESS_LOGS_DIR pointing at a FILE, or at a folder
+        # the user cannot write, gave the calling script a raw FileExistsError/PermissionError
+        # traceback from this one line - the reporter killing the job it exists to observe. Every
+        # write below already degrades to a NOTE, so failing here just means no files.
+        try:
+            self.logs_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            print(f"  NOTE: cannot use {self.logs_dir} for progress files ({e.__class__.__name__}); "
+                  f"reporting is off for this run", flush=True)
         self.slots_dir = self.logs_dir / "progress"
         self.progress_file = self.logs_dir / "progress.json"
         self.slot_file = self.slots_dir / (_slug(task_name) + ".json")
@@ -255,8 +331,16 @@ class Progress:
             # keeps moving forward instead of resetting to zero.
             self.start_time = time.time() - float(data.get("elapsed") or 0)
         self.warnings = [w for w in (data.get("warnings") or []) if isinstance(w, dict)]
+        try:
+            self.warnings_total = max(int(data.get("warningsTotal") or 0), len(self.warnings))
+        except (TypeError, ValueError):
+            self.warnings_total = len(self.warnings)
         self.log_lines = [l for l in (data.get("log") or []) if isinstance(l, dict)]
-        self.metrics = dict(data.get("metrics") or {})
+        # A corrupt slot must be survivable. dict() on a list raised ValueError, and int() on a
+        # string step raised too - so ONE bad slot file made every later subcommand crash rather
+        # than fall back, with no way to recover short of deleting the file by hand.
+        raw_metrics = data.get("metrics")
+        self.metrics = dict(raw_metrics) if isinstance(raw_metrics, dict) else {}
         self.artifacts = list(data.get("artifacts") or [])
         self.accessed = list(data.get("accessed") or [])
         self.completed = False
@@ -265,8 +349,8 @@ class Progress:
         self.user = data.get("user") or ""
         self.commit = data.get("commit") or ""
         self.current = {
-            "step": int(data.get("step") or 0),
-            "total": int(data.get("totalSteps") or 0),
+            "step": _as_int(data.get("step")),
+            "total": _as_int(data.get("totalSteps")),
             "label": data.get("label") or "Running",
             "detail": data.get("detail") or "",
             "substep": data.get("substep"),
@@ -277,13 +361,15 @@ class Progress:
     # ------------------------------------------------------------------ reporting API
     def step(self, step_num: int, total_steps: int, label: str):
         """Move to a new step. Prints it too, so the terminal shows the same story."""
-        self.current = {"step": int(step_num), "total": int(total_steps), "label": str(label), "detail": "", "substep": None}
+        # Coerced, never raised: p.step("one", 3, "x") is a typo in the caller's script, and the
+        # reporter's contract is that it does not take the job down for one.
+        self.current = {"step": _as_int(step_num), "total": _as_int(total_steps), "label": _clip(label, 300), "detail": "", "substep": None}
         self._write()
         self._say(f"\n[{step_num}/{total_steps}] {label}...")
 
     def detail(self, text: str):
         """Update the detail line under the current step (row counts, file names...)."""
-        self.current["detail"] = str(text)
+        self.current["detail"] = _clip(text, 300)
         self._write()
         self._say(f"  {text}")
 
@@ -323,7 +409,8 @@ class Progress:
                        something merely worth knowing. Actionable items are collected separately
                        so they do not drown in the noise of ordinary warnings.
         """
-        item = {"time": _now_iso(), "msg": str(message)}
+        self.warnings_total = int(getattr(self, "warnings_total", 0)) + 1
+        item = {"time": _now_iso(), "msg": _clip(message)}
         if count is not None:
             try:
                 item["count"] = int(count)
@@ -348,7 +435,7 @@ class Progress:
     def metric(self, name: str, value):
         """Record a named metric for this run (number or short string). Shown as a card, kept in history."""
         if isinstance(value, bool) or not isinstance(value, (int, float)):
-            value = str(value)
+            value = _clip(value, 300)
         elif isinstance(value, float) and not math.isfinite(value):
             value = str(value)          # NaN / inf are not JSON; keep them as text, never poison the file
         self.metrics[str(name)] = value
@@ -373,7 +460,12 @@ class Progress:
         deltas = self._read_json(self.deltas_file, default={})
         if not isinstance(deltas, dict):
             deltas = {}
-        series = deltas.setdefault(metric_name, [])
+        # The FILE being a dict is not enough - the series under this key has to be a list too.
+        # impact() already guarded this; a hand-edited or third-party deltas.json holding
+        # {"m": 5} made .append raise AttributeError straight into the calling script.
+        series = deltas.get(metric_name)
+        if not isinstance(series, list):
+            series = []
         # runId lets the chart tell that two points came from the SAME run - a value found and
         # the value after a fix - instead of drawing two unrelated dots.
         series.append({"date": _now_iso(), "value": v, "task": self.task_name, "runId": self.run_id})
@@ -491,10 +583,13 @@ class Progress:
         self.completed = True
         elapsed = time.time() - self.start_time
         self.current["label"] = "Complete" if success else "FAILED"
-        self.current["detail"] = str(summary)
+        # Clipped: a summary is a sentence, and an unbounded one landed in progress.json AND in
+        # a history row that is then kept 100 times over and rewritten on every completion.
+        summary = _clip(summary)
+        self.current["detail"] = summary
         self.current["substep"] = None
         self._write(status="complete" if success else "failed")
-        self._append_history(bool(success), elapsed, str(summary))
+        self._append_history(bool(success), elapsed, summary)
         status = "COMPLETE" if success else "FAILED"
         self._say(f"\n=== {status} === ({self._fmt_duration(elapsed)})")
         if summary:
@@ -544,6 +639,7 @@ class Progress:
             "elapsed": round(elapsed, 1),
             "eta": self._estimate_eta(elapsed) if status == "running" else None,
             "warnings": self._warnings_for_slot(),
+            "warningsTotal": int(getattr(self, "warnings_total", 0)),
             "log": self.log_lines[-LOG_KEEP:],
             "metrics": dict(self.metrics),
             "artifacts": list(self.artifacts),
@@ -557,10 +653,12 @@ class Progress:
             data["user"] = self.user
         if self.commit:
             data["commit"] = self.commit
-        self._safe_write(self.progress_file, data)
+        # Short ladder: a lost live-progress write is superseded by the next one, and paying
+        # 0.45 s per call because the dashboard has the file open is a far worse trade.
+        self._safe_write(self.progress_file, data, attempts=2, base=0.01)
         try:
             self.slots_dir.mkdir(parents=True, exist_ok=True)
-            self._write_json(self.slot_file, data)
+            self._write_json(self.slot_file, data, attempts=2, base=0.01)
         except OSError:
             pass  # the slot file is a nicety; the main file is the contract
 
@@ -575,11 +673,18 @@ class Progress:
         history = self._read_json(self.history_file, default=[])
         if not isinstance(history, list):
             return []
-        return [
-            float(r["elapsed"])
-            for r in history
-            if isinstance(r, dict) and r.get("task") == self.task_name and r.get("success") and "elapsed" in r
-        ][-PRIOR_RUNS_FOR_ETA:]
+        # 🔴 Coerce defensively. run_history.json is shared, hand-editable and synced by OneDrive
+        # here, so a single row with "elapsed": null or "n/a" used to raise inside the CONSTRUCTOR
+        # - which meant one malformed row permanently bricked every future run of that task.
+        out = []
+        for r in history:
+            if not (isinstance(r, dict) and r.get("task") == self.task_name and r.get("success")):
+                continue
+            try:
+                out.append(float(r["elapsed"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+        return out[-PRIOR_RUNS_FOR_ETA:]
 
     def _prune_slots(self):
         """Drop per-task files of runs that finished days ago (or were killed and left 'running'
@@ -592,6 +697,18 @@ class Progress:
             files = list(self.slots_dir.glob("*.json"))
         except OSError:
             return
+        # Sweep abandoned temp files too. A kill -9 between write and os.replace leaves
+        # <name>.<pid>.tmp behind for ever - the glob below only ever matched *.json.
+        for d in (self.logs_dir, self.slots_dir):
+            try:
+                for t in d.glob("*.tmp"):
+                    try:
+                        if t.stat().st_mtime < finished_cutoff:
+                            t.unlink()
+                    except OSError:
+                        continue
+            except OSError:
+                pass
         for f in files:
             try:
                 if f == self.slot_file:
@@ -599,7 +716,15 @@ class Progress:
                 mtime = f.stat().st_mtime
                 data = self._read_json(f, default={})
                 running = isinstance(data, dict) and data.get("status") == "running"
-                if (not running and mtime < finished_cutoff) or (running and mtime < running_cutoff):
+                # 🔴 For a running slot, judge it by the timestamp INSIDE the file, not the file's
+                # mtime. A long backfill that reports every few hours still has a recent
+                # updatedAt, but its mtime can lag; deleting it made the run unresumable ("No run
+                # in progress") and its completion silently unrecordable.
+                if running:
+                    stamp = _iso_seconds(data.get("updatedAt")) or mtime
+                    if stamp < running_cutoff:
+                        f.unlink()
+                elif mtime < finished_cutoff:
                     f.unlink()
             except OSError:
                 continue
@@ -613,13 +738,20 @@ class Progress:
             "success": success,
             "elapsed": round(elapsed, 1),
             "summary": summary,
-            "warnings": len(self.warnings),
+            # 🔴 The TOTAL raised, not the number still held in memory. Every CLI subcommand is a
+            # fresh process that rebuilds state from the (already trimmed) slot file, so counting
+            # the survivors reported 20 for a run that raised 25 - the one number in the row whose
+            # entire job is to be a count. `warningsTotal` is carried through the slot so it
+            # survives the round trip.
+            "warnings": max(int(getattr(self, "warnings_total", 0)), len(self.warnings)),
             "runId": self.run_id,
             "startedAt": self.started_at,
-            "metrics": dict(self.metrics),
+            # Capped. access.json correctly holds 150 nodes; the row it came from kept all 1,500,
+            # then multiplied that by HISTORY_KEEP and rewrote the lot on every completion.
+            "metrics": dict(list(self.metrics.items())[:MAX_METRICS]),
             "warningItems": self._warnings_for_history(),
-            "accessed": list(self.accessed),
-            "artifacts": list(self.artifacts),
+            "accessed": list(self.accessed)[-MAX_ACCESSED:],
+            "artifacts": list(self.artifacts)[-MAX_ARTIFACTS:],
         }
         if getattr(self, "user", ""):
             row["user"] = self.user
@@ -629,6 +761,7 @@ class Progress:
             row["impacts"] = dict(self.impacts)
         if getattr(self, "category", ""):
             row["category"] = self.category
+        last = None
         for attempt in range(3):
             history = self._read_json(self.history_file, default=[])
             if not isinstance(history, list):
@@ -637,9 +770,14 @@ class Progress:
             try:
                 self._write_json(self.history_file, history[-HISTORY_KEEP:])
                 return
-            except PermissionError:
+            except (OSError, ValueError) as e:
+                # 🔴 Every OSError, not just PermissionError. complete() is called from __exit__,
+                # so on a full disk ENOSPC escaped from here and REPLACED whatever exception the
+                # script was actually failing with - the operator got "No space left on device"
+                # where they needed the ValueError that broke their run.
+                last = e
                 time.sleep(0.05 * (attempt + 1))
-        self._say(f"  NOTE: could not update {self.history_file.name} (file busy); run not recorded")
+        self._say(f"  NOTE: could not update {self.history_file.name} ({last.__class__.__name__}); run not recorded")
 
     def _warnings_for_slot(self):
         """
@@ -652,7 +790,10 @@ class Progress:
         raised early simply vanished. Actionable items are always kept; ordinary ones keep the
         most recent, up to the history limit rather than the display limit.
         """
-        actionable = [w for w in self.warnings if w.get("actionable")]
+        # Actionable items are kept in full - that is the point of the split - but "in full" has
+        # a ceiling. The slot is rewritten on every warn(), so N actionable warnings cost O(N^2)
+        # bytes over a run: 3,000 of them took 200 s and a 1.3 MB rewrite per call.
+        actionable = [w for w in self.warnings if w.get("actionable")][-MAX_ACTIONABLE:]
         ordinary = [w for w in self.warnings if not w.get("actionable")][-WARNINGS_IN_HISTORY:]
         keep = {id(w) for w in actionable} | {id(w) for w in ordinary}
         return [w for w in self.warnings if id(w) in keep]
@@ -667,7 +808,7 @@ class Progress:
         item silently retires a real finding and makes the dashboard claim nothing is outstanding.
         Ordinary warnings still yield to the cap; actionable ones are kept in full.
         """
-        actionable = [w for w in self.warnings if w.get("actionable")]
+        actionable = [w for w in self.warnings if w.get("actionable")][-MAX_ACTIONABLE:]
         ordinary = [w for w in self.warnings if not w.get("actionable")]
         kept = ordinary[-WARNINGS_IN_HISTORY:]
         # Preserve the original order rather than grouping by kind.
@@ -680,27 +821,47 @@ class Progress:
         except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError, PermissionError):
             return default if default is not None else {}
 
-    def _safe_write(self, path: Path, data):
+    def _safe_write(self, path: Path, data, attempts=5, base=0.03):
         """Write, and if the disk refuses for longer than the retries, say so and carry on.
         The reporter must never be the reason the real job dies."""
         try:
-            self._write_json(path, data)
-        except OSError as e:
+            self._write_json(path, data, attempts=attempts, base=base)
+        except (OSError, ValueError) as e:
+            # ValueError as well as OSError: json.dumps raises it for a value it cannot serialise,
+            # and this method's whole promise is that the reporter is never the reason a job dies.
             self._say(f"  NOTE: could not update {path.name} ({e.__class__.__name__}); continuing")
 
-    def _write_json(self, path: Path, data):
+    def _write_json(self, path: Path, data, attempts=5, base=0.03):
         """Atomic write: the dashboard never sees a half-written file. The temp name carries the
-        process id, so two scripts writing the same file at once never swap each other's bytes."""
+        process id, so two scripts writing the same file at once never swap each other's bytes.
+
+        🔴 `attempts`/`base` are the retry ladder, and the right ladder depends on what is being
+        written. On Windows os.replace fails while ANY other process holds the destination open -
+        a dashboard, a `tail`, an editor preview, an antivirus scan - so the full ladder is not a
+        rare race but the normal cost of the tool doing its job. Measured: one held read handle
+        turned a 0.85 ms call into 0.45 s, and then the write was discarded anyway.
+
+        progress.json and the slot file are SUPERSEDED by the next call a second later, so they
+        take a short, cheap ladder - losing one is invisible. The append-only files (history,
+        deltas, impact, access) keep the patient one, because losing one of those loses data.
+        """
         tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False, allow_nan=False), encoding="utf-8")
+        # 🔴 errors="replace" on the ENCODE side. A lone surrogate - which is what Linux gives you
+        # for an undecodable filename (surrogateescape), and what Windows puts in some exception
+        # messages - made json.dumps produce a str that UTF-8 cannot encode. That raised
+        # UnicodeEncodeError, which is a ValueError, so neither _safe_write nor _write caught it:
+        # the reporter took down the calling script, and in a `with` block it REPLACED the real
+        # exception, so the operator saw a codec error instead of their own FileNotFoundError.
+        text = json.dumps(data, indent=2, ensure_ascii=False, allow_nan=False)
+        tmp.write_bytes(text.encode("utf-8", errors="replace"))
         last_error = None
-        for attempt in range(5):
+        for attempt in range(max(1, attempts)):
             try:
                 os.replace(tmp, path)
                 return
             except OSError as e:  # Windows: the reader (or another writer) has the file for a moment
                 last_error = e
-                time.sleep(0.03 * (attempt + 1))
+                time.sleep(base * (attempt + 1))
         try:
             tmp.unlink()
         except OSError:
@@ -722,7 +883,16 @@ def _print_status(logs_dir=None):
     if not p.exists():
         print(f"No progress.json in {d}")
         return 1
-    data = json.loads(p.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as e:
+        # Every other read in this file goes through _read_json and tolerates a torn or corrupt
+        # file; this one printed a raw traceback for the exact case the tool exists to report on.
+        print(f"Could not read {p}: {e.__class__.__name__}")
+        return 1
+    if not isinstance(data, dict):
+        print(f"{p} does not contain a progress object")
+        return 1
     upd = data.get("updatedAt", "")
     try:
         age = datetime.now() - datetime.fromisoformat(upd)
@@ -867,7 +1037,11 @@ def _cli(argv) -> int:
     except LookupError as e:
         # `complete` on a run that is already closed is a no-op, not a failure: a shell script
         # with a trap should be able to call it unconditionally.
-        if cmd == "complete":
+        # A `complete` on an already-closed run is a genuine no-op: a shell trap should be able
+        # to call it unconditionally. But `complete --run <id>` naming a DISPLACED run is the one
+        # case that must not be silent - it exits 0 having recorded nothing, which is precisely
+        # the failure the --run guard exists to make loud for every other subcommand.
+        if cmd == "complete" and not run_id:
             return 0
         print(f"progress.py: {e}", file=sys.stderr)
         return 2
@@ -894,18 +1068,19 @@ def _cli(argv) -> int:
                 return _cli_usage("metric needs: <name> <value>")
             raw = " ".join(args[1:])
             try:
-                value = float(raw)
-                if value.is_integer():
-                    value = int(value)
+                value = _cli_number(raw)
             except ValueError:
-                value = raw
+                value = raw          # not a number at all: a short string metric is legitimate
             p.metric(args[0], value)
         elif cmd == "artifact":
             p.artifact(" ".join(args))
         elif cmd == "delta":
             if len(args) < 2:
                 return _cli_usage("delta needs: <metric> <value>")
-            p.track_delta(args[0], float(args[1]))
+            try:
+                p.track_delta(args[0], float(args[1]))
+            except ValueError:
+                return _cli_usage(f"delta needs a number, got {args[1]!r}")
         elif cmd == "impact":
             label = _take_flag(args, "--label") or ""
             if len(args) < 2:

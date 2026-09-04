@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://trevor-marshall.dev/schemas/script-progress/impact.schema.json",
+  "title": "Script Progress: impact.json",
+  "description": "Cumulative contributions for the Impact Summary: one property per measure, each holding its points oldest first. Written by impact() / trackImpact(). Unlike deltas.json, which charts what a value IS now, these points are ADDED UP — so a point is a contribution, not a reading.",
+  "type": "object",
+  "additionalProperties": {
+    "type": "array",
+    "description": "Points for one measure, oldest first. The property name is the measure name; formatting comes from scriptProgress.deltaTracker.formats.",
+    "items": {
+      "$ref": "#/definitions/impactPoint"
+    }
+  },
+  "definitions": {
+    "impactPoint": {
+      "type": "object",
+      "description": "One run’s contribution to a cumulative measure.",
+      "required": [
+        "date",
+        "value"
+      ],
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "ISO timestamp of when the contribution was recorded. Used to work out the \"this month\" figure."
+        },
+        "value": {
+          "type": "number",
+          "description": "What this run contributed. Totals are a plain sum of these."
+        },
+        "task": {
+          "type": "string",
+          "description": "Name of the task that recorded it."
+        },
+        "runId": {
+          "type": "string",
+          "description": "Id of the run, so the card can say how many runs are behind a total."
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-readable name for the measure, shown on the card instead of the raw key."
+        }
+      }
+    }
+  }
+}

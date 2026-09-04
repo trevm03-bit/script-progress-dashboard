@@ -18,6 +18,8 @@ export const SLOTS_DIR = 'progress';
 
 export class DataReader {
   private lastGood: { [k: string]: unknown } = {};
+  /** When each file was first seen zero-length, so a truncation that never finishes gets reported. */
+  private emptySince: { [k: string]: number } = {};
   /** In-memory facts the extension observed (process exit codes). Never written to disk. */
   overlays: RunOverlay[] = [];
 
@@ -27,12 +29,17 @@ export class DataReader {
     if (dir !== this.logsDir) {
       this.logsDir = dir;
       this.lastGood = {};
+      this.emptySince = {};
       this.overlays = [];
     }
   }
 
   addOverlay(o: RunOverlay): void {
-    this.overlays = [...this.overlays.filter(x => x.task !== o.task), o].slice(-20);
+    // Case-INSENSITIVE, to match how overlays are read back. An exact compare here let "Nightly",
+    // "nightly" and "Nightly " pile up as three separate exits for one script, and the reader
+    // then served whichever happened to be first — measured as a months-old exit code 137 being
+    // reported for a process that had just ended cleanly.
+    this.overlays = [...this.overlays.filter(x => x.task.toLowerCase() !== o.task.toLowerCase()), o].slice(-20);
   }
 
   readAll(): DashboardData {
@@ -48,7 +55,7 @@ export class DataReader {
     // Drop overlays that no longer apply: the task reported a final state since, or no task
     // matches at all (an overlay with nothing to attach to must not live forever).
     this.overlays = this.overlays.filter(o => {
-      const t = tasks.find(x => x.task.toLowerCase().startsWith(o.task.toLowerCase()));
+      const t = tasks.find(x => x.task.toLowerCase() === o.task.toLowerCase());
       return !!t && t.status === 'running';
     });
     return {
@@ -105,6 +112,7 @@ export class DataReader {
     try {
       if (!fs.existsSync(file)) {
         delete this.lastGood[name];
+        delete this.emptySince[name];
         return null;
       }
       text = fs.readFileSync(file, 'utf-8');
@@ -112,13 +120,27 @@ export class DataReader {
       // Locked by the writer for a moment (Windows). Keep what we had.
       return (this.lastGood[name] as T) ?? null;
     }
+    // Strip a UTF-8 byte-order mark. JSON.parse rejects one outright, so a file produced by
+    // anything that writes a BOM by default — PowerShell's Set-Content -Encoding utf8, Notepad,
+    // several Windows tools — would be refused on EVERY refresh, for the life of the file, with
+    // only a generic parse error to go on. Our own reporter never writes one; other producers do,
+    // and the JSON files are explicitly an open contract.
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
     try {
       const parsed = JSON.parse(text) as T;
       this.lastGood[name] = parsed;
+      delete this.emptySince[name];
       return parsed;
     } catch (e) {
       if (text.trim().length === 0) {
-        // Zero-length file: the writer truncated and has not written yet. Silent.
+        // Zero-length: normally the writer has truncated and is about to write, which is not
+        // worth a message. But a writer that truncated and then DIED leaves this forever, and
+        // staying silent means a card frozen at "running" with nothing anywhere to explain it.
+        // Say so once the file has been empty for longer than any real write takes.
+        const first = this.emptySince[name] ?? (this.emptySince[name] = Date.now());
+        if (Date.now() - first > 30000) {
+          errors.push(`${name}: the file is empty — showing the last good copy (the script that writes it may have stopped mid-write)`);
+        }
         return (this.lastGood[name] as T) ?? null;
       }
       errors.push(`${name}: not valid JSON (${(e as Error).message.split('\n')[0]}) — showing last good copy`);
@@ -138,7 +160,10 @@ function normalizeSeries<T>(value: unknown, ok: (p: unknown) => p is T): Record<
   for (const [name, points] of Object.entries(value as Record<string, unknown>)) {
     if (!Array.isArray(points)) continue;
     const kept = points.filter(ok);
-    if (kept.length) out[name] = kept;
+    // Keep the key even when nothing survived. Dropping it entirely made the section say
+    // "nothing recorded yet" about a file that exists and names the metric — the user has no way
+    // to tell a missing series from a rejected one.
+    if (kept.length || points.length) out[name] = kept;
   }
   return out;
 }

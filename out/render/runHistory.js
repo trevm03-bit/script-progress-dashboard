@@ -12,6 +12,11 @@ function renderRunHistory(data, settings, opts) {
     const rows = all.slice(0, Math.max(1, settings.runHistory.maxRows));
     if (rows.length === 0)
         return (0, html_1.section)('runHistory', 'Run History', (0, html_1.empty)('No runs recorded yet.'), opts);
+    // One pass for the whole history. The "Slow" chip needs a verdict for every run, and this
+    // render happens on a one-second timer.
+    const verdicts = settings.runHistory.anomalies
+        ? (0, anomaly_1.durationVerdicts)(all, settings.runHistory.anomalyFactor)
+        : new Map();
     const failed = all.filter(r => !r.success).length;
     const filters = settings.runHistory.filters ? `<div class="filters">
     <input type="search" class="filter-text" placeholder="Filter runs…" aria-label="Filter runs" spellcheck="false">
@@ -20,10 +25,10 @@ function renderRunHistory(data, settings, opts) {
       <button class="fchip" data-filter="ok">OK <span class="n">${all.length - failed}</span></button>
       <button class="fchip" data-filter="fail">Failed <span class="n">${failed}</span></button>
       <button class="fchip" data-filter="warn">With warnings <span class="n">${all.filter(r => r.warnings).length}</span></button>
-      ${settings.runHistory.anomalies ? `<button class="fchip" data-filter="slow">Slow <span class="n">${all.filter(r => (0, anomaly_1.durationVerdict)(r, all, settings.runHistory.anomalyFactor).slow || (0, anomaly_1.overSla)(r.task, Number(r.elapsed) || 0, settings.processes)).length}</span></button>` : ''}
+      ${settings.runHistory.anomalies ? `<button class="fchip" data-filter="slow">Slow <span class="n">${all.filter(r => verdicts.get(r)?.slow || (0, anomaly_1.overSla)(r.task, Number(r.elapsed) || 0, settings.processes)).length}</span></button>` : ''}
     </div>
   </div>` : '';
-    const tr = rows.map(r => historyRow(r, settings, all)).join('');
+    const tr = rows.map(r => historyRow(r, settings, all, verdicts.get(r), opts.identity)).join('');
     const body = `${filters}<div class="table-wrap"><table class="sortable history" data-table="history">
   <thead><tr>
     <th data-col="0" title="Sort">St</th>
@@ -38,9 +43,8 @@ function renderRunHistory(data, settings, opts) {
 <div class="muted small table-foot"><span class="shown">Showing ${rows.length} of ${all.length} runs</span>${all.length > rows.length ? ` · raise <code>runHistory.maxRows</code> to see more` : ''} · <button class="link-btn" data-msg="exportCsv">${(0, html_1.icon)('export')}Export CSV</button></div>`;
     return (0, html_1.section)('runHistory', 'Run History', body, { ...opts, aside: failed ? `<span class="status-fail">${failed} failed</span>` : '' });
 }
-function historyRow(r, settings, all) {
+function historyRow(r, settings, all, verdict, identity) {
     const t = (0, time_1.parseIso)(r.date)?.getTime() ?? 0;
-    const verdict = settings.runHistory.anomalies ? (0, anomaly_1.durationVerdict)(r, all, settings.runHistory.anomalyFactor) : undefined;
     const sla = (0, anomaly_1.overSla)(r.task, Number(r.elapsed) || 0, settings.processes);
     const limit = (0, anomaly_1.slaFor)(r.task, settings.processes);
     const drift = settings.runHistory.anomalies ? (0, anomaly_1.metricAnomalies)(r, all, settings.runHistory.anomalyFactor, settings.runHistory.ignoreMetrics) : [];
@@ -85,7 +89,7 @@ function historyRow(r, settings, all) {
     if (drift.length) {
         parts.push(`<div class="detail-block"><div class="detail-h">Metrics far from usual</div>${drift.map(d => `<div class="small status-warn">${(0, html_1.icon)(d.direction === 'down' ? 'arrow-down' : 'arrow-up')} <b>${(0, html_1.esc)(d.key)}</b> ${(0, html_1.esc)(String(d.value))} — usually about ${(0, html_1.esc)(String(Math.round(d.baseline * 100) / 100))} (${d.sample} prior runs)</div>`).join('')}</div>`);
     }
-    const who = [
+    const who = identity === false ? '' : [
         r.user ? `${(0, html_1.icon)('account')}${(0, html_1.esc)(r.user)}` : '',
         r.commit ? `${(0, html_1.icon)('git-commit')}<code>${(0, html_1.esc)(r.commit)}</code>` : '',
     ].filter(Boolean).join(' · ');

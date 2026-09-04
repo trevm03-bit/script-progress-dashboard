@@ -28,14 +28,21 @@ export function renderPendingActions(data: DashboardData, settings: Settings, no
     if (list) list.push(it); else byTask.set(it.task, [it]);
   }
 
+  // Capped per script. 500 actionable findings from one run is a real shape - and rendered whole
+  // it was an 85 KB card with no scroll container, burying every section under it.
+  const PER_TASK = 25;
   let body = '';
   for (const [task, list] of byTask) {
+    const shown = list.slice(0, PER_TASK);
     body += `<div class="pa-group"><div class="pa-task">${esc(task)} <span class="muted small">${esc(relativeTime(list[0].date, now))}</span></div>`;
-    for (const it of list) {
+    for (const it of shown) {
       const sev = it.severity === 'error' ? 'pa-error' : it.severity === 'info' ? 'pa-info' : 'pa-warn';
       const count = typeof it.count === 'number' ? `<span class="pa-count">${it.count}</span>` : '';
       const cat = it.category ? `<span class="pa-cat">${esc(it.category)}</span>` : '';
       body += `<div class="pa-item ${sev}" title="${esc(`Reported ${clockTime(it.time)} by ${it.task}`)}">${icon('circle-outline')}${count}<span class="pa-msg">${esc(it.msg)}</span>${cat}</div>`;
+    }
+    if (list.length > shown.length) {
+      body += `<div class="muted small list-more">${icon('ellipsis')} ${list.length - shown.length} more from ${esc(task)} — open its row in Run History for the full list.</div>`;
     }
     body += '</div>';
   }

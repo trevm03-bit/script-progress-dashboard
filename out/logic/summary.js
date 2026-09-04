@@ -35,7 +35,12 @@ function summaryFacts(data, settings, now) {
         if ((0, sparkline_1.outOfRange)(pts[pts.length - 1].value, t))
             metricsOutOfRange.push(name);
     }
-    const lastRun = data.history.slice().sort((a, b) => ((0, time_1.parseIso)(b.date)?.getTime() ?? 0) - ((0, time_1.parseIso)(a.date)?.getTime() ?? 0))[0] ?? null;
+    // Not-in-the-future, so this agrees with "runs today" / "failed today", which use isToday().
+    // A clock-skewed container writing tomorrow's date made the strip say "0 failed today" beside a
+    // Last Completed card reading "FAILED - just now" for the same run.
+    const lastRun = data.history
+        .filter(r => ((0, time_1.parseIso)(r.date)?.getTime() ?? 0) <= now.getTime())
+        .sort((a, b) => ((0, time_1.parseIso)(b.date)?.getTime() ?? 0) - ((0, time_1.parseIso)(a.date)?.getTime() ?? 0))[0] ?? null;
     return {
         runningCount: states.filter(s => s === 'running').length,
         stalledCount: states.filter(s => s === 'stalled' || s === 'exited').length,
@@ -91,7 +96,10 @@ function weeklyDigestText(data, settings, now, days = 7) {
     const day = (d) => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
     const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1));
     const runs = data.history
-        .filter(r => { const d = (0, time_1.parseIso)(r.date); return !!d && d >= from; })
+        // Bounded at both ends. Without the upper bound a run dated in the future - a clock-skewed
+        // container, a hand-edited file - was counted in "this week" and printed under Failures with
+        // its own date next to a heading that says the week ended today.
+        .filter(r => { const d = (0, time_1.parseIso)(r.date); return !!d && d >= from && d.getTime() <= now.getTime(); })
         .sort((a, b) => ((0, time_1.parseIso)(a.date)?.getTime() ?? 0) - ((0, time_1.parseIso)(b.date)?.getTime() ?? 0));
     const lines = [];
     lines.push(`Script Progress — week of ${day(from)} to ${day(now)}`);
@@ -179,8 +187,11 @@ function historyCsv(history) {
         .slice()
         .sort((a, b) => ((0, time_1.parseIso)(a.date)?.getTime() ?? 0) - ((0, time_1.parseIso)(b.date)?.getTime() ?? 0));
     const metricKeys = Array.from(new Set(rows.flatMap(r => Object.keys(r.metrics || {})))).sort();
+    // The header goes through q() too. Metric names come from scripts, so one containing a comma
+    // or a quote silently shifted every column after it - the file still opened, and every value
+    // under it was attributed to the wrong field.
     const head = ['date', 'task', 'success', 'elapsed_seconds', 'warnings', 'summary', 'run_id', 'started_at', ...metricKeys];
-    const out = [head.join(',')];
+    const out = [head.map(q).join(',')];
     for (const r of rows) {
         out.push([
             r.date, r.task, r.success ? 'true' : 'false', r.elapsed, r.warnings ?? 0, r.summary ?? '', r.runId ?? '', r.startedAt ?? '',

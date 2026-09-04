@@ -3,7 +3,7 @@
 import { DashboardData, RunRecord, Settings } from '../types';
 import { dateTime, formatDuration, parseIso, clockTime } from '../logic/time';
 import { esc, icon, section, empty, metricText, SectionOpts } from './html';
-import { durationVerdict, metricAnomalies, metricChanges, overSla, previousRun, slaFor } from '../logic/anomaly';
+import { DurationVerdict, durationVerdicts, metricAnomalies, metricChanges, overSla, previousRun, slaFor } from '../logic/anomaly';
 import { runKey } from '../logic/compare';
 
 export function renderRunHistory(data: DashboardData, settings: Settings, opts: SectionOpts): string {
@@ -14,6 +14,12 @@ export function renderRunHistory(data: DashboardData, settings: Settings, opts: 
 
   if (rows.length === 0) return section('runHistory', 'Run History', empty('No runs recorded yet.'), opts);
 
+  // One pass for the whole history. The "Slow" chip needs a verdict for every run, and this
+  // render happens on a one-second timer.
+  const verdicts = settings.runHistory.anomalies
+    ? durationVerdicts(all, settings.runHistory.anomalyFactor)
+    : new Map<RunRecord, DurationVerdict>();
+
   const failed = all.filter(r => !r.success).length;
   const filters = settings.runHistory.filters ? `<div class="filters">
     <input type="search" class="filter-text" placeholder="Filter runs…" aria-label="Filter runs" spellcheck="false">
@@ -22,11 +28,11 @@ export function renderRunHistory(data: DashboardData, settings: Settings, opts: 
       <button class="fchip" data-filter="ok">OK <span class="n">${all.length - failed}</span></button>
       <button class="fchip" data-filter="fail">Failed <span class="n">${failed}</span></button>
       <button class="fchip" data-filter="warn">With warnings <span class="n">${all.filter(r => r.warnings).length}</span></button>
-      ${settings.runHistory.anomalies ? `<button class="fchip" data-filter="slow">Slow <span class="n">${all.filter(r => durationVerdict(r, all, settings.runHistory.anomalyFactor).slow || overSla(r.task, Number(r.elapsed) || 0, settings.processes)).length}</span></button>` : ''}
+      ${settings.runHistory.anomalies ? `<button class="fchip" data-filter="slow">Slow <span class="n">${all.filter(r => verdicts.get(r)?.slow || overSla(r.task, Number(r.elapsed) || 0, settings.processes)).length}</span></button>` : ''}
     </div>
   </div>` : '';
 
-  const tr = rows.map(r => historyRow(r, settings, all)).join('');
+  const tr = rows.map(r => historyRow(r, settings, all, verdicts.get(r), opts.identity)).join('');
   const body = `${filters}<div class="table-wrap"><table class="sortable history" data-table="history">
   <thead><tr>
     <th data-col="0" title="Sort">St</th>
@@ -43,9 +49,8 @@ export function renderRunHistory(data: DashboardData, settings: Settings, opts: 
   return section('runHistory', 'Run History', body, { ...opts, aside: failed ? `<span class="status-fail">${failed} failed</span>` : '' });
 }
 
-function historyRow(r: RunRecord, settings: Settings, all: RunRecord[]): string {
+function historyRow(r: RunRecord, settings: Settings, all: RunRecord[], verdict: DurationVerdict | undefined, identity: boolean | undefined): string {
   const t = parseIso(r.date)?.getTime() ?? 0;
-  const verdict = settings.runHistory.anomalies ? durationVerdict(r, all, settings.runHistory.anomalyFactor) : undefined;
   const sla = overSla(r.task, Number(r.elapsed) || 0, settings.processes);
   const limit = slaFor(r.task, settings.processes);
   const drift = settings.runHistory.anomalies ? metricAnomalies(r, all, settings.runHistory.anomalyFactor, settings.runHistory.ignoreMetrics) : [];
@@ -86,7 +91,7 @@ function historyRow(r: RunRecord, settings: Settings, all: RunRecord[]): string 
     parts.push(`<div class="detail-block"><div class="detail-h">Metrics far from usual</div>${drift.map(d =>
       `<div class="small status-warn">${icon(d.direction === 'down' ? 'arrow-down' : 'arrow-up')} <b>${esc(d.key)}</b> ${esc(String(d.value))} — usually about ${esc(String(Math.round(d.baseline * 100) / 100))} (${d.sample} prior runs)</div>`).join('')}</div>`);
   }
-  const who = [
+  const who = identity === false ? '' : [
     r.user ? `${icon('account')}${esc(r.user)}` : '',
     r.commit ? `${icon('git-commit')}<code>${esc(r.commit)}</code>` : '',
   ].filter(Boolean).join(' · ');

@@ -8,7 +8,9 @@ function runbookMarkdown(data, settings, now) {
     const L = [];
     L.push('# Runbook');
     L.push('');
-    L.push(`_Generated ${now.toISOString().slice(0, 16).replace('T', ' ')} by Script Progress Dashboard, from what it has observed._`);
+    // Local time. toISOString() is UTC, so a runbook generated at 09:00 in UTC-4 was stamped
+    // 13:00 with no marker, in a product whose every other date is local (calendar.ts says so).
+    L.push(`_Generated ${(0, time_1.dateTime)(now.toISOString())} by Script Progress Dashboard, from what it has observed._`);
     L.push('');
     L.push('> ## ⚠️ DRAFT — generated, not reviewed');
     L.push('>');

@@ -33,9 +33,8 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ActionRunner = exports.TASK_TYPE = void 0;
+exports.commandForFile = exports.ActionRunner = exports.TASK_TYPE = void 0;
 exports.expandVariables = expandVariables;
-exports.commandForFile = commandForFile;
 // Quick Actions: turn a button click (or a task, or a context-menu file) into a command, safely.
 //   1. refuse in an untrusted workspace,
 //   2. ask for every ${prompt:Question} value the command contains; substitute ${file},
@@ -55,18 +54,6 @@ function expandVariables(command, extra = {}) {
         file, fileBasename: file ? path.basename(file) : '', fileDirname: file ? path.dirname(file) : '', workspaceFolder: ws, ...extra,
     };
     return command.replace(/\$\{(file|fileBasename|fileDirname|workspaceFolder)\}/g, (_, k) => vars[k] ?? '');
-}
-function quoteIfNeeded(p) {
-    return /[\s"]/.test(p) ? `"${p.replace(/"/g, '\\"')}"` : p;
-}
-/** The command 'Run with Script Progress' builds for a file, from the interpreters map. */
-function commandForFile(file, interpreters) {
-    const ext = path.extname(file);
-    const key = Object.keys(interpreters).find(k => k.toLowerCase() === ext.toLowerCase());
-    if (key === undefined)
-        return null;
-    const prefix = (interpreters[key] || '').trim();
-    return prefix ? `${prefix} ${quoteIfNeeded(file)}` : quoteIfNeeded(file);
 }
 class ActionRunner {
     constructor(getSettings, sink) {
@@ -189,4 +176,8 @@ class ActionRunner {
     }
 }
 exports.ActionRunner = ActionRunner;
+// Re-exported so callers keep importing it from here; the implementation is pure and lives in
+// logic/ where it can be tested without a VS Code host.
+var shell_1 = require("./logic/shell");
+Object.defineProperty(exports, "commandForFile", { enumerable: true, get: function () { return shell_1.commandForFile; } });
 //# sourceMappingURL=actions.js.map

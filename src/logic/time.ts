@@ -5,10 +5,15 @@ import { ProgressData, RunOverlay, TaskState } from '../types';
 /** 45 -> "45s", 125 -> "2m5s", 3600 -> "1h", 7261 -> "2h1m". */
 export function formatDuration(seconds: number): string {
   if (!isFinite(seconds) || seconds < 0) seconds = 0;
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.round(seconds % 60);
+  // Round ONCE, to whole seconds, and do the rest of the maths on that. Rounding each part
+  // separately printed durations that cannot exist: 59.6 came out as "60s", 119.6 as "1m60s" and
+  // 3599.6 as "59m60s". Both reporters write elapsed to one decimal place, and every average and
+  // median in the product divides, so fractional seconds are the normal case, not an edge one.
+  const total = Math.round(seconds);
+  if (total < 60) return `${total}s`;
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
   if (h > 0) return m > 0 ? `${h}h${m}m` : `${h}h`;
   return s > 0 ? `${m}m${s}s` : `${m}m`;
 }
@@ -86,22 +91,40 @@ export function minutesSinceUpdate(progress: ProgressData, now: Date): number {
   return (now.getTime() - updated.getTime()) / 60000;
 }
 
-/** Does an exit overlay apply to this run? Same task, and the exit happened after the run started. */
 /** The one task-name match used everywhere: the run's task name starts with the configured name. */
 export function taskMatches(runTask: string, configured: string): boolean {
   if (!configured) return false;
   return (runTask || '').toLowerCase().startsWith(configured.toLowerCase());
 }
 
+/** The whole task name, case-insensitively. Used where a PREFIX would over-match — see below. */
+export function sameTask(a: string, b: string): boolean {
+  return (a || '').toLowerCase() === (b || '').toLowerCase();
+}
+
+/**
+ * Does a process-exit overlay apply to this run?
+ *
+ * 🔴 EXACT names only, and the most RECENT matching exit wins.
+ *
+ * Prefix matching is right for a button pointing at a family of scripts, and wrong here. A button
+ * configured with task "Nightly" once attached its single exit to every running script whose name
+ * began with "Nightly" — so one process ending marked two healthy scripts as crashed, each with a
+ * false error toast and a bogus event written to disk. The extension resolves the overlay to the
+ * one running task it belongs to before storing it (see extension.ts), so by the time it gets
+ * here the name is already the real one; anything less than an exact match is over-reach.
+ */
 export function exitOverlayFor(progress: ProgressData, overlays: RunOverlay[] | undefined): RunOverlay | null {
   if (!overlays || !overlays.length) return null;
   const start = deriveStart(progress)?.getTime() ?? 0;
+  let best: RunOverlay | null = null;
+  let bestWhen = -Infinity;
   for (const o of overlays) {
-    if (!taskMatches(progress.task, o.task)) continue;
+    if (!sameTask(progress.task, o.task)) continue;
     const when = parseIso(o.when)?.getTime() ?? 0;
-    if (when >= start - 1000) return o;
+    if (when >= start - 1000 && when >= bestWhen) { best = o; bestWhen = when; }
   }
-  return null;
+  return best;
 }
 
 /**

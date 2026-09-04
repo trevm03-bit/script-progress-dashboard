@@ -243,7 +243,11 @@ export function coverage(
 ): Coverage {
   const inputs: CoverageInput[] = [];
   const cutoff = now.getTime() - days * 86400000;
-  const recent = history.filter(r => (parseIso(r.date)?.getTime() ?? 0) >= cutoff);
+  // Upper bound as well as lower: a run dated years out is not evidence about the last 30 days.
+  const recent = history.filter(r => {
+    const t = parseIso(r.date)?.getTime() ?? 0;
+    return t >= cutoff && t <= now.getTime();
+  });
 
   // 1. Schedule adherence. 'blocked' and 'unseen' are excluded — neither is this process failing
   //    to comply. 🔴 'pending' is excluded too, and that matters: it means "not run and NOT YET
@@ -271,7 +275,12 @@ export function coverage(
     const capped = historyCap > 0 && history.length >= historyCap;
     inputs.push({
       label: 'Runs succeeded', score: ok / recent.length, weight: weights.success,
-      detail: capped ? `${ok}/${recent.length} of the last ${historyCap} run(s)` : `${ok}/${recent.length} run(s) in ${days} days`,
+      // Say what the denominator ACTUALLY is. "5/7 of the last 100 runs" was arithmetic nonsense:
+      // 7 is the window count, 100 is the file cap. When the file is full, the window is only as
+      // deep as the file allows, so name that instead of inventing a third number.
+      detail: capped
+        ? `${ok}/${recent.length} run(s) in ${days} days (history is full at ${historyCap}, so older runs are not counted)`
+        : `${ok}/${recent.length} run(s) in ${days} days`,
     });
   }
   // 3. Are the tracked numbers inside their thresholds?
@@ -286,9 +295,12 @@ export function coverage(
   // a routine that has never run — the figure at its most confident when it knows nothing.
   const observed = inputs.some(i => i.label === 'On schedule' || i.label === 'Runs succeeded');
   if (!inputs.length || !observed) return { percent: null, inputs };
+  // Weights are user-settable and may all be zero. Dividing by that produced NaN, which passed
+  // the caller's `!== null` guard and rendered as "NaN%".
   const total = inputs.reduce((n, i) => n + i.weight, 0);
+  if (!(total > 0)) return { percent: null, inputs };
   const score = inputs.reduce((n, i) => n + clamp01(i.score) * i.weight, 0) / total;
-  return { percent: Math.round(score * 100), inputs };
+  return { percent: Number.isFinite(score) ? Math.round(score * 100) : null, inputs };
 }
 
 function clamp01(n: number): number { return Math.max(0, Math.min(1, isFinite(n) ? n : 0)); }

@@ -68,7 +68,114 @@ question underneath — *did it run, what did it find, and is it holding togethe
 - `logsPath` plus `events.file` let an untrusted workspace choose where a file was written. Both
   are now restricted, and the writer refuses without trust.
 
-Reporter 1.3.0. 172 Node tests, 30 Python tests.
+**Hardened before release**
+
+Five independent adversarial reviews went at this build — the Python reporter, the extension's
+lifecycle and leaks, cross-platform and theme rendering, the upgrade and settings matrix, and a
+fresh-eyes hunt with no brief but "break it". Everything they found is fixed below, and every one
+of their reproductions is now a test, because a defect nobody has a test for is a defect that
+comes back.
+
+*Correctness*
+
+- Run History was **O(n²)**, once per second, for ever: the "Slow" chip re-scanned the whole
+  history per row. 5,000 runs took 1.4 s to draw; the same page now takes 54 ms.
+- The one-second refresh keyed off the raw `status` field, so a script you pressed Ctrl-C on
+  pinned the extension to a full re-render every second for the life of the window — while the
+  UI itself correctly said *stalled*.
+- A process exit was matched by **prefix**, so one button ending marked every running script whose
+  name started the same way as crashed — false error toasts, and bogus events written to disk.
+  Exits now resolve to the one script they belong to, or are reported without blaming anyone.
+- `formatDuration` printed durations that cannot exist: `1m60s`, `59m60s`, `60s`.
+- Due-date reminders fired on activation in every window, every day of the reminder window — the
+  guard against exactly that could never run.
+- `last_event.json` kept only the last of two transitions arriving together, and the one dropped
+  was as likely as not the failure.
+- The exported HTML report **ignored `report.includeIdentity` entirely**, so your username and
+  commit went into every exported file whatever the setting said, in the artefact most likely to
+  be sent to someone else.
+- Export Report crashed on an `access.json` node type outside the known five — `"Table"` with a
+  capital T was enough.
+- A `frequency` colliding with a JavaScript built-in (`constructor`, `toString`) threw inside the
+  calendar renderer and blanked the whole dashboard.
+- Script Health and Pending Actions disagreed about which of two same-second runs was the latest.
+- The CSV header row was not quoted, so a metric name containing a comma shifted every column.
+- The weekly digest and the coverage figure had no upper bound on their window: a clock-skewed
+  run dated next year counted toward "this week".
+- A `dependsOn` naming nothing left a process permanently *blocked* — which counts as neither
+  overdue nor missing, so one typo silently **raised** your coverage from 42% to 83%. Unmatched
+  and self-referential dependencies are now reported.
+- A repeated id in `sectionOrder` rendered the section twice, and only the first copy responded
+  to the search box and filter chips.
+- The sidebar said *every section is switched off* while the panel was showing thirteen of them.
+- `coverage.weights.*` were read by the extension and declared nowhere, so there was no settings
+  entry, no schema, and a squiggle if you typed them by hand.
+- Two listeners leaked per sidebar hide/show cycle, each one firing another full re-render.
+
+*Off Windows*
+
+- **Copy Digest for Email** did nothing at all on macOS and Linux — it left the clipboard
+  untouched and said so. It now uses `osascript` on macOS and `xclip` on Linux.
+- `python` is not a binary on a stock Mac or most Linux distributions; the default interpreter
+  now resolves to `python3` there, and `powershell` to `pwsh`.
+- Shell quoting used cmd rules everywhere, so `report(v2).py` was a bash syntax error and
+  `run$(id).py` was a command substitution. POSIX paths are single-quoted now, and cmd doubles a
+  quote rather than backslashing it.
+
+*Legibility*
+
+- The metric delta chips measured **1.55:1** — the least readable thing on the page — because
+  status colours tuned for the editor background were painted on a badge, with opacity on top.
+- On a light theme the warning colour was 2.6:1 as body text, on the warning line specifically:
+  the one thing on the row that has to be read.
+- Under High Contrast the progress **track** rendered as a saturated bar that read as complete;
+  in a theme defining neither border colour, "unknown" SLA dots were invisible.
+- `prefers-reduced-motion` missed the spinner, so a running task span for ever for a reader who
+  had asked the OS for no motion.
+- The sidebar scrolled sideways at every realistic width.
+- The Impact grid collapsed to a single card 1,719 px wide holding one number.
+- The footnote under the summary tiles had no stylesheet rule at all, so it rendered louder than
+  the labels it explains.
+- Warnings, Pending Actions and Impact rendered every item with no cap: 500 warnings produced an
+  85 KB card that pushed every section below it off the page.
+- A long metric name was truncated with a tooltip that described something else.
+
+*The reporter*
+
+- A lone surrogate — routine in a filename on Linux, and in some Windows error messages — raised
+  `UnicodeEncodeError` out of the reporter and **replaced the script's own exception**, so the
+  operator saw a codec error instead of their real failure. So did a full disk.
+- One malformed row in `run_history.json` raised inside the constructor, bricking every future run
+  of that task until someone hand-edited the file.
+- `PROGRESS_LOGS_DIR` pointing at a file gave the calling script a raw traceback.
+- The slot filename stripped everything outside `[a-z0-9]`, so `Nightly Load`, `Nightly-Load` and
+  `NIGHTLY_LOAD` shared one file — and *every* non-ASCII task name shared the single slot `task`.
+  Names now carry a hash.
+- The `warnings` count in a CLI-driven run reported the survivors, not the total: 25 warnings were
+  recorded as 20.
+- `complete --run <id>` on a displaced run exited 0 having recorded nothing — silent, for the one
+  subcommand that persists the run.
+- A long-running job's slot was deleted after seven days by file mtime, making the run
+  unresumable and its completion unrecordable.
+- `metric` round-tripped through `float()`, so any integer above 2⁵³ was silently corrupted.
+- A single held read handle on `progress.json` — a dashboard, a `tail`, an antivirus scan — cost
+  **0.45 s per reporting call** and then discarded the write. Live-progress writes now take a
+  short retry ladder, because the next one supersedes them anyway.
+- Nothing capped warning, summary or metric text: five long warnings produced a 7 MB
+  `progress.json` **and** a 7 MB history row, kept 100 times over.
+- `.tmp` files left by a killed process were never swept.
+- `status` printed a raw traceback on a corrupt `progress.json`.
+
+*And the gate that should have caught them*
+
+`npm run smoke` installs the packaged `.vsix` into a throwaway VS Code profile, runs real scripts
+against the reporter **inside the package**, and asserts on what the real renderers produce. It
+existed before this release but had never once run to completion: it drove `Code.exe` directly,
+which on Windows hands its arguments to a detached window and never returns, so the gate timed out
+instead of checking anything. It now goes through the CLI entry point the way `code.cmd` does.
+28 checks, green.
+
+Reporter 1.6.0. 207 Node tests, 30 + 27 Python tests, 28 packaged-install checks.
 
 ## 1.5.0 — 2026-09-04
 

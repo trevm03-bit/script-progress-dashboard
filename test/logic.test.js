@@ -74,8 +74,19 @@ test('percent with and without substep; slug', () => {
   assert.equal(time.taskMatches('Nightly Load Phase 2', 'nightly load'), true);
   assert.equal(time.taskMatches('Other', 'Nightly'), false);
   const p = fixture.progress;
-  assert.ok(time.exitOverlayFor(p, [{ task: 'demo', exitCode: 1, when: '2026-09-02T10:00:25' }]));        // prefix, case-insensitive
+  // Exit overlays match on the WHOLE name, case-insensitively. A prefix would be wrong here: a
+  // button named "Nightly" is a prefix of two different running scripts, and one process ending
+  // must not mark them both as crashed.
+  assert.ok(time.exitOverlayFor(p, [{ task: p.task.toUpperCase(), exitCode: 1, when: '2026-09-02T10:00:25' }]));
+  assert.equal(time.exitOverlayFor(p, [{ task: p.task.slice(0, 4), exitCode: 1, when: '2026-09-02T10:00:25' }]), null);
   assert.equal(time.exitOverlayFor(p, [{ task: 'Pipeline', exitCode: 1, when: '2026-09-02T10:00:25' }]), null);
+  // The most RECENT applicable exit wins, whatever order the overlays arrive in.
+  assert.equal(time.exitOverlayFor(p, [
+    { task: p.task, exitCode: 137, when: '2026-09-02T10:00:25' },
+    { task: p.task, exitCode: 2, when: '2026-09-02T10:05:00' },
+  ]).exitCode, 2);
+  assert.equal(time.sameTask('Nightly Load', 'NIGHTLY load'), true);
+  assert.equal(time.sameTask('Nightly Load', 'Nightly'), false);
   assert.equal(time.slug('Nightly Load 2'), 'nightly-load-2');
   assert.equal(time.slug('  '), 'task');
 });

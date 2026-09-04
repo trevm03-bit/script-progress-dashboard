@@ -19,8 +19,15 @@ function mapSvg(data, settings, now, size = 640) {
     const r2 = size * 0.38;
     const pos = new Map();
     tasks.forEach((n, i) => { const a = -Math.PI / 2 + (i / Math.max(1, tasks.length)) * Math.PI * 2; pos.set(n.id, { x: c + Math.cos(a) * r1, y: c + Math.sin(a) * r1 }); });
+    // Anything that is not one of the four known types is grouped with "other" rather than left
+    // without a position. access.json is a published, open contract: a hand-written or third-party
+    // file using "queue", or simply "Table" with a capital T, previously reached the non-null
+    // assertion below and killed the whole export with a TypeError.
     const order = ['table', 'file', 'api', 'other'];
-    const groups = order.map(t => res.filter(n => n.type === t).sort((a, b) => a.label.localeCompare(b.label))).filter(x => x.length);
+    const known = new Set(order);
+    const groups = order
+        .map(t => res.filter(n => (known.has(n.type) ? n.type : 'other') === t).sort((a, b) => a.label.localeCompare(b.label)))
+        .filter(x => x.length);
     const total = res.length || 1;
     let angle = -Math.PI / 2;
     const gap = groups.length > 1 ? 0.12 : 0;
@@ -38,6 +45,8 @@ function mapSvg(data, settings, now, size = 640) {
     }).join('');
     const nodes = g.nodes.map(n => {
         const p = pos.get(n.id);
+        if (!p)
+            return ''; // belt and braces: a node with no position is skipped, never crashed on
         const r = (n.type === 'task' ? 8 : 5) + Math.min(6, Math.sqrt(n.degree || 0) * 1.4);
         const right = p.x >= c;
         return `<g><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r}" fill="${TYPE_COLOR[n.type] || TYPE_COLOR.other}"/><text x="${(p.x + (right ? r + 5 : -(r + 5))).toFixed(1)}" y="${p.y.toFixed(1)}" font-size="11" text-anchor="${right ? 'start' : 'end'}" dominant-baseline="middle" fill="currentColor" ${n.type === 'task' ? 'font-weight="600"' : ''}>${(0, html_1.esc)(n.label)}</text></g>`;
@@ -46,13 +55,24 @@ function mapSvg(data, settings, now, size = 640) {
     return `<svg class="report-map" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="Access map">${edges}${nodes}${legend}</svg>`;
 }
 function reportHtml(data, settings, now, title = 'Script Progress report') {
-    const body = (0, dashboard_1.renderSections)(data, { ...settings, dashboard: { ...settings.dashboard, collapsible: false }, sections: { ...settings.sections, quickActions: false } }, { now, surface: 'panel', trusted: false, collapsed: [] });
+    // report.includeIdentity is honoured HERE, by handing the renderers a settings object with it
+    // already applied. It was previously declared, documented in the README as gating the exported
+    // report, and read by nothing at all - so the OS username and git commit went into every
+    // exported file regardless, and report.ts even un-hid the row they sit in.
+    const body = (0, dashboard_1.renderSections)(data, {
+        ...settings,
+        dashboard: { ...settings.dashboard, collapsible: false },
+        sections: { ...settings.sections, quickActions: false },
+    }, { now, surface: 'panel', trusted: false, collapsed: [], identity: settings.report.includeIdentity !== false });
     const map = settings.sections.accessMap ? mapSvg(data, settings, now) : '';
     // Strip interactive-only bits: buttons that post messages, the live map markup.
     const cleaned = body
         .replace(/<section class="card card-map"[\s\S]*?<\/section>/g, map ? `<section class="card"><div class="section-title"><span class="section-name">Access Map</span></div>${map}</section>` : '')
         .replace(/<div class="filters">[\s\S]*?<\/div>\s*<\/div>/g, '')
-        .replace(/<button class="link-btn" data-msg="[^"]*">[\s\S]*?<\/button>/g, '')
+        // [^>]* on BOTH sides: the Compare button carries data-key and title after data-msg, so the
+        // old pattern skipped it - leaving a dead control, and its run id, in a file built to be sent
+        // to someone else.
+        .replace(/<button[^>]*\sdata-msg="[^"]*"[^>]*>[\s\S]*?<\/button>/g, '')
         .replace(/<button class="link-btn" data-open="([^"]*)"[^>]*>[\s\S]*?<\/button>/g, '<span class="mono">$1</span>')
         .replace(/<tr class="detail" hidden>/g, '<tr class="detail">');
     return `<!DOCTYPE html>

@@ -34,6 +34,12 @@ export interface SectionOpts {
   aside?: string;
   /** Codicon shown before the title. */
   icon?: string;
+  /**
+   * Show who ran a script and from which commit. FALSE for the exported HTML report and the
+   * digest, when `report.includeIdentity` is off - those are the artefacts that get sent to
+   * other people, which is the whole reason the setting exists.
+   */
+  identity?: boolean;
 }
 
 /** A dashboard card with an uppercase section title. */

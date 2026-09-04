@@ -22,7 +22,18 @@ function renderSummary(data, settings, now, narrow = false) {
     // honest while the reader can see what went into it.
     let coverageNote = '';
     if (settings.coverage.show && settings.processes.length) {
-        const cov = (0, compliance_1.coverage)((0, calendar_1.calendarRows)(settings.processes, data.history, now), data.history, f.metricsOutOfRange.length, Object.keys(settings.deltas.thresholds || {}).length, now, 30, settings.coverage.weights, HISTORY_CAP);
+        // 🔴 Count only metrics that have actually reported. `metricsOutOfRange` can only ever name a
+        // metric with data, so counting thresholds instead gave a full mark to a metric that has
+        // never been measured — the figure at its most confident about the thing it knows least
+        // about, which is the exact failure the comment inside coverage() warns against.
+        const metricsTracked = Object.keys(settings.deltas.thresholds || {})
+            .filter(name => (data.deltas[name] || []).length > 0).length;
+        const cov = (0, compliance_1.coverage)((0, calendar_1.calendarRows)(settings.processes, data.history, now), data.history, f.metricsOutOfRange.length, metricsTracked, now, 30, settings.coverage.weights, HISTORY_CAP);
+        if (cov.percent === null && settings.processes.length) {
+            // Every weight is 0, so there is nothing left to average. The setting is still switched on,
+            // so saying nothing would look like a bug in the tool rather than a choice in the settings.
+            coverageNote = `<div class="tiles-note">Coverage is switched on but every weight is 0, so there is nothing to average — raise <code>scriptProgress.coverage.weights</code>, or set <code>coverage.show</code> to false.</div>`;
+        }
         if (cov.percent !== null) {
             const cls = cov.percent >= 90 ? 'tile-ok' : cov.percent >= 70 ? 'tile-warn' : 'tile-bad';
             const w = settings.coverage.weights;

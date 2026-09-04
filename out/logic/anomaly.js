@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.durationVerdict = durationVerdict;
+exports.durationVerdicts = durationVerdicts;
 exports.slaFor = slaFor;
 exports.overSla = overSla;
 exports.metricChanges = metricChanges;
@@ -21,8 +22,13 @@ function median(values) {
  */
 function durationVerdict(run, history, factor = 2) {
     const t = (0, time_1.parseIso)(run.date)?.getTime() ?? 0;
+    // 🔴 Sort before slicing. `slice(-20)` takes the LAST twenty of whatever order it is handed,
+    // and this function is called with history both newest-first (the table) and oldest-first (the
+    // notifier) — so the same run was measured against its twenty OLDEST runs on one surface and
+    // its twenty most recent on the other. "The usual duration" means recent.
     const prior = history
         .filter(r => r !== run && r.task === run.task && r.success && typeof r.elapsed === 'number' && ((0, time_1.parseIso)(r.date)?.getTime() ?? 0) < t)
+        .sort((a, b) => ((0, time_1.parseIso)(a.date)?.getTime() ?? 0) - ((0, time_1.parseIso)(b.date)?.getTime() ?? 0))
         .map(r => r.elapsed)
         .slice(-20);
     if (prior.length < 3 || !(run.elapsed > 0))
@@ -30,6 +36,52 @@ function durationVerdict(run, history, factor = 2) {
     const baseline = median(prior);
     const f = baseline > 0 ? run.elapsed / baseline : 1;
     return { factor: f, baseline, sample: prior.length, slow: f >= factor && run.elapsed - baseline >= 5 };
+}
+/**
+ * Every run's verdict in one pass, for callers that need the whole history judged at once.
+ *
+ * 🔴 Use this instead of calling `durationVerdict` in a loop. That function re-filters the ENTIRE
+ * history per run, so judging n runs costs n² date parses — and the Run History header does
+ * exactly that to count the "Slow" chip, once per second, forever. Measured before this existed:
+ * 5,000 rows took 226 ms per render on a 1 Hz timer. Same maths, same twenty-run window, grouped
+ * and sorted once.
+ */
+function durationVerdicts(history, factor = 2) {
+    const out = new Map();
+    const byTask = new Map();
+    for (const r of history) {
+        const list = byTask.get(r.task);
+        const entry = { r, t: (0, time_1.parseIso)(r.date)?.getTime() ?? 0 };
+        if (list)
+            list.push(entry);
+        else
+            byTask.set(r.task, [entry]);
+    }
+    for (const list of byTask.values()) {
+        list.sort((a, b) => a.t - b.t);
+        const prior = [];
+        let k = 0;
+        for (const cur of list) {
+            // Admit only runs STRICTLY earlier than this one, matching durationVerdict exactly — runs
+            // sharing a timestamp must not measure each other.
+            while (k < list.length && list[k].t < cur.t) {
+                const c = list[k].r;
+                if (c.success && typeof c.elapsed === 'number')
+                    prior.push(c.elapsed);
+                k++;
+            }
+            const window = prior.slice(-20);
+            const baseline = median(window);
+            if (window.length < 3 || !(cur.r.elapsed > 0)) {
+                out.set(cur.r, { factor: 1, baseline, sample: window.length, slow: false });
+            }
+            else {
+                const f = baseline > 0 ? cur.r.elapsed / baseline : 1;
+                out.set(cur.r, { factor: f, baseline, sample: window.length, slow: f >= factor && cur.r.elapsed - baseline >= 5 });
+            }
+        }
+    }
+    return out;
 }
 /** The SLA (maxMinutes) that applies to a task, from the first matching process. */
 function slaFor(task, processes) {
@@ -95,8 +147,15 @@ function metricAnomalies(run, history, factor = 2, ignore = [], minSample = 4) {
         // A baseline of zero has no ratio. Only a move AWAY from zero is notable; staying at zero is
         // the most normal thing a zero-valued metric can do.
         if (baseline === 0) {
-            if (raw !== 0)
-                out.push({ key, value: raw, baseline, factor: 0, direction: raw > 0 ? 'up' : 'down', sample: series.length });
+            // A median of exactly 0 is what a symmetric oscillator looks like, so "anything non-zero"
+            // would flag every run. Only report a move that is large relative to the series' own
+            // spread — and if the series never moves at all, any movement is notable.
+            if (raw !== 0) {
+                const spread = median(series.map(v => Math.abs(v)));
+                if (spread === 0 || Math.abs(raw) >= spread * factor) {
+                    out.push({ key, value: raw, baseline, factor: 0, direction: 'up', sample: series.length });
+                }
+            }
             continue;
         }
         // 🔴 Compare MAGNITUDES, and read the direction from the values themselves. Dividing signed
@@ -104,10 +163,15 @@ function metricAnomalies(run, history, factor = 2, ignore = [], minSample = 4) {
         // times worse) reported "down", and -100 to 0 (a collapse) was not reported at all, because
         // the ratio maths only ever made sense for positive medians. A variance, a net delta or a
         // balance change is naturally negative, and those are exactly the numbers worth watching.
+        // Direction describes the MAGNITUDE, not the arithmetic value: for a metric whose usual
+        // value is -100, landing at -1000 is a tenfold rise in the thing being measured, and calling
+        // that "down" because -1000 < -100 tells the reader the opposite of what happened.
         const ratio = Math.abs(raw) / Math.abs(baseline);
-        const flipped = (raw > 0 && baseline < 0) || (raw < 0 && baseline > 0);
-        const direction = raw > baseline ? 'up' : 'down';
-        if (flipped || ratio >= factor || ratio <= 1 / factor) {
+        const direction = Math.abs(raw) >= Math.abs(baseline) ? 'up' : 'down';
+        // A sign flip is only notable when the SIZE also moved. A net delta that swings between +5
+        // and -4 every run flips constantly and is behaving exactly as expected; flagging it taught
+        // the reader to ignore the flag.
+        if (ratio >= factor || ratio <= 1 / factor) {
             out.push({ key, value: raw, baseline, factor: ratio, direction, sample: series.length });
         }
     }

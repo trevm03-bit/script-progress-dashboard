@@ -313,20 +313,23 @@ function registerCommands(context, cx) {
             await vscode.env.openExternal(vscode.Uri.file(file));
     });
     reg('scriptProgress.chooseLayout', async () => {
+        // Each preset is a strict superset of the one before, and the middle one IS the shipped
+        // default — otherwise the picker offers no option describing what the user already has,
+        // which is exactly how the three numbers in this feature became confusing.
         // Presets rather than a second extension. The difference between "track my scripts" and a
         // full operations view is which sections are on, so it is one command — not a fork, and not
         // fifteen checkboxes for someone who has just installed it.
+        const ESSENTIALS = ['summary', 'activeTask', 'pendingActions', 'warnings', 'lastCompleted', 'runHistory', 'timeline'];
         const LAYOUTS = [
             {
                 label: '$(list-flat) Essentials',
                 detail: 'Just what is running and what happened — progress, warnings, history, timeline.',
-                on: ['summary', 'activeTask', 'pendingActions', 'warnings', 'lastCompleted', 'runHistory', 'timeline'],
+                on: [...ESSENTIALS],
             },
             {
                 label: '$(dashboard) Operations',
-                detail: 'Essentials plus the schedule, health, buttons, metrics and trends. Needs a little configuration.',
-                on: ['summary', 'activeTask', 'pendingActions', 'warnings', 'lastCompleted', 'runHistory', 'timeline',
-                    'processCalendar', 'scriptHealth', 'quickActions', 'deltaTracker', 'warningTrends'],
+                detail: 'Essentials plus the schedule and script health. This is the default.',
+                on: [...ESSENTIALS, 'processCalendar', 'scriptHealth'],
             },
             {
                 label: '$(three-bars) Everything',
@@ -334,18 +337,36 @@ function registerCommands(context, cx) {
                 on: [...types_1.ALL_SECTIONS],
             },
         ];
-        const pick = await vscode.window.showQuickPick(LAYOUTS.map(l => ({ label: l.label, detail: l.detail, layout: l })), { title: 'Choose a layout', placeHolder: 'Sections you can still turn on and off individually afterwards' });
+        const current = new Set(types_1.ALL_SECTIONS.filter(id => cx.getSettings().sections[id]));
+        const same = (l) => l.length === current.size && l.every(id => current.has(id));
+        const pick = await vscode.window.showQuickPick(LAYOUTS.map(l => ({
+            label: l.label + (same(l.on) ? '  $(check)' : ''),
+            description: `${l.on.length} of ${types_1.ALL_SECTIONS.length} sections${same(l.on) ? ' · current' : ''}`,
+            detail: l.detail,
+            layout: l,
+        })), { title: 'Choose a layout', placeHolder: 'You can still turn individual sections on and off afterwards' });
         if (!pick)
             return;
         const wanted = new Set(pick.layout.on);
         const cfg = vscode.workspace.getConfiguration('scriptProgress');
         const target = vscode.workspace.workspaceFolders ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+        // Write only what actually changes. Writing all fifteen keys fired fifteen configuration
+        // events - so fifteen forced re-renders and fifteen poll restarts for one menu pick - and
+        // pinned every section explicitly in settings.json, freezing the user out of any future
+        // change to the defaults. A partial failure is also reported honestly: some of it landed.
+        const cur = cx.getSettings().sections;
+        const changed = types_1.ALL_SECTIONS.filter(id => cur[id] !== wanted.has(id));
+        let done = 0;
         try {
-            for (const id of types_1.ALL_SECTIONS)
+            for (const id of changed) {
                 await cfg.update(`sections.${id}`, wanted.has(id), target);
+                done++;
+            }
         }
         catch (e) {
-            void vscode.window.showErrorMessage(`Could not save the layout: ${e.message}`);
+            void vscode.window.showErrorMessage(done
+                ? `The layout was only partly saved (${done} of ${changed.length} sections): ${e.message}`
+                : `Could not save the layout: ${e.message}`);
             return;
         }
         const needsSetup = ['processCalendar', 'quickActions'].filter(id => wanted.has(id));
@@ -437,6 +458,33 @@ function registerCommands(context, cx) {
             else if (pick === OPEN) {
                 await vscode.commands.executeCommand('workbench.action.openWorkspaceSettingsFile');
             }
+        }
+    });
+    /**
+     * Open the reporter that ships inside the extension, so it can be read and copied.
+     *
+     * Until this existed, "copy the reporter into your project" was an instruction with nowhere to
+     * click: the file lives inside the installed extension folder, which nobody can be expected to
+     * find. It also gives the walkthrough's third step something to complete on - without a command
+     * link or a completionEvent a step stays open for ever, so the walkthrough could never reach
+     * 100% however much of it you actually did.
+     */
+    reg('scriptProgress.openReporter', async () => {
+        const langs = [
+            { label: 'Python', file: 'python/progress.py', detail: 'progress.py — standard library only, Python 3.10+' },
+            { label: 'Node', file: 'reporters/progress.js', detail: 'progress.js — no dependencies, CommonJS' },
+        ];
+        const pick = langs.length === 1 ? langs[0] : await vscode.window.showQuickPick(langs.map(l => ({ label: l.label, detail: l.detail, l })), { title: 'Open the reporter', placeHolder: 'Copy this file into your project and import it' }).then(x => x?.l);
+        if (!pick)
+            return;
+        const uri = vscode.Uri.joinPath(cx.extensionUri, ...pick.file.split('/'));
+        try {
+            const doc = await vscode.workspace.openTextDocument(uri);
+            await vscode.window.showTextDocument(doc, { preview: false });
+            void vscode.window.showInformationMessage(`This is the bundled ${pick.label} reporter. Save a copy into your project (somewhere like scripts/lib/) and import it from your scripts.`);
+        }
+        catch (e) {
+            void vscode.window.showErrorMessage(`Could not open the ${pick.label} reporter: ${e.message}`);
         }
     });
     reg('scriptProgress.simulateRun', async (mode) => {

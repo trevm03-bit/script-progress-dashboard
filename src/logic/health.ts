@@ -33,7 +33,11 @@ export function latestPerTask(history: RunRecord[]): { task: string; last: RunRe
       cur.runs++;
       cur.all.push(r);
       if (!r.success) cur.failures++;
-      if (t > (parseIso(cur.last.date)?.getTime() ?? 0)) cur.last = r;
+      // >= not >: run timestamps are second-resolution, so two runs of one task can share one.
+      // History is append-ordered oldest-first, so on a tie the later entry is the newer run.
+      // Using > here made Script Health report the OLDER of the pair while Pending Actions,
+      // which gets this right, reported the newer - two sections disagreeing about one file.
+      if (t >= (parseIso(cur.last.date)?.getTime() ?? 0)) cur.last = r;
     }
   }
   return [...byTask.values()].sort(

@@ -3,10 +3,10 @@
 // extension activated — only for changes seen while it was watching.
 import * as vscode from 'vscode';
 import { DashboardData, ProgressData, Settings, TaskState } from './types';
-import { formatDuration, percent, taskState, liveElapsed } from './logic/time';
+import { formatDuration, percent, taskState, liveElapsed, sameTask } from './logic/time';
 import { durationVerdict, slaFor } from './logic/anomaly';
 import { calendarRows, dueReminders } from './logic/calendar';
-import { writeEvent } from './eventFile';
+import { RunEvent, writeEvent } from './eventFile';
 
 interface Seen {
   state: TaskState;
@@ -26,8 +26,14 @@ export class Notifier implements vscode.Disposable {
 
   update(data: DashboardData, settings: Settings): void {
     const now = new Date();
+    // Capture this BEFORE anything can set it. `primed` was raised at the end of the task loop and
+    // only then was remind() called, so its own "do not fire a burst on activation" guard could
+    // never be true - every window open produced a toast for every process in its reminder window,
+    // which is precisely what that guard exists to prevent.
+    const wasPrimed = this.primed;
     const n = settings.notifications;
     const keyOf = (p: ProgressData) => p.runId ? `run:${p.runId}` : `task:${p.task}|${p.startedAt ?? ''}`;
+    const pending: RunEvent[] = [];
 
     for (const t of data.tasks) {
       const key = keyOf(t);
@@ -35,7 +41,7 @@ export class Notifier implements vscode.Disposable {
       const prev = this.seen.get(key);
       const cur: Seen = { state, warnings: t.warnings?.length ?? 0, updatedAt: t.updatedAt, slaWarned: prev?.slaWarned };
       this.seen.set(key, cur);
-      if (!this.primed || !prev) continue; // first sight: no notification, just remember it
+      if (!wasPrimed || !prev) continue; // first sight: no notification, just remember it
 
       if (n.onSlow && state === 'running' && !cur.slaWarned) {
         const sla = slaFor(t.task, settings.processes);
@@ -49,14 +55,17 @@ export class Notifier implements vscode.Disposable {
         // The event file mirrors the same transitions the notifications use, whether or not
         // the matching notification is switched on: a watcher wants the event, not the toast.
         if (settings.events.file && (state === 'complete' || state === 'failed' || state === 'stalled' || state === 'exited')) {
-          const o = state === 'exited' ? data.overlays.find(x => x.task === t.task) : undefined;
-          writeEvent(this.logsDir, {
+          // sameTask, not ===. The state that led here was resolved case-insensitively, so an
+          // exact compare returned undefined and the event recorded no exit code at all - for the
+          // one event class where the code is the whole payload.
+          const o = state === 'exited' ? data.overlays.find(x => sameTask(x.task, t.task)) : undefined;
+          pending.push({
             event: state, task: t.task, at: new Date().toISOString(), runId: t.runId,
             elapsed: t.elapsed, step: t.step, totalSteps: t.totalSteps, label: t.label,
             detail: t.detail, warnings: t.warnings?.length ?? 0,
             ...(o ? { exitCode: o.exitCode } : {}),
             ...(t.metrics && Object.keys(t.metrics).length ? { metrics: t.metrics } : {}),
-          }, vscode.workspace.isTrusted);
+          });
         }
         if (state === 'complete' && n.onComplete) this.info(`✓ ${t.task} completed in ${formatDuration(t.elapsed)}${t.detail ? ` — ${t.detail}` : ''}`);
         if (state === 'complete' && n.onSlow && settings.runHistory.anomalies) {
@@ -67,7 +76,7 @@ export class Notifier implements vscode.Disposable {
         if (state === 'failed' && n.onFail) this.error(`✗ ${t.task} FAILED${t.detail ? ` — ${t.detail}` : ''}`);
         if (state === 'stalled' && n.onStall) this.warn(`⚠ ${t.task} looks stalled: no update for ${settings.staleRunningMinutes} min (step ${t.step}/${t.totalSteps}, ${t.label})`);
         if (state === 'exited' && n.onExit) {
-          const o = data.overlays.find(x => x.task === t.task);
+          const o = data.overlays.find(x => sameTask(x.task, t.task));
           this.error(`✗ ${t.task}: the process exited with code ${o?.exitCode ?? '?'} while still reporting "running"`);
         }
       }
@@ -81,7 +90,17 @@ export class Notifier implements vscode.Disposable {
     for (const k of [...this.seen.keys()]) if (!live.has(k)) this.seen.delete(k);
     this.primed = true;
 
-    this.remind(data, settings, now);
+    // One write per refresh, and the most serious transition wins. writeEvent overwrites a single
+    // fixed path, so two scripts transitioning inside the same 60 ms debounce used to leave only
+    // whichever came last in slot order - and the one being dropped was as likely as not the
+    // failure, which is the entire reason anything watches this file.
+    if (pending.length) {
+      const rank = (e: string) => (e === 'failed' ? 0 : e === 'exited' ? 1 : e === 'stalled' ? 2 : 3);
+      pending.sort((a, b) => rank(a.event) - rank(b.event));
+      writeEvent(this.logsDir, pending[0], vscode.workspace.isTrusted);
+    }
+
+    this.remind(data, settings, now, wasPrimed);
     this.updateMirror(data, settings, now);
   }
 
@@ -90,13 +109,16 @@ export class Notifier implements vscode.Disposable {
    * about something that has NOT happened, so they must not repeat: a nag every refresh would
    * be worse than no reminder at all.
    */
-  private remind(data: DashboardData, settings: Settings, now: Date): void {
+  private remind(data: DashboardData, settings: Settings, now: Date, wasPrimed: boolean): void {
     if (!settings.processes.length) return;
+    // Bounded: one entry per process per due date would otherwise accumulate for the life of the
+    // window. Clearing wholesale is safe - every key still due is re-added on this same pass.
+    if (this.reminded.size > 500) this.reminded.clear();
     for (const { row, daysLeft } of dueReminders(calendarRows(settings.processes, data.history, now), now)) {
       const key = `${row.process.name}|${row.nextDue.toDateString()}`;
       if (this.reminded.has(key)) continue;
       this.reminded.add(key);
-      if (!this.primed) continue;      // do not fire a burst on activation
+      if (!wasPrimed) continue;        // do not fire a burst on activation
       const label = row.process.label || row.process.name;
       const when = daysLeft < 1 ? 'today' : daysLeft < 2 ? 'tomorrow' : `in ${Math.round(daysLeft)} days`;
       const phases = row.phases.length ? ` (${row.note})` : '';

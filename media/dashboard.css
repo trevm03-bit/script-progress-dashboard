@@ -10,6 +10,16 @@
   --sp-complete: var(--vscode-scriptProgress-complete, var(--vscode-testing-iconPassed, var(--vscode-charts-green, var(--vscode-foreground))));
   --sp-failed: var(--vscode-scriptProgress-failed, var(--vscode-testing-iconFailed, var(--vscode-errorForeground, var(--vscode-foreground))));
   --sp-stalled: var(--vscode-scriptProgress-stalled, var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow, var(--vscode-foreground))));
+  /* --sp-stalled is an ICON colour. On a light theme editorWarning.foreground is #BF8803, which
+     measures 2.6-2.9:1 against the card - so the warning line, the one thing on the row a reader
+     must be able to read, was the least legible text on the page. Anything that is TEXT uses
+     --sp-stalled-text: the theme's own validation foreground where it exists, otherwise the plain
+     foreground. Colour still carries the state via the icon beside it. */
+  --sp-stalled-text: var(--vscode-inputValidation-warningForeground, var(--vscode-foreground));
+  /* A real surface, not a border colour. --sp-border falls back to `transparent`, and a
+     transparent BACKGROUND is invisible - which turned every "unknown" SLA dot into nothing at
+     all, in exactly the state the design says must not be confused with a miss. */
+  --sp-fill: var(--vscode-input-background, var(--vscode-editorWidget-background, var(--vscode-editor-background)));
   --sp-border: var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
   --sp-muted: var(--vscode-descriptionForeground);
   --sp-card: var(--vscode-editorWidget-background);
@@ -101,7 +111,10 @@ body.surface-map #sections { flex: 1; display: flex; flex-direction: column; min
 .section-title.toggle:hover .section-name, .section-title.toggle:hover .section-icon { color: var(--vscode-foreground); }
 .section-title .chev { font-size: 12px; opacity: 0.7; }
 .section-title .section-icon { font-size: 13px; color: var(--sp-muted); }
-.section-aside { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; display: inline-flex; gap: 4px; align-items: center; }
+/* min-width:0 and wrapping. An inline-flex with nowrap sets its own min-content width, so the
+   Process Calendar's aside ("2 overdue - 1 blocked - 1 not wired yet - September 2026") pushed
+   its right edge to 326px inside a 300px sidebar and gave the whole page a horizontal scrollbar. */
+.section-aside { margin-left: auto; min-width: 0; text-transform: none; letter-spacing: 0; font-weight: 500; display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; align-items: center; }
 .card.collapsed { padding-bottom: calc(var(--sp-pad) * 0.5); }
 .card.collapsed .section-title { margin-bottom: 0; }
 .empty { color: var(--sp-muted); font-size: var(--sp-font-small); padding: 4px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -116,11 +129,12 @@ body.surface-map #sections { flex: 1; display: flex; flex-direction: column; min
 .problems li { margin: 2px 0; }
 
 /* First warning shown inline in a Run History row: for diagnostic scripts the warning is the payload. */
-.row-warn { display: flex; align-items: flex-start; gap: 4px; margin-top: 2px; font-size: var(--sp-font-small); color: var(--sp-stalled); opacity: 0.95; }
+.row-warn { display: flex; align-items: flex-start; gap: 4px; margin-top: 2px; font-size: var(--sp-font-small); color: var(--sp-stalled-text); }
+.row-warn .codicon:first-child { color: var(--sp-stalled); }
 .row-warn .codicon { flex: none; margin-top: 1px; }
 
 /* Calendar: a part-done multi-phase process, and one that has never reported at all. */
-.calendar-partial { color: var(--sp-stalled); }
+.calendar-partial { color: var(--sp-stalled-text); }
 .calendar-unseen { color: var(--sp-muted); opacity: 0.7; }
 .cal-unseen .cal-label, .cal-unseen .cal-note { opacity: 0.75; }
 .cal-phases { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: middle; }
@@ -141,13 +155,21 @@ body.surface-map #sections { flex: 1; display: flex; flex-direction: column; min
 .pa-item .codicon { flex: none; margin-top: 2px; opacity: 0.8; }
 .pa-msg { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .pa-count { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 2ch; }
-.pa-cat { font-size: 10px; padding: 0 5px; border: 1px solid var(--sp-border); border-radius: 8px; opacity: 0.85; white-space: nowrap; }
+.pa-cat { font-size: 10px; padding: 0 5px; border: 1px solid var(--sp-border); border-radius: 8px; color: var(--sp-muted); white-space: nowrap; }
 .pa-foot, .imp-foot { margin-top: 8px; display: flex; gap: 5px; align-items: flex-start; }
 /* The sentence is ONE flex child. Without this, every inline element inside it became a column. */
 .pa-foot > span, .imp-foot > span { flex: 1; min-width: 0; }
 
 /* Impact Summary — totals, deliberately plain. */
-.imp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--sp-gap); }
+/* auto-FILL, not auto-fit: auto-fit collapses the empty tracks to 0 and lets the one filled card
+   absorb the lot - measured at 1719px wide holding a 22px number. .delta-grid already gets this
+   right; this did not. */
+/* Footnote under the summary tiles, and the 'N more not shown' line every capped list ends with.
+   .tiles-note had NO rule at all, so an explanatory footnote rendered at full foreground weight,
+   full page width, louder than the 10px muted labels it exists to explain. */
+.tiles-note, .list-more { margin-top: 6px; font-size: var(--sp-font-small); color: var(--sp-muted); display: flex; align-items: center; gap: 4px; }
+.list-more { margin-top: 4px; }
+.imp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--sp-gap); }
 .imp-card { border: 1px solid var(--sp-border); border-radius: var(--sp-radius); padding: 10px 12px; }
 .imp-label { font-size: var(--sp-font-small); color: var(--sp-muted); }
 .imp-total { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; margin: 2px 0; }
@@ -157,15 +179,15 @@ body.surface-map #sections { flex: 1; display: flex; flex-direction: column; min
 
 /* The target line is the goal, so it must not look like the threshold band. */
 .guide-target { stroke: var(--sp-complete); stroke-width: 1.2; stroke-dasharray: none; opacity: 0.85; }
-.flag-drift { color: var(--sp-stalled); }
+.flag-drift { color: var(--sp-stalled-text); }
 
 /* SLA compliance: one dot per period, oldest first. 'unknown' is deliberately hollow — a period
    before the process existed is not a miss, and colouring it as one would libel a new process. */
 .cal-sla { display: inline-flex; align-items: center; gap: 2px; margin-left: 8px; }
-.sla-dot { width: 5px; height: 10px; border-radius: 1px; background: var(--sp-border); display: inline-block; }
+.sla-dot { width: 5px; height: 10px; border-radius: 1px; background: var(--sp-fill); box-shadow: inset 0 0 0 1px currentColor; display: inline-block; }
 .sla-dot.sla-met { background: var(--sp-complete); }
 .sla-dot.sla-missed { background: var(--sp-failed); }
-.sla-dot.sla-unknown { background: var(--sp-border); opacity: 0.45; }
+.sla-dot.sla-unknown { background: var(--sp-fill); opacity: 0.55; }
 .sla-pct { margin-left: 5px; font-size: 11px; font-variant-numeric: tabular-nums; }
 .cal-blocked .cal-label { opacity: 0.9; }
 
@@ -207,7 +229,9 @@ code { font-family: var(--sp-mono); font-size: 11px; background: var(--vscode-te
 .status-fail { color: var(--sp-failed); }
 .status-warn { color: var(--sp-stalled); }
 .status-run { color: var(--sp-running); }
-.status-stale { color: var(--sp-failed); opacity: 0.85; }
+/* No opacity on text: --sp-failed is already only 4.46:1 on a light theme, and 0.85 dropped it
+   to 3.80. Stale is expressed by the colour and the word, not by fading it out. */
+.status-stale { color: var(--sp-failed); }
 .flag { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; padding: 1px 6px; border-radius: 8px; border: 1px solid currentColor; line-height: 1.4; white-space: nowrap; }
 .flag-slow { color: var(--sp-stalled); }
 .flag-sla { color: var(--sp-failed); }
@@ -229,7 +253,7 @@ code { font-family: var(--sp-mono); font-size: 11px; background: var(--vscode-te
 .tile-running { border-color: var(--sp-running); }
 .tile-running .tile-v { color: var(--sp-running); }
 .tile-bad .tile-v { color: var(--sp-failed); }
-.tile-warn .tile-v { color: var(--sp-stalled); }
+.tile-warn .tile-v { color: var(--sp-stalled-text); }
 .tile-ok .tile-v { color: var(--sp-complete); }
 
 /* ---- active task ---- */
@@ -242,7 +266,9 @@ code { font-family: var(--sp-mono); font-size: 11px; background: var(--vscode-te
 .task-state.state-stalled { color: var(--sp-stalled); }
 .task-name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .surface-sidebar .task-name { font-size: 13px; }
-.progress-bar { height: 7px; background: var(--sp-border); border-radius: 4px; overflow: hidden; margin: 10px 0 6px; }
+/* The TRACK behind the bar. Under High Contrast --sp-border resolves to a saturated contrast
+   colour, which painted a full-width cyan bar that read as 100% complete at 30%. */
+.progress-bar { height: 7px; background: var(--sp-fill); box-shadow: inset 0 0 0 1px var(--sp-border); border-radius: 4px; overflow: hidden; margin: 10px 0 6px; }
 .progress-fill { height: 100%; background: var(--sp-running); border-radius: 4px; transition: width 0.4s ease; }
 .progress-fill.state-running { background-image: linear-gradient(90deg, transparent 0, transparent 40%, color-mix(in srgb, var(--sp-running) 60%, var(--vscode-foreground)) 50%, transparent 60%); background-size: 200% 100%; animation: shimmer 1.6s linear infinite; }
 .progress-fill.state-complete { background: var(--sp-complete); }
@@ -256,9 +282,14 @@ code { font-family: var(--sp-mono); font-size: 11px; background: var(--vscode-te
 .state-note { margin-top: 8px; font-size: 12px; display: flex; gap: 6px; align-items: flex-start; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chip { display: inline-flex; align-items: baseline; gap: 5px; padding: 2px 8px; border-radius: 3px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); font-size: 11px; max-width: 100%; }
-.chip-k { opacity: 0.75; text-transform: uppercase; letter-spacing: 0.4px; font-size: 9.5px; }
+/* No opacity on anything carrying text. Inside a .chip the ground is --vscode-badge-background
+   (a mid grey), not the editor background these status colours are tuned against, and 0.75-0.85
+   opacity on top took the red delta chip to 1.55:1 - the least readable thing on the page. The
+   glyph (up/down/=) carries the meaning; the colour only reinforces it. */
+.chip-k { color: var(--vscode-badge-foreground); text-transform: uppercase; letter-spacing: 0.4px; font-size: 9.5px; }
 .chip-v { font-weight: 600; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chip-d { font-size: 10px; opacity: 0.85; }
+.chip-d { font-size: 10px; font-weight: 600; color: var(--vscode-badge-foreground); }
+.chip .chip-d.status-pass, .chip .chip-d.status-fail, .chip .chip-d.muted { color: var(--vscode-badge-foreground); }
 .log-tail { margin-top: 8px; padding: 6px 8px; border-radius: 3px; background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background)); font-family: var(--sp-mono); font-size: 11px; max-height: 160px; overflow: auto; border: 1px solid var(--sp-border); }
 .log-line { white-space: pre-wrap; word-break: break-word; }
 .log-time { color: var(--sp-muted); margin-right: 8px; }
@@ -379,7 +410,10 @@ tr.detail td { padding: 0 8px 8px 24px; background: var(--vscode-editor-backgrou
 .delta { padding: 8px 10px; border: 1px solid var(--sp-border); border-radius: var(--sp-radius); }
 .delta-bad { border-color: var(--sp-failed); }
 .delta-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.delta-name { font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* min-width:0 is what makes the ellipsis actually engage: without it the flex item keeps its
+   min-content width, so a long metric name set the grid track and overflowed the sidebar. */
+.delta-name { min-width: 0; font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.surface-sidebar .delta-grid { grid-template-columns: minmax(0, 1fr); }
 .delta-task { font-weight: 400; color: var(--sp-muted); }
 .delta-current { font-size: 16px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sparkline-svg { width: 100%; height: 48px; display: block; margin: 6px 0 2px; }
@@ -455,6 +489,9 @@ tr.detail td { padding: 0 8px 8px 24px; background: var(--vscode-editor-backgrou
 .det-actions { display: flex; gap: 12px; margin-top: 8px; }
 
 @media (prefers-reduced-motion: reduce) {
+  /* codicon.css sets this at specificity 0-2-0, so it needs !important to lose. Without it a
+     running task spun for ever for a reader who asked the OS for no motion. */
+  .codicon.codicon-modifier-spin { animation: none !important; }
   .progress-fill { transition: none; animation: none; }
   .progress-fill.state-running { background-image: none; }
   .row-chev, .icon-btn, .btn, .card, .tile, .fchip { transition: none; }

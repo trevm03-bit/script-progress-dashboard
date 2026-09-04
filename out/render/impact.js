@@ -10,7 +10,10 @@ function renderImpact(data, settings, now, opts) {
     if (!totals.length) {
         return (0, html_1.section)('impact', 'Impact Summary', (0, html_1.empty)('Nothing recorded yet. Scripts add to this with Progress.impact("name", value) — a contribution to accumulate, as opposed to a current value to chart.', { msg: 'walkthrough', label: 'Getting started', icon: 'book' }), opts);
     }
-    const cards = totals.map(t => {
+    // 24 cards is already a wall; beyond that the section stops being a summary.
+    const MAX_CARDS = 24;
+    const hidden = Math.max(0, totals.length - MAX_CARDS);
+    const cards = totals.slice(0, MAX_CARDS).map(t => {
         const fmt = settings.deltas.formats?.[t.metric];
         // An unrenderable total (an overflow) must not then claim a monthly figure it cannot show.
         const showMonth = isFinite(t.thisMonth) && t.thisMonth !== 0 && isFinite(t.total);
@@ -29,6 +32,7 @@ function renderImpact(data, settings, now, opts) {
     // number that gets quoted without its definition. Saying so here is cheaper than defending it
     // later.
     const foot = `<div class="muted small imp-foot">${(0, html_1.icon)('info')}<span>Totals are what your scripts reported, using their own definition of each measure.</span></div>`;
-    return (0, html_1.section)('impact', 'Impact Summary', `<div class="imp-grid">${cards}</div>${foot}`, opts);
+    const more = hidden ? `<div class="muted small list-more">${(0, html_1.icon)('ellipsis')} ${hidden} more measure${hidden === 1 ? '' : 's'} not shown.</div>` : '';
+    return (0, html_1.section)('impact', 'Impact Summary', `<div class="imp-grid">${cards}</div>${more}${foot}`, opts);
 }
 //# sourceMappingURL=impact.js.map

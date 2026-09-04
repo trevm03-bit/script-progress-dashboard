@@ -50,7 +50,15 @@ function readSettings() {
         return allowed.includes(v) ? v : def;
     };
     const bool = (key, def) => { const v = c.get(key, def); return typeof v === 'boolean' ? v : def; };
-    const sectionList = (key) => (c.get(key, []) || []).filter((s) => types_1.ALL_SECTIONS.includes(s));
+    // De-duplicated. A repeated id rendered the section twice, and every click handler in
+    // dashboard.js addresses a section with querySelector - so the search box and the status chips
+    // only ever drove the FIRST copy, while the second sat unfiltered and looked like it had been.
+    const sectionList = (key) => {
+        const seen = new Set();
+        return (c.get(key, []) || [])
+            .filter((s) => types_1.ALL_SECTIONS.includes(s))
+            .filter(s => (seen.has(s) ? false : (seen.add(s), true)));
+    };
     const sections = {};
     const defaults = {
         summary: true, activeTask: true, warnings: true, lastCompleted: true, runHistory: true, timeline: true,

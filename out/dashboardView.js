@@ -7,14 +7,30 @@ class DashboardViewProvider {
     constructor(extensionUri, state) {
         this.extensionUri = extensionUri;
         this.state = state;
+        /**
+         * The sidebar view does not set retainContextWhenHidden, so VS Code destroys the webview when
+         * the view is hidden and calls resolveWebviewView again on the SAME WebviewView object when it
+         * comes back. Discarding these Disposables leaked two listeners per hide/show cycle, and every
+         * leaked visibility listener fired another full re-render on the next show.
+         */
+        this.viewSubs = [];
     }
     resolveWebviewView(view) {
         this.host?.dispose();
+        for (const d of this.viewSubs)
+            d.dispose();
+        this.viewSubs = [];
         this.view = view;
         this.host = new dashboardHost_1.DashboardHost(this.extensionUri, 'sidebar', this.state);
         this.host.attach(view.webview);
-        view.onDidChangeVisibility(() => this.host?.setVisible(view.visible));
-        view.onDidDispose(() => { this.host?.dispose(); this.host = undefined; this.view = undefined; });
+        this.viewSubs.push(view.onDidChangeVisibility(() => this.host?.setVisible(view.visible)), view.onDidDispose(() => {
+            this.host?.dispose();
+            this.host = undefined;
+            this.view = undefined;
+            for (const d of this.viewSubs)
+                d.dispose();
+            this.viewSubs = [];
+        }));
         this.updateBadge();
     }
     refresh(force = false) {

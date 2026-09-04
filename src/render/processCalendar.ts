@@ -26,8 +26,11 @@ export function renderProcessCalendar(data: DashboardData, settings: Settings, n
   }
   const rows = calendarRows(settings.processes, data.history, now);
   const view = narrow && settings.calendar.view === 'both' ? 'list' : settings.calendar.view;
-  const groups: Record<string, typeof rows> = { daily: [], weekly: [], monthly: [] };
-  for (const r of rows) (groups[r.process.frequency] ?? groups.monthly).push(r);
+  // A Map, not an object literal. `groups["constructor"]` finds an inherited FUNCTION, which is
+  // truthy, so `?? groups.monthly` never fired and .push threw - and a renderer that throws
+  // blanks the entire dashboard. A frequency is a free-text field in settings.
+  const groups = new Map<string, typeof rows>([['daily', []], ['weekly', []], ['monthly', []]]);
+  for (const r of rows) (groups.get(r.process.frequency) ?? groups.get('monthly')!).push(r);
 
   const renderRow = (r: (typeof rows)[number]) => {
     const m = MARK[r.status];
@@ -70,7 +73,7 @@ export function renderProcessCalendar(data: DashboardData, settings: Settings, n
   const title = 'Process Calendar';
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const aside = `${overdue ? `<span class="status-fail">${overdue} overdue</span> · ` : ''}${blocked ? `<span class="calendar-blocked">${blocked} blocked</span> · ` : ''}${unseen ? `<span class="muted">${unseen} not wired yet</span> · ` : ''}<span class="muted">${months[now.getMonth()]} ${now.getFullYear()}</span>`;
-  const body = problemList(problems) + renderGroup('Daily', groups.daily) + renderGroup('Weekly', groups.weekly) + renderGroup('Monthly', groups.monthly);
+  const body = problemList(problems) + renderGroup('Daily', groups.get('daily')!) + renderGroup('Weekly', groups.get('weekly')!) + renderGroup('Monthly', groups.get('monthly')!);
   return section('processCalendar', title, body, { ...opts, cls: overdue ? 'has-overdue' : '', aside });
 }
 

@@ -3,6 +3,7 @@
 import importlib.util
 import io
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -63,8 +64,16 @@ class ProgressTests(unittest.TestCase):
             Progress("Alpha Job", logs_dir=self.logs).complete()
             Progress("Beta Job", logs_dir=self.logs).complete()
         slots = sorted(f.name for f in (self.logs / "progress").iterdir())
-        self.assertEqual(slots, ["alpha-job.json", "beta-job.json"])
-        self.assertEqual(self.read("progress/alpha-job.json")["task"], "Alpha Job")
+        # The readable stem is a hint; the trailing hash is what guarantees uniqueness. Without
+        # it "Alpha Job", "alpha-job" and "ALPHA_JOB" shared one slot, and every non-ASCII task
+        # name in the system shared the single slot "task".
+        self.assertEqual([n.split("-")[0] for n in slots], ["alpha", "beta"])
+        self.assertTrue(all(re.fullmatch(r".+-[0-9a-f]{8}\.json", n) for n in slots), slots)
+        from progress import _slug
+        self.assertNotEqual(_slug("Nightly Load"), _slug("Nightly-Load"))
+        self.assertNotEqual(_slug("夜間ロード"), _slug("Отчёт"))
+        self.assertEqual(_slug("Nightly Load"), _slug("Nightly Load"))
+        self.assertEqual(self.read("progress/" + _slug("Alpha Job") + ".json")["task"], "Alpha Job")
         # An old finished slot is pruned when a new run starts; an old RUNNING one is kept.
         old_done = self.logs / "progress" / "old-done.json"
         old_run = self.logs / "progress" / "old-run.json"

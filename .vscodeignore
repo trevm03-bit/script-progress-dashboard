@@ -14,5 +14,10 @@ dist/**
 out/**/*.map
 **/__pycache__/**
 docs/**
-demo/logs/**
 .harness/**
+ROADMAP.md
+PUBLISHING.md
+.github/**
+demo/*.py
+install/**
+*.code-workspace

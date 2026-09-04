@@ -228,7 +228,15 @@
       if (show) shown++;
     }
     const foot = sec.querySelector('.table-foot .shown');
-    if (foot && (filterState.text || filterState.kind !== 'all')) foot.textContent = `Showing ${shown} of ${total} loaded runs`;
+    if (foot) {
+      // Remember what the server rendered, and put it BACK when the filter clears. Without the
+      // else branch the footer kept saying "Showing 3 of 15" over fifteen visible rows until
+      // something else happened to rebuild the section - which, when idle, is up to a minute.
+      if (foot.dataset.orig === undefined) foot.dataset.orig = foot.textContent;
+      foot.textContent = (filterState.text || filterState.kind !== 'all')
+        ? `Showing ${shown} of ${total} loaded runs`
+        : foot.dataset.orig;
+    }
   }
   function restoreFilters() {
     const sec = main.querySelector('section[data-section="runHistory"]');

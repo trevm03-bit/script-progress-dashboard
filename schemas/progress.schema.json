@@ -23,7 +23,11 @@
     },
     "status": {
       "type": "string",
-      "enum": ["running", "complete", "failed"],
+      "enum": [
+        "running",
+        "complete",
+        "failed"
+      ],
       "description": "What the reporter last said. 'running' plus a stale updatedAt is what the dashboard shows as STALLED."
     },
     "step": {
@@ -47,13 +51,41 @@
       "description": "Seconds elapsed at the moment this file was written."
     },
     "eta": {
-      "type": ["number", "null"],
+      "type": [
+        "number",
+        "null"
+      ],
       "description": "Estimated seconds remaining, averaged from the last few successful runs of this task. null when there is no prior run to estimate from, and always null once the run ends."
     },
     "warnings": {
       "type": "array",
       "description": "Warnings raised so far (the reporter keeps the last 10 here; run history keeps up to 20).",
-      "items": { "$ref": "#/definitions/warning" }
+      "items": {
+        "$ref": "#/definitions/warning",
+        "properties": {
+          "count": {
+            "type": "number",
+            "description": "How many things this warning is about, so a steady 310 reads as steady rather than as a new finding each run."
+          },
+          "category": {
+            "type": "string",
+            "description": "Your own word for the KIND of finding, used to group Warning Trends. Capped at 60 characters."
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warn",
+              "error"
+            ],
+            "description": "Your judgement of how serious it is. Nothing infers this."
+          },
+          "actionable": {
+            "type": "boolean",
+            "description": "true when a HUMAN must go and do something. Actionable items appear in Pending Actions and are never trimmed to the display limit."
+          }
+        }
+      }
     },
     "updatedAt": {
       "type": "string",
@@ -68,7 +100,10 @@
       "description": "Optional (v1.1). ISO timestamp of when the run started."
     },
     "substep": {
-      "type": ["number", "null"],
+      "type": [
+        "number",
+        "null"
+      ],
       "minimum": 0,
       "maximum": 1,
       "description": "Optional (v1.1). Progress within the current step, 0..1, from substep(). null when the step has no sub-progress.",
@@ -78,14 +113,19 @@
       "type": "object",
       "description": "Optional (v1.1). Named values reported with metric(). Numbers are charted and formatted; strings are shown as-is.",
       "additionalProperties": {
-        "type": ["number", "string"],
+        "type": [
+          "number",
+          "string"
+        ],
         "description": "Metric value: a number, or a short string."
       }
     },
     "log": {
       "type": "array",
       "description": "Optional (v1.1). Recent log lines from log(), newest last (the reporter keeps the last 20). Shown as the log tail in the Active Task section.",
-      "items": { "$ref": "#/definitions/logLine" }
+      "items": {
+        "$ref": "#/definitions/logLine"
+      }
     },
     "artifacts": {
       "type": "array",
@@ -102,13 +142,45 @@
         "type": "string",
         "description": "Access Map node id, in the form '<type>:<name>', e.g. 'table:sales.orders'."
       }
+    },
+    "user": {
+      "type": "string",
+      "description": "Who ran it (OS username). Omitted when PROGRESS_NO_USER is set. The exported report drops this when scriptProgress.report.includeIdentity is off."
+    },
+    "commit": {
+      "type": "string",
+      "description": "Short git commit the working tree was on. Omitted outside a repository, or when PROGRESS_NO_GIT is set."
+    },
+    "impacts": {
+      "type": "object",
+      "description": "Cumulative contributions recorded by impact(), keyed by measure name.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "number",
+            "description": "What this run contributed."
+          },
+          "label": {
+            "type": "string",
+            "description": "Human-readable name for the measure."
+          }
+        }
+      }
+    },
+    "warningsTotal": {
+      "type": "number",
+      "description": "How many warn() calls this run has made in total, across every process that resumed it. The `warnings` list above is trimmed; this count is not, so the recorded total stays true for a run driven from the command line."
     }
   },
   "definitions": {
     "warning": {
       "type": "object",
       "description": "One warning raised by the script.",
-      "required": ["time", "msg"],
+      "required": [
+        "time",
+        "msg"
+      ],
       "properties": {
         "time": {
           "type": "string",
@@ -123,7 +195,10 @@
     "logLine": {
       "type": "object",
       "description": "One line of the live log tail.",
-      "required": ["time", "msg"],
+      "required": [
+        "time",
+        "msg"
+      ],
       "properties": {
         "time": {
           "type": "string",

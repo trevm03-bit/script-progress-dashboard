@@ -5,6 +5,7 @@
 //   4. run it in the reusable "Script Progress" terminal, or as a VS Code task (exit code captured).
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { commandForFile } from './logic/shell';
 import { QuickActionConfig, RunOverlay, Settings } from './types';
 import { expandPrompts, promptLabels } from './logic/prompts';
 
@@ -25,19 +26,6 @@ export function expandVariables(command: string, extra: Record<string, string> =
     file, fileBasename: file ? path.basename(file) : '', fileDirname: file ? path.dirname(file) : '', workspaceFolder: ws, ...extra,
   };
   return command.replace(/\$\{(file|fileBasename|fileDirname|workspaceFolder)\}/g, (_, k: string) => vars[k] ?? '');
-}
-
-function quoteIfNeeded(p: string): string {
-  return /[\s"]/.test(p) ? `"${p.replace(/"/g, '\\"')}"` : p;
-}
-
-/** The command 'Run with Script Progress' builds for a file, from the interpreters map. */
-export function commandForFile(file: string, interpreters: Record<string, string>): string | null {
-  const ext = path.extname(file);
-  const key = Object.keys(interpreters).find(k => k.toLowerCase() === ext.toLowerCase());
-  if (key === undefined) return null;
-  const prefix = (interpreters[key] || '').trim();
-  return prefix ? `${prefix} ${quoteIfNeeded(file)}` : quoteIfNeeded(file);
 }
 
 export class ActionRunner implements vscode.Disposable {
@@ -156,3 +144,7 @@ export class ActionRunner implements vscode.Disposable {
     this.disposables = [];
   }
 }
+
+// Re-exported so callers keep importing it from here; the implementation is pure and lives in
+// logic/ where it can be tested without a VS Code host.
+export { commandForFile } from './logic/shell';

@@ -59,7 +59,9 @@
 
 .mx-run { text-align: right; font-variant-numeric: tabular-nums; }
 .mx-run-d { display: block; }
-.mx-run-t { display: block; font-weight: 400; opacity: 0.7; font-size: 10px; }
+/* No opacity: this sits on --sp-failed for a failed run, which measured 2.85:1 dark /
+   3.28:1 light once 0.7 was applied on top. Muted is a colour, not a transparency. */
+.mx-run-t { display: block; font-weight: 400; color: var(--sp-muted); font-size: 10px; }
 .mx-run-failed { color: var(--sp-failed); }
 
 .mx-val {
@@ -81,7 +83,7 @@
 .mx-up { color: var(--vscode-charts-green, var(--sp-complete)); }
 .mx-down { color: var(--vscode-charts-red, var(--sp-failed)); }
 .mx-flat { color: var(--sp-muted); }
-.mx-pct { opacity: 0.75; font-size: 11px; }
+.mx-pct { color: var(--sp-muted); font-size: 11px; }
 
 .surface-sidebar .mx-spark { display: none; }
 .surface-sidebar .mx-key { max-width: 110px; }

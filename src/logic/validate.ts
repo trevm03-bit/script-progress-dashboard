@@ -54,6 +54,14 @@ export function validateSettings(raw: {
     return label;
   }));
 
+  // Collected first: a dependsOn is checked against every OTHER configured process, so the whole
+  // list has to be known before any single entry can be judged.
+  const knownNames = new Set(
+    (Array.isArray(raw.processes) ? raw.processes : [])
+      .map(p => (isObject(p) ? str((p as Record<string, unknown>).name) : ''))
+      .filter(Boolean)
+      .map(s2 => s2.toLowerCase()),
+  );
   out.push(...validateArray(raw.processes, 'processCalendar', 'processCalendar.processes', (p, add) => {
     const label = str(p.label) || str(p.name);
     if (!str(p.name)) add('needs a "name" — it is matched against the task name your script reports.');
@@ -70,6 +78,24 @@ export function validateSettings(raw: {
     if (p.dueHour !== undefined && !isInt(p.dueHour, 0, 23)) add(`has dueHour ${fmt(p.dueHour)}; expected 0 to 23.`, label);
     if (p.maxMinutes !== undefined && !(typeof p.maxMinutes === 'number' && p.maxMinutes > 0)) {
       add(`has maxMinutes ${fmt(p.maxMinutes)}; expected a positive number of minutes.`, label);
+    }
+    // 🔴 A dependency that can never resolve is the WORST kind of misconfiguration here, because
+    // it fails upwards: an unmatched name leaves the process permanently "blocked", which removes
+    // it from the overdue count AND from the coverage denominator. A single typo turned "1
+    // overdue, 42% coverage" into "83% coverage" with no warning anywhere.
+    if (p.dependsOn !== undefined) {
+      if (!Array.isArray(p.dependsOn)) add(`has a "dependsOn" that is ${fmt(p.dependsOn)}; expected a list of process names.`, label);
+      else for (const dep of p.dependsOn) {
+        if (typeof dep !== 'string' || !dep.trim()) { add(`has a "dependsOn" entry that is ${fmt(dep)}; expected a process name.`, label); continue; }
+        if (str(p.name) && dep.trim().toLowerCase() === str(p.name).toLowerCase()) {
+          add(`depends on itself ("${dep}"), so it can never be anything but blocked.`, label);
+        } else if (!knownNames.has(dep.trim().toLowerCase())) {
+          add(`depends on "${dep}", which is not the name of any configured process — it will stay "blocked" for ever, and a blocked process counts as neither overdue nor missing.`, label);
+        }
+      }
+    }
+    if (p.subtasks !== undefined && !(Array.isArray(p.subtasks) && p.subtasks.every(x => typeof x === 'string' && x.trim()))) {
+      add(`has a "subtasks" that is ${fmt(p.subtasks)}; expected a list of task names.`, label);
     }
     return label;
   }));

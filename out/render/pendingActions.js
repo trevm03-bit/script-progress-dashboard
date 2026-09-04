@@ -24,14 +24,21 @@ function renderPendingActions(data, settings, now, opts) {
         else
             byTask.set(it.task, [it]);
     }
+    // Capped per script. 500 actionable findings from one run is a real shape - and rendered whole
+    // it was an 85 KB card with no scroll container, burying every section under it.
+    const PER_TASK = 25;
     let body = '';
     for (const [task, list] of byTask) {
+        const shown = list.slice(0, PER_TASK);
         body += `<div class="pa-group"><div class="pa-task">${(0, html_1.esc)(task)} <span class="muted small">${(0, html_1.esc)((0, time_1.relativeTime)(list[0].date, now))}</span></div>`;
-        for (const it of list) {
+        for (const it of shown) {
             const sev = it.severity === 'error' ? 'pa-error' : it.severity === 'info' ? 'pa-info' : 'pa-warn';
             const count = typeof it.count === 'number' ? `<span class="pa-count">${it.count}</span>` : '';
             const cat = it.category ? `<span class="pa-cat">${(0, html_1.esc)(it.category)}</span>` : '';
             body += `<div class="pa-item ${sev}" title="${(0, html_1.esc)(`Reported ${(0, time_1.clockTime)(it.time)} by ${it.task}`)}">${(0, html_1.icon)('circle-outline')}${count}<span class="pa-msg">${(0, html_1.esc)(it.msg)}</span>${cat}</div>`;
+        }
+        if (list.length > shown.length) {
+            body += `<div class="muted small list-more">${(0, html_1.icon)('ellipsis')} ${list.length - shown.length} more from ${(0, html_1.esc)(task)} — open its row in Run History for the full list.</div>`;
         }
         body += '</div>';
     }

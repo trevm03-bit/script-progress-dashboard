@@ -179,7 +179,13 @@ function inWindow(start: number, end: number, w0: number, w1: number): boolean {
 
 export function timelineModel(data: DashboardData, settings: Settings, now: Date): TimelineModel {
   const windowHours = windowHoursOf(settings);
-  const w1 = now.getTime();
+  // 🔴 Quantise the right edge to the minute. Tick and bar positions are printed to two or three
+  // decimal places, so an unrounded "now" made this the ONE section whose HTML differed on every
+  // render - which defeated the dashboard's "only post when something changed" gate entirely, and
+  // rebuilt the Access Map card (canvas, legend and a setState write) once a second for ever.
+  // A minute of lag on a window measured in hours is not visible; the live detail is in Active
+  // Task, which does tick every second.
+  const w1 = Math.floor(now.getTime() / 60000) * 60000;
   const w0 = w1 - windowHours * 3600 * 1000;
   const start = new Date(w0);
   const end = new Date(w1);
@@ -218,6 +224,8 @@ export function timelineModel(data: DashboardData, settings: Settings, now: Date
     const elapsed = liveElapsed(task, now);
     const startAt = deriveStart(task) ?? new Date(w1 - elapsed * 1000);
     if (!inWindow(startAt.getTime(), w1, w0, w1)) continue;
+    // The TRUE end is `now`, so the tooltip reports the real live elapsed. Drawing past the
+    // quantised right edge is already handled: makeBar clamps x1 to 1 and sets clippedEnd.
     bars.push(makeBar(task.task || '', startAt, now, {
       success: true,
       running: true,

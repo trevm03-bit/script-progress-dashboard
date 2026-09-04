@@ -8,16 +8,31 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
   static readonly viewId = 'scriptProgress.dashboard';
   private host: DashboardHost | undefined;
   private view: vscode.WebviewView | undefined;
+  /**
+   * The sidebar view does not set retainContextWhenHidden, so VS Code destroys the webview when
+   * the view is hidden and calls resolveWebviewView again on the SAME WebviewView object when it
+   * comes back. Discarding these Disposables leaked two listeners per hide/show cycle, and every
+   * leaked visibility listener fired another full re-render on the next show.
+   */
+  private viewSubs: vscode.Disposable[] = [];
 
   constructor(private readonly extensionUri: vscode.Uri, private readonly state: StateProvider) {}
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.host?.dispose();
+    for (const d of this.viewSubs) d.dispose();
+    this.viewSubs = [];
     this.view = view;
     this.host = new DashboardHost(this.extensionUri, 'sidebar', this.state);
     this.host.attach(view.webview);
-    view.onDidChangeVisibility(() => this.host?.setVisible(view.visible));
-    view.onDidDispose(() => { this.host?.dispose(); this.host = undefined; this.view = undefined; });
+    this.viewSubs.push(
+      view.onDidChangeVisibility(() => this.host?.setVisible(view.visible)),
+      view.onDidDispose(() => {
+        this.host?.dispose(); this.host = undefined; this.view = undefined;
+        for (const d of this.viewSubs) d.dispose();
+        this.viewSubs = [];
+      }),
+    );
     this.updateBadge();
   }
 

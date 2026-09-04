@@ -7,13 +7,19 @@
   "additionalProperties": {
     "type": "array",
     "description": "Points for one metric, oldest first. The property name is the metric name used in scriptProgress.deltaTracker.metrics, .formats and .thresholds.",
-    "items": { "$ref": "#/definitions/deltaPoint" }
+    "items": {
+      "$ref": "#/definitions/deltaPoint"
+    }
   },
   "definitions": {
     "deltaPoint": {
       "type": "object",
       "description": "One recorded value of a tracked metric.",
-      "required": ["date", "value", "task"],
+      "required": [
+        "date",
+        "value",
+        "task"
+      ],
       "properties": {
         "date": {
           "type": "string",
@@ -26,6 +32,10 @@
         "task": {
           "type": "string",
           "description": "Name of the task that recorded the value, so a metric tracked by several scripts can still be attributed."
+        },
+        "runId": {
+          "type": "string",
+          "description": "Id of the run that recorded the point. Two points sharing a runId are one run measuring the same thing twice — a value found and the value after a fix — and the chart reads them as \"found X, resolved to Y\" rather than as two unrelated dots."
         }
       }
     }
