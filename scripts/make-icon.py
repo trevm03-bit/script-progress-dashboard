@@ -26,7 +26,7 @@ def main() -> None:
     img = Image.new("RGBA", (W, W), (0, 0, 0, 0))
 
     # Background: vertical gradient inside a rounded square.
-    top, bottom = (24, 44, 52), (14, 86, 80)
+    top, bottom = (33, 58, 68), (16, 96, 89)
     grad = Image.new("RGBA", (W, W))
     gd = ImageDraw.Draw(grad)
     for y in range(W):
@@ -45,7 +45,7 @@ def main() -> None:
 
     # The pulse line (same points as media/icon.svg, scaled into the square with margins).
     pts = [(2, 12), (6, 12), (9, 5), (13, 19), (16, 12), (22, 12)]
-    m = W * 0.14
+    m = W * 0.20
     sx = (W - 2 * m) / 20.0
     sy = (W - 2 * m) / 14.0
     line = [(m + (x - 2) * sx, m + (y - 5) * sy) for x, y in pts]
@@ -65,7 +65,8 @@ def main() -> None:
 
     # The "running" dot at the peak, in the accent teal with a white ring.
     px, py = line[2]
-    rr = int(W * 0.075)
+    py -= W * 0.045   # lift the dot clear of the stroke so they stay separate at 32 px
+    rr = int(W * 0.07)
     d.ellipse([px - rr - W * 0.012, py - rr - W * 0.012, px + rr + W * 0.012, py + rr + W * 0.012], fill=(255, 255, 255, 255))
     d.ellipse([px - rr, py - rr, px + rr, py + rr], fill=(95, 211, 190, 255))
 

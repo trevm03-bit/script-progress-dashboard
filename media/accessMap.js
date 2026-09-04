@@ -968,7 +968,7 @@
       this.detail.innerHTML = `<div class="det-head"><span class="tip-type">${escapeHtml(TYPE_LABEL[n.type] || n.type)}${n.live ? ' · live' : ''}</span><button class="icon-btn det-close" title="Close (Esc)"><i class="codicon codicon-close"></i></button></div>
         <div class="det-title">${escapeHtml(n.label || n.id)}</div>
         <div class="tip-type">${Number(n.degree) || 0} link${n.degree === 1 ? '' : 's'} · ${Number(n.reads) || 0} read · ${Number(n.writes) || 0} write · last ${escapeHtml(relTime(n.lastSeen))}</div>
-        ${impact ? `<div class="det-impact"><i class="codicon codicon-warning"></i> If this ${isTask ? 'script fails' : 'breaks'}, ${impact} ${isTask ? 'downstream script' : 'reader'}${impact === 1 ? '' : 's'} ${isTask ? 'lose their input' : 'are affected'}.</div>` : ''}
+        ${impact ? `<div class="det-impact"><i class="codicon codicon-warning"></i> If this ${isTask ? 'script fails' : 'breaks'}, ${impact} ${isTask ? 'downstream script' : 'reader'}${impact === 1 ? '' : 's'} ${isTask ? (impact === 1 ? 'loses its input' : 'lose their input') : (impact === 1 ? 'is affected' : 'are affected')}.</div>` : ''}
         <div class="det-links">${body || '<div class="tip-type">no links</div>'}</div>
         <div class="det-actions"><button class="link-btn det-center">Center</button><button class="link-btn det-runs">Runs</button><button class="link-btn det-hide">Hide ${escapeHtml(TYPE_LABEL[n.type] || n.type)}s</button></div>`;
       this.detail.hidden = false;

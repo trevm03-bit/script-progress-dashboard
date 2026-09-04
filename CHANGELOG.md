@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.0 — 2026-09-04
+
+The listing release: what a stranger sees before installing.
+
+- README rewritten for the Marketplace: an honest five-line tagline with the actual five lines,
+  two animated GIFs (a run in the dashboard; the Access Map lighting up during a run), visible
+  captions on every screenshot, "Is this for you?", a 30-second try-it path, and the offline
+  install routes moved to `install/README.md`.
+- New 256 px icon; sharper one-line description; repository, issues and Q&A links on the listing.
+- Lineage card grammar ("1 downstream script loses its input").
+- CI: releases are packaged by GitHub Actions on every version tag (publish waits for a secret).
+
 ## 1.2.1 — 2026-09-03
 
 - README install commands and the unpacked-folder template name the current package. No code changes.

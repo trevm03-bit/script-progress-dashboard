@@ -1,15 +1,27 @@
 # Script Progress Dashboard
 
 [![Marketplace](https://img.shields.io/visual-studio-marketplace/v/trevor-marshall.script-progress-dashboard?label=Marketplace&color=0e6b62)](https://marketplace.visualstudio.com/items?itemName=trevor-marshall.script-progress-dashboard)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/trevor-marshall.script-progress-dashboard?color=0e6b62)](https://marketplace.visualstudio.com/items?itemName=trevor-marshall.script-progress-dashboard)
 [![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
-![No dependencies](https://img.shields.io/badge/runtime%20dependencies-0-lightgrey)
+![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-lightgrey)
+![Network calls](https://img.shields.io/badge/network%20calls-0-lightgrey)
 
-**Know what your scripts are doing without leaving the editor.** Five lines in a Python or Node
-script give you a live progress card, a run history that flags slow runs, a calendar of what has
-not run yet, and a map of every table, file and service each script touches.
+**Know what your scripts are doing without leaving the editor.** Five lines in a Python or
+Node script give you a live progress card, a status bar line, and a run history that flags the
+runs that took far longer than usual. Add one call per resource and you get a map of every
+table, file and service your scripts touch, with lineage.
 
-![A script runs: its node lights up and traffic flows along the tables and files it is using, then the map goes still](docs/demo.gif)
+![A script runs in the dashboard: the progress bar advances step by step, the log tail fills, warnings appear, and the run lands in history](docs/hero.gif)
+
+```python
+from progress import Progress
+
+with Progress("Nightly Load") as p:
+    p.step(1, 2, "Reading input")
+    p.step(2, 2, "Loading warehouse")
+    p.complete(success=True, summary="INSERT: 3,990 rows")
+```
+
+That is the whole integration. No server to run, no package to install, no account.
 
 - **Nothing to host.** Your script writes a few small JSON files; the extension watches the folder.
 - **Nothing leaves the machine.** No network, no telemetry, no AI, no runtime dependencies.
@@ -17,12 +29,16 @@ not run yet, and a map of every table, file and service each script touches.
 - **Built for people who babysit pipelines.** Slow-run detection, SLAs, warning trends, metric
   deltas run over run, and lineage so "what breaks if this fails?" has an answer.
 
-A VS Code extension that shows what your long-running scripts are doing — right now, in the
-editor, without a browser tab or a server. Your script calls a tiny reporter that writes a few
-small JSON files; the extension watches that folder and turns it into a status bar line, a live
-Active Task card, run history, a process calendar, health and metric trends, and a map of which
-scripts touch which files, tables and services. It reads local files only: no network, no
-telemetry, no dependencies, and every section is a switch you turn on when you want it.
+### Is this for you?
+
+If your jobs run on Airflow, Dagster or Prefect, you already have a UI and you do not need this.
+This is for the other half of the work: the load script you run from a terminal, the
+reconciliation you kick off by hand, the scheduled task on one machine, the notebook-turned-script
+that takes forty minutes. Those jobs have no UI at all, and the usual answer is watching a terminal
+scroll or opening the log file afterwards to find out it failed on step 2 of 7.
+
+Any language works. The JSON files are the contract and the schemas are documented below; the
+Python and Node reporters are just the two that ship.
 
 ## What you get
 
@@ -54,45 +70,63 @@ editor tab — which is where the Access Map is drawn at size.
 
 ## Screenshots
 
-![The dashboard tab: summary strip, the Active Task card with log tail and metric chips, warnings, and Last Completed](docs/dashboard-overview.png)
+**The Access Map moves only when something is running.** A script's node lights up and traffic
+flows along the tables and files it is using; when it finishes, the map is still.
 
-![Run Timeline swim lanes over a week, per-script Delta Tracker cards, and the Metrics Explorer](docs/timeline-metrics.png)
+![Access Map during a run](docs/demo.gif)
 
-![Run History with filter chips and a 2.7× slow flag, and Warning Trends grouped by message](docs/run-history-warnings.png)
+**Click any node for its lineage.** Inputs light orange, outputs green, and the card names the
+downstream scripts that break if this one does.
 
-![Access Map, force layout — every script and the tables, files and services it touches](docs/access-map-force.png)
+![Access Map lineage](docs/access-map-lineage.png)
 
-![Access Map lineage — one script's inputs lit orange, outputs green, and the downstream scripts that depend on it](docs/access-map-lineage.png)
+**Run History flags the runs worth looking at.** A run at 2.7 times its usual duration gets a
+slow flag and a filter chip; Warning Trends groups warnings by message, so "17 rows had no
+customer id" and "29 rows had no customer id" count as one recurring problem.
 
-![Access Map, radial layout — scripts on the inner ring, resources grouped by type outside](docs/access-map-radial.png)
+![Run History and Warning Trends](docs/run-history-warnings.png)
+
+**Every script on one timeline, every metric run over run.** Swim lanes show what ran, how long
+it took and what overlapped; the Metrics Explorer shows the change against the previous run.
+
+![Run Timeline, Delta Tracker and Metrics Explorer](docs/timeline-metrics.png)
+
+**The dashboard tab.** Summary strip, the Active Task card with its log tail and metric chips,
+warnings, and the last completed run.
+
+![The dashboard tab](docs/dashboard-overview.png)
+
+**Radial layout** puts scripts on an inner ring and their tables, files and services outside.
+
+![Access Map, radial layout](docs/access-map-radial.png)
+
+## See it working in 30 seconds
+
+Install it, open the Command Palette and run **Script Progress: Simulate a Demo Run**. It writes
+the same files a real script writes, so the status bar, the sidebar and the dashboard fill in
+front of you. Nothing to configure, no Python needed.
+
+For the full story, the `demo/` folder in the repository is a ready-made workspace with every
+section switched on and two weeks of seeded history:
+
+```
+python seed_demo.py                    # two weeks of realistic runs for every section
+python fake_run.py --fast              # the whole story in about six seconds
+python fake_run.py --fail              # ends in a failure
+python fake_run.py --crash             # raises mid-run; the 'with' block reports FAILED
+python fake_run.py --stall             # exits without reporting, so it shows as STALLED
+```
 
 ## Install
 
-**With the `code` command**
+Search **Script Progress Dashboard** in the Extensions view, or:
 
 ```
-code --install-extension script-progress-dashboard-1.2.1.vsix
+code --install-extension trevor-marshall.script-progress-dashboard
 ```
 
-**From the Extensions view**
-
-Extensions → `…` menu → **Install from VSIX…** → pick the `.vsix`.
-
-**As an unpacked folder** (no `code` command, no build — `out/` is committed)
-
-Copy the folder — you need `package.json`, `out/`, `media/`, `schemas/`, `snippets/`,
-`LICENSE`, `README.md`; `node_modules` is not needed — to:
-
-```
-%USERPROFILE%\.vscode\extensions\trevor-marshall.script-progress-dashboard-1.2.1\
-```
-
-On VS Code 1.136 that is not enough on its own: VS Code only loads folders listed in
-`%USERPROFILE%\.vscode\extensions\extensions.json`, and an unlisted folder is quietly marked as
-removed. Add an entry to that JSON array — the fields that matter are `identifier.id`
-(`trevor-marshall.script-progress-dashboard`), `version`, `location.fsPath` / `location.path`
-(the folder's absolute path) and `relativeLocation` (the folder name). `install/extensions.json.template`
-is a filled-in example to copy the shape from. Then run **Developer: Reload Window**.
+Air-gapped or offline machine? The `.vsix` route and an unpacked-folder route are documented in
+[install/README.md](install/README.md).
 
 ## Report progress
 
@@ -136,6 +170,10 @@ with Progress("Nightly Load") as p:              # 'with' reports a crash as FAI
 | `track_delta(metric_name, value)` | Appends one point to a Delta Tracker series (last 50 kept per metric). |
 | `access(kind, name, mode="read")` | Records a touched resource for the Access Map. `kind` is `file`, `table`, `api` or `other`; `mode` is `read` or `write`. |
 | `complete(success=True, summary="", metrics=None)` | Ends the run and appends a run history row. Called for you by the `with` block. |
+
+The import path follows where you put the file. From `scripts/lib/progress.py`, run your script
+from `scripts/` and use `from lib.progress import Progress`; drop it next to your script instead
+and it is just `from progress import Progress`.
 
 Every call prints as well as writing, so the terminal tells the same story as the dashboard.
 
@@ -211,7 +249,7 @@ you completion and hover documentation for every field.
 
 ## Configure
 
-A complete example, in workspace or user `settings.json`:
+A worked example, in workspace or user `settings.json` (every setting is described in the Settings UI):
 
 ```json
 {
@@ -485,19 +523,8 @@ requests, sends no telemetry, bundles no runtime dependencies, and calls no AI s
 thing it ever executes is a Quick Action command you wrote yourself, in your own terminal — and
 not at all in an untrusted workspace.
 
-## Try it
-
-The `demo/` folder is a ready-made workspace with settings that switch every section on. Open it,
-open the Script Progress sidebar, then either run **Script Progress: Simulate a Demo Run** or, in
-a terminal:
-
-```
-python fake_run.py --fast              # the whole story in about six seconds
-python fake_run.py --fail              # ends in a failure
-python fake_run.py --crash             # raises mid-run; the 'with' block reports FAILED
-python fake_run.py --stall             # exits without reporting, so it shows as STALLED
-python fake_run.py --task "Weekly Rollup" --steps 4
-```
+It activates after startup in every window, and that costs one folder check and a file watcher.
+When the logs folder does not exist, nothing else runs until it appears.
 
 ## Build from source
 
@@ -506,7 +533,7 @@ npm install          # TypeScript, types and Codicons — dev-time only
 npm run compile      # tsc -> out/  (also refreshes media/codicons/)
 npm test             # node --test, no VS Code download needed
 python python/test_progress.py
-npm run package      # dist/script-progress-dashboard-1.2.1.vsix, via npx @vscode/vsce
+npm run package      # dist/script-progress-dashboard-<version>.vsix, via npx @vscode/vsce
 ```
 
 Press **F5** in this folder to launch an Extension Development Host on the demo workspace.
@@ -521,7 +548,7 @@ Press **F5** in this folder to launch an Extension Development Host on the demo 
   per-task files under `progress/` are what give each one its own card; history, deltas and the
   Access Map record both regardless.
 - Requires VS Code 1.80 or newer. The unpacked-folder install route additionally needs the
-  `extensions.json` entry described above on 1.136.
+  `extensions.json` entry described in `install/README.md` on 1.136.
 
 ## Credits
 
