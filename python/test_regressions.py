@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -204,6 +205,47 @@ class ReporterRegressions(unittest.TestCase):
                            capture_output=True, text=True, env=dict(os.environ, PROGRESS_LOGS_DIR=str(d)), cwd=str(REPO))
         check("status on a corrupt file prints a message, not a traceback",
               "Traceback" not in (r.stdout + r.stderr) and r.returncode == 1, (r.stdout + r.stderr)[:120])
+
+
+class ConcurrentCompletions(unittest.TestCase):
+    """
+    run_history.json is a read-modify-write on a file every script shares.
+
+    Before the lock, scripts completing together lost rows constantly: measured 38% at two
+    concurrent completions, 71% at eight, 81% at sixteen. A lost row is a run that silently never
+    happened - no history, no calendar tick, no coverage credit, no ETA for next time. Six
+    concurrent completions is enough to catch a regression without making the suite slow.
+    """
+
+    WORKER = textwrap.dedent("""
+        import sys, time
+        sys.path.insert(0, r"{py}")
+        from progress import Progress
+        release, name, logs = float(sys.argv[1]), sys.argv[2], sys.argv[3]
+        p = Progress(name, logs_dir=logs, quiet=True)
+        while time.time() < release:      # spin to the shared barrier so they really collide
+            pass
+        p.complete(summary=name)
+    """)
+
+    def test_six_scripts_finishing_together_all_get_recorded(self):
+        d = tmp()
+        worker = d / "w.py"
+        worker.write_text(self.WORKER.format(py=str(REPO / "python")), encoding="utf-8")
+        release = time.time() + 2.0
+        procs = [
+            subprocess.Popen([sys.executable, str(worker), str(release), f"Task{i}", str(d)],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for i in range(6)
+        ]
+        for proc in procs:
+            proc.wait(timeout=120)
+        history = json.loads((d / "run_history.json").read_text(encoding="utf-8"))
+        names = sorted(r["task"] for r in history)
+        self.assertEqual(names, sorted(f"Task{i}" for i in range(6)),
+                         f"rows lost to the completion race: got {names}")
+        # And the lock file must not be left behind for the next run to trip over.
+        self.assertEqual(list(d.glob("*.lock")), [])
 
 
 if __name__ == "__main__":

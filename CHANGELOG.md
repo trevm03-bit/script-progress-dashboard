@@ -169,6 +169,14 @@ comes back.
   `progress.json` **and** a 7 MB history row, kept 100 times over.
 - `.tmp` files left by a killed process were never swept.
 - `status` printed a raw traceback on a corrupt `progress.json`.
+- **Scripts finishing together lost their history rows.** `run_history.json` is a read-modify-write
+  on a file every script shares, and the window is about a millisecond — which sounds safe and is
+  not. Measured: two concurrent completions lost a row **38%** of the time, eight lost **71%**,
+  sixteen lost **81%**. A lost row is a run that silently never happened: no history, no calendar
+  tick, no coverage credit, no ETA for next time. The append is now held under an advisory lock
+  (`O_CREAT | O_EXCL`, stdlib only) that times out rather than blocking a finishing script, and
+  breaks a lock left behind by a killed process rather than jamming every run after it. Same
+  measurement after: **180 of 180 rows recorded**, across three runs.
 
 *And the gate that should have caught them*
 
@@ -179,7 +187,7 @@ which on Windows hands its arguments to a detached window and never returns, so 
 instead of checking anything. It now goes through the CLI entry point the way `code.cmd` does.
 28 checks, green.
 
-Reporter 1.6.1. 207 Node tests, 30 + 27 Python tests, 28 packaged-install checks.
+Reporter 1.6.1. 207 Node tests, 30 + 28 Python tests, 28 packaged-install checks.
 
 ## 1.5.0 — 2026-09-04
 
