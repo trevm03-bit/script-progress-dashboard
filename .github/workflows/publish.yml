@@ -44,10 +44,15 @@ jobs:
       - name: Package
         run: npm run package
 
-      - name: Publish
+      - name: Publish (skipped politely when no VSCE_PAT secret exists)
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx --yes @vscode/vsce@latest publish --packagePath dist/script-progress-dashboard-${GITHUB_REF_NAME#v}.vsix
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "::notice::No VSCE_PAT secret — not publishing. Download the .vsix from this run's artifacts and upload it on https://marketplace.visualstudio.com/manage/publishers/trevor-marshall"
+            exit 0
+          fi
+          npx --yes @vscode/vsce@latest publish --packagePath dist/script-progress-dashboard-${GITHUB_REF_NAME#v}.vsix
 
       - name: Keep the .vsix with the run
         uses: actions/upload-artifact@v4
