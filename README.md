@@ -1,5 +1,22 @@
 # Script Progress Dashboard
 
+[![Marketplace](https://img.shields.io/visual-studio-marketplace/v/trevor-marshall.script-progress-dashboard?label=Marketplace&color=0e6b62)](https://marketplace.visualstudio.com/items?itemName=trevor-marshall.script-progress-dashboard)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/trevor-marshall.script-progress-dashboard?color=0e6b62)](https://marketplace.visualstudio.com/items?itemName=trevor-marshall.script-progress-dashboard)
+[![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
+![No dependencies](https://img.shields.io/badge/runtime%20dependencies-0-lightgrey)
+
+**Know what your scripts are doing without leaving the editor.** Five lines in a Python or Node
+script give you a live progress card, a run history that flags slow runs, a calendar of what has
+not run yet, and a map of every table, file and service each script touches.
+
+![A script runs: its node lights up and traffic flows along the tables and files it is using, then the map goes still](docs/demo.gif)
+
+- **Nothing to host.** Your script writes a few small JSON files; the extension watches the folder.
+- **Nothing leaves the machine.** No network, no telemetry, no AI, no runtime dependencies.
+- **Everything is a switch.** Thirteen sections; turn on the ones you want, in the order you want.
+- **Built for people who babysit pipelines.** Slow-run detection, SLAs, warning trends, metric
+  deltas run over run, and lineage so "what breaks if this fails?" has an answer.
+
 A VS Code extension that shows what your long-running scripts are doing — right now, in the
 editor, without a browser tab or a server. Your script calls a tiny reporter that writes a few
 small JSON files; the extension watches that folder and turns it into a status bar line, a live
