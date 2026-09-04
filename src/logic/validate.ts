@@ -37,6 +37,20 @@ export function validateSettings(raw: {
     if (!str(b.command)) add(`needs a "command" — the shell command to run.`, label);
     if (b.confirm !== undefined && typeof b.confirm !== 'boolean') add('"confirm" must be true or false.', label);
     if (b.icon !== undefined && !str(b.icon)) add('"icon" must be a codicon name, e.g. "play".', label);
+    const when = b.enableWhen;
+    if (when !== undefined) {
+      if (!isObject(when)) add('"enableWhen" must be an object like { "metric": "issues", "gt": 0 }.', label);
+      else {
+        if (!str(when.metric)) add('"enableWhen" needs a "metric" to look at.', label);
+        const comparators = ['gt', 'gte', 'lt', 'lte'].filter(k => when[k] !== undefined);
+        if (when.eq !== undefined && comparators.length) {
+          // eq returns first and the rest are never evaluated, so a rule written this way is
+          // silently half-ignored — exactly the quiet failure this module exists to prevent.
+          add(`"enableWhen" has both "eq" and ${comparators.map(c => `"${c}"`).join(', ')}; only "eq" is used.`, label);
+        }
+        if (when.eq === undefined && !comparators.length) add('"enableWhen" has no comparison, so it never disables the button.', label);
+      }
+    }
     return label;
   }));
 

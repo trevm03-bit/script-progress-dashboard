@@ -268,7 +268,8 @@ export interface Settings {
   deltaMetrics: string[];
   deltas: { formats: Record<string, DeltaFormat>; thresholds: Record<string, DeltaThreshold>; points: number };
   pendingActions: { maxAgeDays: number };
-  coverage: { show: boolean };
+  report: { includeIdentity: boolean };
+  coverage: { show: boolean; weights: { schedule: number; success: number; metrics: number } };
   staleHours: number;
   health: { resultDots: number };
   accessMap: { maxNodes: number; layout: 'force' | 'radial'; timeWindowDays: number; labels: 'auto' | 'all' | 'scripts'; sidebarPreview: boolean; replay: boolean; ambient: boolean; halos: boolean; glyphs: boolean; minimap: boolean; starfield: boolean };

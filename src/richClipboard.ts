@@ -12,6 +12,22 @@
 // fallback (open the rendered page and copy from there) and a silent failure would send markup
 // to a colleague.
 import { spawn } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+
+/**
+ * The ABSOLUTE path to Windows PowerShell.
+ *
+ * 🔴 Never spawn it as a bare "powershell.exe". Windows resolves a bare executable name against
+ * the current directory BEFORE PATH, and the extension host's working directory is wherever the
+ * editor was launched from — routinely the workspace folder. A cloned repo containing its own
+ * powershell.exe would then run as the user the first time anyone copied a digest.
+ */
+function powershellPath(): string | null {
+  const root = process.env.SystemRoot || process.env.windir || 'C:\Windows';
+  const exe = path.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  try { return fs.existsSync(exe) ? exe : null; } catch { return null; }
+}
 
 export interface RichCopyResult {
   ok: boolean;
@@ -27,15 +43,19 @@ export function copyHtmlRich(html: string): Promise<RichCopyResult> {
   if (process.platform !== 'win32') {
     return Promise.resolve({ ok: false, reason: 'formatted copy needs Windows' });
   }
+  const exe = powershellPath();
+  if (!exe) return Promise.resolve({ ok: false, reason: 'PowerShell was not found where Windows keeps it' });
   const script = powershell();
   return new Promise<RichCopyResult>(resolve => {
     let settled = false;
     const done = (r: RichCopyResult) => { if (!settled) { settled = true; resolve(r); } };
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn('powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
-        { windowsHide: true });
+      child = spawn(exe,
+        // -STA is required: Clipboard.SetDataObject throws on a multi-threaded apartment, and
+        // relying on 5.1's default would break the moment a different host is used.
+        ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-Command', script],
+        { windowsHide: true, stdio: ['pipe', 'ignore', 'pipe'] });
     } catch (e) {
       return done({ ok: false, reason: `PowerShell could not start: ${(e as Error).message}` });
     }
@@ -43,6 +63,10 @@ export function copyHtmlRich(html: string): Promise<RichCopyResult> {
     const timer = setTimeout(() => { try { child.kill(); } catch { /* already gone */ } done({ ok: false, reason: 'PowerShell did not respond' }); }, 10000);
     let stderr = '';
     child.stderr?.on('data', d => { stderr += String(d); });
+    // If the shell exits before draining stdin — a policy block, its own early exit, or a digest
+    // larger than the pipe buffer — the write fails ASYNCHRONOUSLY. With no listener that is an
+    // uncaught exception in the extension host, i.e. this feature could take the editor down.
+    child.stdin?.on('error', () => { /* the close handler reports the real outcome */ });
     child.on('error', e => { clearTimeout(timer); done({ ok: false, reason: `PowerShell could not start: ${e.message}` }); });
     child.on('close', code => {
       clearTimeout(timer);
@@ -95,7 +119,6 @@ $plain = [System.Net.WebUtility]::HtmlDecode($plain)
 $data = New-Object System.Windows.Forms.DataObject
 $data.SetData([System.Windows.Forms.DataFormats]::Html, $cf)
 $data.SetData([System.Windows.Forms.DataFormats]::UnicodeText, $plain)
-$t = [System.Threading.Thread]::CurrentThread
 [System.Windows.Forms.Clipboard]::SetDataObject($data, $true)
 exit 0
 `.trim();

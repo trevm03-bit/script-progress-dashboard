@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.DEFAULT_COVERAGE_WEIGHTS = void 0;
 exports.complianceReport = complianceReport;
 exports.impactTotals = impactTotals;
 exports.pendingActions = pendingActions;
@@ -79,14 +80,21 @@ function startOfWeek(d) {
     out.setDate(out.getDate() - (day === 0 ? 6 : day - 1));
     return out;
 }
-/** Sum what runs have contributed, per metric. Newest activity first. */
-function impactTotals(impact, now) {
+/**
+ * Sum what runs have contributed, per metric. Newest activity first.
+ *
+ * `history` is optional but should always be passed: `impact()` writes the moment it is called,
+ * so a run that crashes afterwards has still contributed to the file. Counting it would let a
+ * failed run inflate the headline — the same mistake Pending Actions deliberately avoids.
+ */
+function impactTotals(impact, now, history = []) {
     const out = [];
+    const failedRuns = new Set(history.filter(r => !r.success && r.runId).map(r => r.runId));
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     for (const [metric, points] of Object.entries(impact || {})) {
         if (!Array.isArray(points) || !points.length)
             continue;
-        const valid = points.filter(p => p && typeof p.value === 'number' && isFinite(p.value));
+        const valid = points.filter(p => p && typeof p.value === 'number' && isFinite(p.value) && !(p.runId && failedRuns.has(p.runId)));
         if (!valid.length)
             continue;
         const runIds = new Set(valid.map(p => p.runId ?? p.date));
@@ -121,63 +129,81 @@ function pendingActions(history, now, maxAgeDays = 90) {
         if (d < cutoff)
             continue;
         const cur = latestSuccessByTask.get(r.task);
-        if (!cur || d > ((0, time_1.parseIso)(cur.date)?.getTime() ?? 0))
+        // >= not >: timestamps are second-resolution, so two runs of one task can share one. History
+        // is append-ordered oldest-first, so on a tie the later entry is the newer run — and picking
+        // the older one would leave an item outstanding that the newer run had already cleared.
+        if (!cur || d >= ((0, time_1.parseIso)(cur.date)?.getTime() ?? 0))
             latestSuccessByTask.set(r.task, r);
     }
     const out = [];
     for (const [task, run] of latestSuccessByTask) {
-        for (const w of run.warningItems ?? []) {
-            if (!w?.actionable)
+        // isRun() only guarantees task and date are strings; every other field comes from a file
+        // any process can write. A renderer that throws blanks the dashboard, and this section is
+        // on by default, so the guard belongs here rather than in the caller.
+        if (!Array.isArray(run.warningItems))
+            continue;
+        for (const w of run.warningItems) {
+            if (!w || typeof w !== 'object' || !w.actionable)
                 continue;
             out.push({ ...w, task, runId: run.runId, date: run.date });
         }
     }
     return out.sort((a, b) => ((0, time_1.parseIso)(b.date)?.getTime() ?? 0) - ((0, time_1.parseIso)(a.date)?.getTime() ?? 0));
 }
-/**
- * A single figure for "is the routine holding together", with its inputs always beside it.
- *
- * 🔴 This is deliberately NOT called a data-quality score. This extension can see whether jobs
- * ran, whether they succeeded, and how the numbers they report about themselves moved. It cannot
- * see the data. A composite is honest when the reader can check what went into it and the name
- * claims no more than the inputs support; it stops being honest the moment it implies the tool
- * inspected the data itself. Never rename this to something it cannot substantiate.
- */
-function coverage(calendar, history, metricsOutOfRange, metricsTracked, now, days = 30) {
+exports.DEFAULT_COVERAGE_WEIGHTS = { schedule: 2, success: 2, metrics: 1 };
+function coverage(calendar, history, metricsOutOfRange, metricsTracked, now, days = 30, weights = exports.DEFAULT_COVERAGE_WEIGHTS, historyCap = 0) {
     const inputs = [];
     const cutoff = now.getTime() - days * 86400000;
     const recent = history.filter(r => ((0, time_1.parseIso)(r.date)?.getTime() ?? 0) >= cutoff);
-    // 1. Are the expected processes on time? 'blocked' and 'unseen' are excluded: neither is a
-    //    compliance failure by this process, and counting them would punish the wrong thing.
-    const judged = calendar.filter(r => r.status !== 'unseen' && r.status !== 'blocked');
+    // 1. Schedule adherence. 'blocked' and 'unseen' are excluded — neither is this process failing
+    //    to comply. 🔴 'pending' is excluded too, and that matters: it means "not run and NOT YET
+    //    DUE", so counting it as on time made every monthly process score full marks on the 1st and
+    //    the figure was highest exactly when the tool knew least. 'partial' scores the fraction of
+    //    its phases that are done, because that is what it is.
+    const judged = calendar.filter(r => r.status !== 'unseen' && r.status !== 'blocked' && r.status !== 'pending');
     if (judged.length) {
-        const ok = judged.filter(r => r.status === 'done' || r.status === 'pending' || r.status === 'partial').length;
+        const score = judged.reduce((n, r) => {
+            if (r.status === 'done')
+                return n + 1;
+            if (r.status === 'partial' && r.phases?.length)
+                return n + r.phases.filter(p => p.done).length / r.phases.length;
+            return n;
+        }, 0);
+        const pending = calendar.filter(r => r.status === 'pending').length;
         inputs.push({
-            label: 'On schedule', score: ok / judged.length, weight: 2,
-            detail: `${ok}/${judged.length} process(es) on time`,
+            label: 'On schedule', score: score / judged.length, weight: weights.schedule,
+            detail: `${round1(score)}/${judged.length} due process(es) on schedule${pending ? ` · ${pending} not due yet` : ''}`,
         });
     }
     // 2. Did runs succeed?
     if (recent.length) {
         const ok = recent.filter(r => r.success).length;
+        // History is capped, so past that cap the denominator is the cap and not the window. Say so
+        // rather than claiming a window the data cannot cover.
+        const capped = historyCap > 0 && history.length >= historyCap;
         inputs.push({
-            label: 'Runs succeeded', score: ok / recent.length, weight: 2,
-            detail: `${ok}/${recent.length} run(s) in ${days} days`,
+            label: 'Runs succeeded', score: ok / recent.length, weight: weights.success,
+            detail: capped ? `${ok}/${recent.length} of the last ${historyCap} run(s)` : `${ok}/${recent.length} run(s) in ${days} days`,
         });
     }
     // 3. Are the tracked numbers inside their thresholds?
     if (metricsTracked > 0) {
         inputs.push({
-            label: 'Metrics in range', score: (metricsTracked - metricsOutOfRange) / metricsTracked, weight: 1,
+            label: 'Metrics in range', score: (metricsTracked - metricsOutOfRange) / metricsTracked, weight: weights.metrics,
             detail: `${metricsTracked - metricsOutOfRange}/${metricsTracked} metric(s) in range`,
         });
     }
-    if (!inputs.length)
+    // 🔴 At least one OBSERVED input. With no runs and no due processes, the only surviving input
+    // is "metrics in range", and a lone threshold would put a green 100% at the top of the page for
+    // a routine that has never run — the figure at its most confident when it knows nothing.
+    const observed = inputs.some(i => i.label === 'On schedule' || i.label === 'Runs succeeded');
+    if (!inputs.length || !observed)
         return { percent: null, inputs };
     const total = inputs.reduce((n, i) => n + i.weight, 0);
     const score = inputs.reduce((n, i) => n + clamp01(i.score) * i.weight, 0) / total;
     return { percent: Math.round(score * 100), inputs };
 }
 function clamp01(n) { return Math.max(0, Math.min(1, isFinite(n) ? n : 0)); }
+function round1(n) { return Math.round(n * 10) / 10; }
 function round(n) { return Math.round(n * 100) / 100; }
 //# sourceMappingURL=compliance.js.map

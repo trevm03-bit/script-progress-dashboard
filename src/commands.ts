@@ -243,9 +243,15 @@ export function registerCommands(context: vscode.ExtensionContext, cx: CommandCo
     // Rich paste is Windows-only and can be blocked outright. Rather than silently leaving
     // markup on the clipboard (which pastes as a wall of tags), open the rendered page so it can
     // be copied from there — a browser puts real formatted text on the clipboard.
-    const file = path.join(os.tmpdir(), `script-progress-digest-${Date.now()}.html`);
+    // A predictable name in the shared temp directory is a symlink target on any multi-user
+    // machine, and the digest itself (script names, failures, totals) should not be world
+    // readable. A fresh private directory, owner-only, and refuse to overwrite anything.
+    let file: string;
     try {
-      fs.writeFileSync(file, `<!doctype html><meta charset="utf-8"><title>Digest</title>${html}`, 'utf-8');
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'script-progress-'));
+      file = path.join(dir, 'digest.html');
+      fs.writeFileSync(file, `<!doctype html><meta charset="utf-8"><title>Digest</title>${html}`,
+        { encoding: 'utf-8', mode: 0o600, flag: 'wx' });
     } catch (e) {
       void vscode.window.showErrorMessage(`Could not write the digest: ${(e as Error).message}`);
       return;

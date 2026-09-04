@@ -139,10 +139,12 @@ body.surface-map #sections { flex: 1; display: flex; flex-direction: column; min
 .pa-item.pa-error { border-left-color: var(--sp-failed); }
 .pa-item.pa-info { border-left-color: var(--vscode-editorInfo-foreground, var(--sp-muted)); background: transparent; }
 .pa-item .codicon { flex: none; margin-top: 2px; opacity: 0.8; }
-.pa-msg { flex: 1; }
+.pa-msg { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .pa-count { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 2ch; }
 .pa-cat { font-size: 10px; padding: 0 5px; border: 1px solid var(--sp-border); border-radius: 8px; opacity: 0.85; white-space: nowrap; }
 .pa-foot, .imp-foot { margin-top: 8px; display: flex; gap: 5px; align-items: flex-start; }
+/* The sentence is ONE flex child. Without this, every inline element inside it became a column. */
+.pa-foot > span, .imp-foot > span { flex: 1; min-width: 0; }
 
 /* Impact Summary — totals, deliberately plain. */
 .imp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--sp-gap); }
@@ -151,6 +153,7 @@ body.surface-map #sections { flex: 1; display: flex; flex-direction: column; min
 .imp-total { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; margin: 2px 0; }
 .imp-sub { font-size: var(--sp-font-small); font-variant-numeric: tabular-nums; }
 .imp-meta { margin-top: 4px; }
+.imp-unit { font-size: 12px; font-weight: 400; color: var(--sp-muted); margin-left: 3px; }
 
 /* The target line is the goal, so it must not look like the threshold band. */
 .guide-target { stroke: var(--sp-complete); stroke-width: 1.2; stroke-dasharray: none; opacity: 0.85; }
@@ -162,7 +165,7 @@ body.surface-map #sections { flex: 1; display: flex; flex-direction: column; min
 .sla-dot { width: 5px; height: 10px; border-radius: 1px; background: var(--sp-border); display: inline-block; }
 .sla-dot.sla-met { background: var(--sp-complete); }
 .sla-dot.sla-missed { background: var(--sp-failed); }
-.sla-dot.sla-unknown { background: transparent; border: 1px solid var(--sp-border); }
+.sla-dot.sla-unknown { background: var(--sp-border); opacity: 0.45; }
 .sla-pct { margin-left: 5px; font-size: 11px; font-variant-numeric: tabular-nums; }
 .cal-blocked .cal-label { opacity: 0.9; }
 
@@ -327,7 +330,9 @@ tr.detail td { padding: 0 8px 8px 24px; background: var(--vscode-editor-backgrou
 /* ---- process calendar ---- */
 .cal-group { margin-bottom: 8px; }
 .cal-group-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--sp-muted); margin: 6px 0 2px; }
-.cal-row { display: grid; grid-template-columns: 20px minmax(90px, 1fr) minmax(70px, 1.3fr) auto auto; gap: 4px 10px; align-items: center; padding: 5px 0; font-size: 12px; border-bottom: 1px solid var(--sp-border); }
+.cal-row { display: grid; grid-template-columns: 20px minmax(90px, 1fr) minmax(70px, 1.3fr) auto auto auto; gap: 4px 10px; align-items: center; padding: 5px 0; font-size: 12px; border-bottom: 1px solid var(--sp-border); }
+/* The month grid is the 7th child and belongs on its own full-width line, not in column 1. */
+.cal-row > .month-grid { grid-column: 1 / -1; }
 .surface-sidebar .cal-row { grid-template-columns: 20px 1fr auto; }
 .surface-sidebar .cal-note, .surface-sidebar .cal-next { display: none; }
 .cal-mark { text-align: center; }
@@ -356,7 +361,10 @@ tr.detail td { padding: 0 8px 8px 24px; background: var(--vscode-editor-backgrou
 }
 .btn:hover:not([disabled]) { background: var(--vscode-button-hoverBackground); }
 .btn:active:not([disabled]) { transform: translateY(1px); }
-.btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+/* A disabled action reads as a deliberate state, not a failed render. A primary fill at 50%
+   opacity measured 2.34:1 in the light theme — below AA, and it looked broken. */
+.btn[disabled] { cursor: not-allowed; background: transparent; color: var(--sp-muted);
+  border: 1px solid var(--sp-border); }
 .btn-hint { opacity: 0.6; font-size: 10px; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: flex-start; }
 .btn-cell { display: inline-flex; flex-direction: column; align-items: flex-start; }

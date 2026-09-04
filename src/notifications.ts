@@ -56,7 +56,7 @@ export class Notifier implements vscode.Disposable {
             detail: t.detail, warnings: t.warnings?.length ?? 0,
             ...(o ? { exitCode: o.exitCode } : {}),
             ...(t.metrics && Object.keys(t.metrics).length ? { metrics: t.metrics } : {}),
-          });
+          }, vscode.workspace.isTrusted);
         }
         if (state === 'complete' && n.onComplete) this.info(`✓ ${t.task} completed in ${formatDuration(t.elapsed)}${t.detail ? ` — ${t.detail}` : ''}`);
         if (state === 'complete' && n.onSlow && settings.runHistory.anomalies) {

@@ -43,7 +43,7 @@ export function renderSections(data: DashboardData, settings: Settings, ctx: Ren
   for (const id of settings.sectionOrder) {
     if (!enabled(id)) continue;
     switch (id) {
-      case 'summary': parts.push(renderSummary(data, settings, ctx.now)); break;
+      case 'summary': parts.push(renderSummary(data, settings, ctx.now, narrow)); break;
       case 'activeTask': parts.push(renderActiveTask(data, settings, ctx.now, o(id))); break;
       case 'warnings': parts.push(renderWarnings(data, o(id))); break;
       case 'lastCompleted': parts.push(renderLastCompleted(data, settings, ctx.now, o(id))); break;

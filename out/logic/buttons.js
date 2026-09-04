@@ -24,15 +24,19 @@ function buttonEnabled(rule, fallbackTask, history) {
     const value = latest.metrics?.[rule.metric];
     if (value === undefined)
         return OK;
-    const num = typeof value === 'number' ? value : Number(value);
     const shown = typeof value === 'number' ? String(value) : `"${value}"`;
     const fail = (test) => ({ enabled: false, reason: `last run had ${rule.metric} = ${shown}, ${test}` });
     if (rule.eq !== undefined) {
-        const same = typeof rule.eq === 'number' ? num === rule.eq : String(value) === String(rule.eq);
+        const same = typeof rule.eq === 'number' ? value === rule.eq : String(value) === String(rule.eq);
         return same ? OK : fail(`expected ${typeof rule.eq === 'number' ? rule.eq : `"${rule.eq}"`}`);
     }
-    if (!isFinite(num))
-        return OK; // a text metric cannot be compared numerically
+    // 🔴 Only a real number may be compared. Number('') and Number(null) are both 0, which made an
+    // empty or absent value disable the button with the nonsense reason
+    // 'last run had issues = "", needs more than 0'. Anything not numeric leaves it enabled: an
+    // unnecessary run costs far less than a control nobody can use.
+    if (typeof value !== 'number' || !isFinite(value))
+        return OK;
+    const num = value;
     if (rule.gt !== undefined && !(num > rule.gt))
         return fail(`needs more than ${rule.gt}`);
     if (rule.gte !== undefined && !(num >= rule.gte))

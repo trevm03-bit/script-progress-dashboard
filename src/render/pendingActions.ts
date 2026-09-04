@@ -14,10 +14,11 @@ export function renderPendingActions(data: DashboardData, settings: Settings, no
     // Distinguish "nothing outstanding" from "nothing ever marked actionable" — the second is a
     // wiring gap, and telling someone their to-do list is empty when nothing can reach it is a
     // small lie that takes a long time to notice.
-    const everMarked = data.history.some(r => (r.warningItems ?? []).some(w => w?.actionable));
+    const everMarked = data.history.some(r => Array.isArray(r.warningItems) && r.warningItems.some(w => w?.actionable));
     const body = everMarked
       ? empty('Nothing outstanding — the last successful run of every script reported no actionable findings.')
-      : empty('No script marks findings as actionable yet. Add actionable=True to a warning your scripts raise: p.warn("…", actionable=True).');
+      : empty('Nothing is marked as needing action yet. Mark a finding with Progress.warn("…", actionable=True) and it will appear here.',
+              { msg: 'walkthrough', label: 'Getting started', icon: 'book' });
     return section('pendingActions', 'Pending Actions', body, opts);
   }
 
@@ -38,7 +39,7 @@ export function renderPendingActions(data: DashboardData, settings: Settings, no
     }
     body += '</div>';
   }
-  body += `<div class="muted small pa-foot">${icon('info')}An item disappears when a later <b>successful</b> run of that script stops reporting it. A failed run never clears one.</div>`;
+  body += `<div class="muted small pa-foot">${icon('info')}<span>An item disappears when a later <b>successful</b> run of that script stops reporting it. A failed run never clears one.</span></div>`;
 
   return section('pendingActions', 'Pending Actions', body, {
     ...opts,

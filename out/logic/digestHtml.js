@@ -25,7 +25,14 @@ function digestHtml(data, settings, now, days = 7) {
     const P = [];
     P.push(`<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:${INK};max-width:760px">`);
     P.push(`<h2 style="margin:0 0 4px;font-size:18px">Script activity — ${esc(day(from))} to ${esc(day(now))}</h2>`);
-    const cov = (0, compliance_1.coverage)(rows, data.history, 0, 0, now);
+    // Same inputs as the dashboard computes, or the emailed number would disagree with the one on
+    // screen — which is the contradiction this project already fixed once and must not ship again.
+    const thresholds = Object.keys(settings.deltas.thresholds || {});
+    const outOfRange = thresholds.filter(name => {
+        const pts = data.deltas[name];
+        return !!pts?.length && (0, sparkline_1.outOfRange)(pts[pts.length - 1].value, settings.deltas.thresholds[name]);
+    }).length;
+    const cov = (0, compliance_1.coverage)(rows, data.history, outOfRange, thresholds.length, now, days, settings.coverage.weights, 100);
     if (cov.percent !== null) {
         P.push(`<p style="margin:0 0 14px;color:${MUTED};font-size:13px">Coverage ${cov.percent}% — ${esc(cov.inputs.map(i => i.detail).join(' · '))}</p>`);
     }
@@ -81,7 +88,7 @@ function digestHtml(data, settings, now, days = 7) {
     else {
         P.push(`<p style="color:${MUTED}">Nothing ran in this window.</p>`);
     }
-    const impact = (0, compliance_1.impactTotals)(data.impact, now);
+    const impact = (0, compliance_1.impactTotals)(data.impact, now, data.history);
     if (impact.length) {
         P.push(h3('Contributed'));
         P.push(`<ul style="margin:0 0 12px;padding-left:20px">`);

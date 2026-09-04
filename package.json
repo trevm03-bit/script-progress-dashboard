@@ -4,7 +4,7 @@
 
   "displayName": "Script Progress — Data Ops Dashboard",
 
-  "description": "One dashboard for your recurring jobs: did it run, what did it find, and is the trend improving. Live progress, run history, failure patterns and data-lineage. Local files only: no server, no telemetry.",
+  "description": "One dashboard for your recurring jobs: did it run, what did it find, and is the trend improving. Live progress, run history, failure patterns, and a map of what each script reads and writes. Local files only: no server, no telemetry.",
 
   "version": "1.5.0",
 
@@ -18,9 +18,9 @@
 
   "engines": { "vscode": "^1.80.0" },
 
-  "categories": ["Visualization", "Data Science", "Testing", "Other"],
+  "categories": ["Visualization", "Data Science", "Other"],
 
-  "keywords": ["etl", "etl monitoring", "data quality", "data operations", "reconciliation", "pipeline", "data engineering", "python", "job monitoring", "run history", "lineage", "observability", "long running scripts", "dashboard"],
+  "keywords": ["etl", "etl monitoring", "data operations", "reconciliation", "pipeline", "data engineering", "python", "job monitoring", "run history", "scheduled jobs", "long running scripts", "dashboard"],
 
   "repository": { "type": "git", "url": "https://github.com/trevm03-bit/script-progress-dashboard.git" },
 
@@ -40,9 +40,9 @@
 
       "supported": "limited",
 
-      "description": "Quick Action buttons and tasks run shell commands defined in settings. In an untrusted workspace, buttons defined by the workspace's own settings are ignored and no command is run.",
+      "description": "Quick Action buttons run shell commands from settings, and logsPath + events.file together let settings choose a folder this extension writes a file into. In an untrusted workspace all three are ignored: no command runs and nothing is written.",
 
-      "restrictedConfigurations": ["scriptProgress.quickActions.buttons"]
+      "restrictedConfigurations": ["scriptProgress.quickActions.buttons", "scriptProgress.logsPath", "scriptProgress.events.file"]
 
     }
 
@@ -332,7 +332,7 @@
 
           "scriptProgress.sections.accessMap": { "type": "boolean", "default": false, "order": 12, "description": "Access Map: which scripts touch which files, tables and services, drawn as a constellation with data lineage." },
 
-          "scriptProgress.dashboard.sectionOrder": { "type": "array", "items": { "type": "string", "enum": ["summary", "activeTask", "warnings", "lastCompleted", "quickActions", "processCalendar", "timeline", "deltaTracker", "metrics", "runHistory", "warningTrends", "scriptHealth", "accessMap"] }, "default": ["summary", "activeTask", "warnings", "lastCompleted", "quickActions", "processCalendar", "timeline", "deltaTracker", "metrics", "runHistory", "warningTrends", "scriptHealth", "accessMap"], "order": 13, "description": "Order of sections top to bottom. Sections not listed go last." },
+          "scriptProgress.dashboard.sectionOrder": { "type": "array", "items": { "type": "string", "enum": ["summary", "activeTask", "warnings", "lastCompleted", "quickActions", "processCalendar", "timeline", "deltaTracker", "metrics", "runHistory", "warningTrends", "scriptHealth", "accessMap"] }, "default": ["summary", "activeTask", "pendingActions", "warnings", "lastCompleted", "quickActions", "processCalendar", "timeline", "deltaTracker", "metrics", "runHistory", "warningTrends", "scriptHealth", "impact", "accessMap"], "order": 13, "description": "Order of sections top to bottom. Sections not listed go last." },
 
           "scriptProgress.dashboard.sidebarSections": { "type": "array", "items": { "type": "string", "enum": ["summary", "activeTask", "warnings", "lastCompleted", "quickActions", "processCalendar", "timeline", "deltaTracker", "metrics", "runHistory", "warningTrends", "scriptHealth", "accessMap"] }, "default": [], "order": 14, "markdownDescription": "Sections to show in the **sidebar** (the narrow view). Empty = the same sections as the dashboard tab. Use this to keep only the core in the sidebar." },
 
@@ -650,6 +650,7 @@
 
           "scriptProgress.metricsExplorer.totals": { "type": "boolean", "default": true, "description": "Show a total and mean per metric across the runs in view. Useful for anything worth accumulating, such as a per-run cost." },
 
+          "scriptProgress.report.includeIdentity": { "type": "boolean", "default": false, "markdownDescription": "Include the username and git commit of each run in the **exported HTML report** and the **formatted digest**. Off by default: those are the outputs you send to other people." },
           "scriptProgress.events.file": { "type": "boolean", "default": false, "markdownDescription": "Write `last_event.json` into the logs folder whenever a run completes, fails, stalls or exits, so a tool outside VS Code can watch for it. Off by default: this is the only file the extension writes. It stays local — the extension makes no network requests of any kind." }
 
         }

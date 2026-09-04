@@ -191,7 +191,10 @@ export function processStatus(process: ProcessConfig, history: RunRecord[], now:
     }
     case 'weekly': {
       const weekStart = startOfIsoWeek(now);
-      const prevWeekStart = new Date(weekStart.getTime() - 7 * 86400000);
+      // Local-date arithmetic, not milliseconds: subtracting 7*86400000 lands on 23:00 the
+      // previous Sunday after a spring DST change, which reclassifies a weekly process twice a
+      // year. Every other date in this file already uses the constructor form.
+      const prevWeekStart = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() - 7);
       donePeriod = !!lastSuccessDate && lastSuccessDate >= weekStart;
       if (donePeriod) { status = 'done'; note = 'ran this week'; }
       else if (now > dueDate(process, now)) { status = 'overdue'; note = 'missed this week'; }

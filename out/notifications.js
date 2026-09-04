@@ -81,7 +81,7 @@ class Notifier {
                         detail: t.detail, warnings: t.warnings?.length ?? 0,
                         ...(o ? { exitCode: o.exitCode } : {}),
                         ...(t.metrics && Object.keys(t.metrics).length ? { metrics: t.metrics } : {}),
-                    });
+                    }, vscode.workspace.isTrusted);
                 }
                 if (state === 'complete' && n.onComplete)
                     this.info(`✓ ${t.task} completed in ${(0, time_1.formatDuration)(t.elapsed)}${t.detail ? ` — ${t.detail}` : ''}`);

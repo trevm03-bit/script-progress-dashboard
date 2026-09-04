@@ -11,9 +11,6 @@ bar line, and a run history that flags runs which took far longer than usual —
 moved further than they should have. Add one call per resource and you get a map of every table,
 file and service your scripts touch, with lineage.
 
-It watches scripts, but the question it exists to answer is about the work: whether the routine is
-holding together, what the last run turned up, and what is still outstanding.
-
 ![A script runs in the dashboard: the progress bar advances step by step, the log tail fills, warnings appear, and the run lands in history](docs/hero.gif)
 
 ```python
@@ -45,25 +42,37 @@ scroll or opening the log file afterwards to find out it failed on step 2 of 7.
 Any language works. The JSON files are the contract and the schemas are documented below; the
 Python and Node reporters are just the two that ship.
 
-## What you get
+## The views
 
-| Section | Shows | Toggle |
-|---|---|---|
-| Summary strip | Runs today, failures, warnings, next due, stale scripts, metrics out of range | `scriptProgress.sections.summary` (on) |
-| Active Task | Progress bar, step, live elapsed, ETA, log tail, metrics, artifacts — one card per running script | `scriptProgress.sections.activeTask` (on) |
-| Warnings | Warnings the running script raised; hidden automatically when there are none | `scriptProgress.sections.warnings` (on) |
-| Last Completed | Status, duration, warnings and the metrics of the most recent run | `scriptProgress.sections.lastCompleted` (on) |
-| Pending Actions | Findings marked `actionable`, from each script's latest **successful** run; cleared only by a later successful run that stops reporting them (`pendingActions.maxAgeDays` bounds how far back it looks) | `scriptProgress.sections.pendingActions` (on) |
-| Run History | Table of recent runs with filters, sorting, click-to-expand detail, metric deltas against the previous run, and **slow** / **SLA** flags | `scriptProgress.sections.runHistory` (on) |
-| Run Timeline | Swim lanes per script over the last day or week — when runs happened, how long, what overlapped | `scriptProgress.sections.timeline` (on) |
-| Process Calendar | Expected daily / weekly / monthly processes and whether they have run | `scriptProgress.sections.processCalendar` (off) |
-| Quick Actions | Buttons that run your scripts in a terminal or as a task | `scriptProgress.sections.quickActions` (off) |
-| Delta Tracker | Sparkline per tracked metric, with thresholds | `scriptProgress.sections.deltaTracker` (off) |
-| Metrics Explorer | Every metric a script reports, run by run, with sparklines and change since last run | `scriptProgress.sections.metrics` (off) |
-| Warning Trends | Which warnings recur, on which scripts, rising or falling over the last two weeks | `scriptProgress.sections.warningTrends` (off) |
-| Script Health | Last run per script, result dots, failure rate, duration trend, stale detection | `scriptProgress.sections.scriptHealth` (off) |
-| Impact Summary | Running totals from `Progress.impact()` — overall, this month, and how many runs are behind each figure | `scriptProgress.sections.impact` (off) |
-| Access Map | Scripts and the files, tables and services they touch, drawn as a constellation with lineage (what feeds what), a minimap, replay and PNG export | `scriptProgress.sections.accessMap` (off) |
+Fifteen sections. **Six are on out of the box** — enough to be useful the moment a script reports —
+and the rest are a checkbox away, in **Script Progress: Choose Dashboard Sections…** or Settings.
+Every one can be reordered, collapsed, and shown or hidden independently in the sidebar and the
+editor tab.
+
+### On by default
+
+| Section | What it shows |
+|---|---|
+| **Summary strip** | The numbers worth seeing before anything else, as tiles: coverage, runs today, failures today, warnings today, what is next due, stale scripts, metrics outside their thresholds, the dominant failure category, and the last run's result and duration. Narrow sidebars show the first five. |
+| **Active Task** | One card per *currently running* script: the step counter and progress bar, the live elapsed time ticking every second, an ETA from previous runs of the same task, the last few log lines, metric cards as they are recorded, and links to the files it has produced. Sub-step progress fills the bar *within* a long step. |
+| **Pending Actions** | Findings your scripts marked as needing a person — `p.warn("…", actionable=True)` — grouped by script, with the count and category each carries. Taken from every script's most recent **successful** run, so an item clears itself when a later successful run stops reporting it, and a failed run never clears one. |
+| **Warnings** | Everything the running script has warned about this run, newest first, with timestamps. Hides itself entirely when there is nothing to say. |
+| **Last Completed** | The most recent finished run: pass or fail, duration, warning count, its summary line, and its metrics as cards. |
+| **Run History** | A table of recent runs — status, task, date, duration, warnings, summary. Filter by text or by chips (OK / failed / with warnings / slow), sort any column, and expand a row for its metrics with the change since the previous run, its warnings in full, the resources it touched, its artifacts, who ran it and from which commit. Flags runs that were unusually **slow** or over their **SLA**, and metrics that landed far from their own history. Every row offers **Compare with…**. |
+| **Run Timeline** | Swim lanes per script over the last day (or week), showing when each run happened, how long it took and what overlapped with what. |
+
+### Switch on as you need them
+
+| Section | What it shows |
+|---|---|
+| **Process Calendar** | The daily, weekly and monthly processes you expect, and whether each has actually run in its period. Per row: a status mark, a plain-English note, a dot per recent period with a compliance percentage (*ran in 11 of the last 12*), when it is next due, and a month grid of every run. Understands **phases** (`2 of 3 phases` until all are done), **dependencies** (*blocked — waiting on Upstream Extract*), processes that have never reported (*not wired yet*, never "overdue"), and reminders a set number of days before a due date. |
+| **Quick Actions** | Buttons that run your scripts, grouped however you like, in a reusable terminal or as VS Code tasks. Each shows its task's last result, disables itself while that task is running, can require confirmation, can ask for a value before running (`${prompt:Month}`), and can disable itself with a reason when the last run says it is not needed. |
+| **Delta Tracker** | A sparkline per tracked metric with its current value, min, max, change and trend. Draws your acceptable range as guide lines and a separate **target** line, flags values outside the range, and when one run measured the same thing twice it reads *found 4.2K, resolved to 0*. |
+| **Metrics Explorer** | Every metric each script reports, run by run: a table with a sparkline per numeric metric, the change against the previous run, and a **total** and mean across the runs in view — so a per-run cost or row count reads as a period figure. |
+| **Warning Trends** | Which warnings keep coming back, on which scripts, and whether they are rising or falling over the window. Groups by the category your script gave the warning when it gave one, otherwise by wording, so *"310 issues"* and *"311 issues"* count as the same recurring finding. |
+| **Script Health** | One row per script: when it last ran, a dot per recent result, its failure rate, its duration trend, and whether it has gone stale against the freshness you expect. |
+| **Impact Summary** | Running totals of what your scripts have contributed via `Progress.impact()` — overall, this month, and how many runs are behind each figure. |
+| **Access Map** | A constellation of your scripts and the files, tables and services they touch, drawn from `p.access()` calls. Write edges stand out from reads; click any node for its lineage — what feeds it, and which scripts break if it fails. Force or radial layout, search, filter by type, a minimap, replay of the last run, and PNG export. Shows only what scripts declared, so treat it as a floor rather than a complete picture. |
 
 And, from any surface, **Export HTML Report** writes a self-contained page of the whole dashboard
 — sections, tables and a static map — to attach to a ticket or send to whoever asked "did it run?".
@@ -148,6 +157,22 @@ Air-gapped or offline machine? The `.vsix` route and an unpacked-folder route ar
   detects this and says so, but that is the thing to check first. And if VS Code refuses to save
   any setting at all ("unable to write"), the target file usually has a JSON syntax error: check
   the Problems panel before anything else.
+
+## Where your scripts run
+
+The extension watches a folder. Your scripts must be able to write to a folder this VS Code window
+can read, which means one of:
+
+- **The same machine** — the ordinary case.
+- **A mounted or synced share.** Works, with a caveat: on a sync-backed folder (OneDrive, Dropbox)
+  the sync client can briefly lock a file mid-write. The reporter retries and degrades to a printed
+  note rather than failing your job, but very chatty scripts will occasionally skip an update.
+- **A remote box, via Remote-SSH or Dev Containers** — because then the editor is *on* the server
+  and the folder is local to it.
+
+It does **not** work for a job running on a server with no shared path to your editor. There is no
+agent and no network listener; "nothing to host" means there is nothing to install, not that it can
+reach across machines.
 
 ## Report progress
 
@@ -319,8 +344,11 @@ reads *"X ran it at 10:08"* and a change in behaviour can be lined up against a 
 Both are best-effort and never interrupt a run.
 
 Opt out with `PROGRESS_NO_USER=1` and `PROGRESS_NO_GIT=1`, or set `PROGRESS_USER` to something
-else. ⚠️ The username is a personal identifier and it travels into `run_history.json`, the CSV
-export and the HTML report — turn it off if those are ever shared.
+else. ⚠️ The username is a personal identifier. It is stored in `run_history.json` and appears in
+the **HTML report** and the **formatted digest** — so it reaches anyone you send those to. It is
+*not* in the CSV export. `scriptProgress.report.includeIdentity` (off by default) controls whether
+it is included when you export or copy; the environment variables control whether it is recorded at
+all.
 
 ### Comparing two runs
 
@@ -334,7 +362,11 @@ the top, as does comparing two different scripts.
 
 ### Node
 
-`reporters/progress.js` is the same contract with no dependencies (CommonJS). The methods match
+`reporters/progress.js` covers the core contract with no dependencies (CommonJS).
+⚠️ **It is not yet at parity with the Python reporter.** `impact()`, failure `category`, and the
+structured `warn()` fields (`count`, `category`, `severity`, `actionable`) are Python-only for now,
+so a Node script cannot populate Pending Actions, the Impact Summary or failure patterns. The JSON
+files are the contract, so a Node script can write those fields itself in the meantime. The methods match
 the Python ones, camelCased: `step`, `detail`, `substep`, `log`, `warn`, `metric`, `artifact`,
 `trackDelta`, `access`, `complete`.
 
@@ -364,10 +396,9 @@ them exactly.
 process, its cadence, its phases in order, the command behind each step, how long each usually
 takes, what it reads and writes, and what it produces.
 
-🔴 **It marks its own blind spots, and you must fill them in.** It cannot see a step performed by a
-person — an approval, a file sent out and returned — so it flags the gap between phases instead of
-quietly omitting it. A runbook is read by whoever is covering in an emergency, and a confident
-document with a missing step is worse than no document. Steps it has never seen run say so plainly.
+**It marks its own blind spots, and you must fill them in.** It cannot see a step performed by a
+person — an approval, a file sent out and returned — so it flags a gap before, between and after
+every step, and opens with a DRAFT banner until you delete it. Steps it has never seen run say so.
 
 ## Sending a digest
 
@@ -376,9 +407,8 @@ content with formatting, ready to paste into an email.
 
 Formatted copy is Windows-only: VS Code's clipboard API writes plain text, so the extension sets
 the `CF_HTML` clipboard format through PowerShell. Where that is unavailable or blocked, it writes
-the digest to an HTML file and offers to open it, so you can copy it from the rendered page — and
-it always sets a plain-text flavour alongside, so the worst case is a clean plain-text paste rather
-than a wall of tags.
+the digest to an HTML file and offers to open it so you can copy it from the rendered page. A
+plain-text flavour is always set alongside, so the worst case is a clean plain-text paste.
 
 ## Templates
 
@@ -488,9 +518,9 @@ A worked example, in workspace or user `settings.json` (every setting is describ
 Findings your scripts marked `actionable=True`, taken from each script's most recent **successful**
 run. On by default; it renders as a single quiet line when there is nothing outstanding.
 
-Nothing is stored. The list is derived, so an item disappears exactly when a later successful run
-of that script stops reporting it — and 🔴 **a failed run never clears one**, because a run that
-died before reaching the check has not told you anything about whether the finding is still there.
+Nothing is stored: the list is derived, so an item disappears when a later successful run of that
+script stops reporting it. **A failed run never clears one** — a run that died before reaching the
+check has told you nothing about whether the finding is still there.
 
 ### Impact Summary
 
@@ -534,9 +564,7 @@ figure — a process wired up last week is not "0% for the year". Configure with
 it has been missed — `"reminderDays": 2` fires once, two days out. The calendar always knew this;
 until now it could only report the past.
 
-A process that has **never** reported is shown as *not wired yet* rather than overdue. That is
-deliberate: a permanent red for something that was never connected teaches you to ignore red,
-which costs the calendar the only signal it exists to give.
+A process that has **never** reported is shown as *not wired yet* rather than overdue.
 
 **Processes made of several phases.** When a process is not one script — phases that run on
 different days, sometimes waiting on someone else — list them in `subtasks`:
@@ -547,9 +575,7 @@ different days, sometimes waiting on someone else — list them in `subtasks`:
 ```
 
 Each name matches as a prefix, like `name` itself. The process reads `2 of 3 phases` with a pip
-per phase until every one has run successfully in the period, and only then says done. Without
-this, finishing the first phase reports the whole process as done — which is worse than showing
-nothing, because it asserts something untrue.
+per phase until every one has run successfully in the period, and only then says done.
 
 All date math is local time. `scriptProgress.processCalendar.view` picks `list`, `grid` (a month
 grid per process) or `both`; `scriptProgress.processCalendar.upcoming` adds a "next due" line. A
@@ -592,10 +618,8 @@ task before offering a button:
   "enableWhen": { "metric": "issues", "gt": 0 } }
 ```
 
-The button stays **visible and disabled, with the reason on hover** — *"last run had issues = 0,
-needs more than 0"* — rather than disappearing. A control that vanishes leaves you hunting for it,
-and the reason is usually what you wanted to know. If the metric or the run is missing, the button
-stays enabled: an unnecessary run costs less than a control nobody can use.
+The button stays visible and disabled, with the reason on hover — *"last run had issues = 0,
+needs more than 0"*. If the metric or the run is missing it stays enabled.
 
 ### Run Timeline
 
@@ -660,7 +684,7 @@ One figure in the summary strip for *is the routine holding together*, combining
 adherence, run success and metrics-in-range. Its three inputs are always in the tooltip —
 `4/4 processes on time · 53/59 runs in 30 days · 0/1 metrics in range`.
 
-🔴 **It is not a data-quality score, and it is not named like one on purpose.** This extension can
+**It is not a data-quality score, and it is not named like one on purpose.** This extension can
 see whether your jobs ran, whether they succeeded, and how the numbers they report *about
 themselves* moved. It cannot see your data. A composite is honest while you can check what went
 into it; it stops being honest the moment its name promises more than its inputs support.
@@ -806,8 +830,15 @@ High Contrast without configuration. Four are contributed and can be overridden:
 
 The extension reads JSON files in your logs folder and renders them. It makes no network
 requests, sends no telemetry, bundles no runtime dependencies, and calls no AI service. The only
-thing it ever executes is a Quick Action command you wrote yourself, in your own terminal — and
-not at all in an untrusted workspace.
+thing it runs on your behalf is a Quick Action command you wrote yourself, in your own terminal —
+and not at all in an untrusted workspace.
+
+Two other processes start, both local and both avoidable:
+
+- The Python reporter runs `git rev-parse` once per run to record the commit. `PROGRESS_NO_GIT=1`
+  stops it. It resolves `git` from `PATH` only, never from the working directory.
+- Copying a formatted digest starts a short-lived PowerShell process on Windows to set the
+  clipboard, from the absolute path in `System32`. It reads nothing and sends nothing anywhere.
 
 It records the OS username and git commit per run so history can say who ran what; both are
 opt-out (`PROGRESS_NO_USER=1`, `PROGRESS_NO_GIT=1`), and the username reaches `run_history.json`,
@@ -816,11 +847,10 @@ the CSV export and the HTML report.
 Formatted-digest copying starts a short-lived PowerShell process on Windows to set the clipboard.
 It reads nothing and sends nothing anywhere.
 
-It writes nothing else, with one opt-in exception: turn on `scriptProgress.events.file` and it writes
-`last_event.json` into your logs folder when a run completes, fails, stalls or exits, so a tool
-outside VS Code can watch for it. That is a local file. There is deliberately no webhook option —
-an outbound request would make the paragraph above false, and that promise is the reason this is
-installable in places that forbid the alternatives.
+It writes nothing else, with one opt-in exception: turn on `scriptProgress.events.file` and it
+writes `last_event.json` into your logs folder when a run completes, fails, stalls or exits, so a
+tool outside VS Code can watch for it. That is a local file — there is no webhook option, by
+design.
 
 It activates after startup in every window, and that costs one folder check and a file watcher.
 When the logs folder does not exist, nothing else runs until it appears.
@@ -839,6 +869,18 @@ Press **F5** in this folder to launch an Extension Development Host on the demo 
 
 ## Known limits
 
+**History is capped at 100 runs and warnings at 20 per run.** Both caps drop the oldest first, and
+both have consequences worth knowing: with several scripts a day, a task's last successful run can
+age out of history, and when it does its **Pending Actions disappear with it** and the coverage
+figure starts counting "the last 100 runs" rather than the last 30 days (it says so when that
+happens). Warnings marked `actionable` are exempt from the per-run cap — they are never dropped.
+Archive history before it rolls if you need to keep it.
+
+**The Access Map shows only what scripts declared.** A job nobody instrumented, a table read
+through a view under another name, or anything running outside the reporter is invisible to it. So
+"what breaks if this fails?" is answered from declared access only — treat it as a floor, not a
+complete picture.
+
 - A relative `scriptProgress.logsPath` resolves against the **first** workspace folder in a
   multi-root workspace. Use an absolute path if that is not the one you mean.
 - Two scripts finishing in the very same instant can race on `run_history.json`. The reporter
@@ -848,6 +890,11 @@ Press **F5** in this folder to launch an Extension Development Host on the demo 
   Access Map record both regardless.
 - Requires VS Code 1.80 or newer. The unpacked-folder install route additionally needs the
   `extensions.json` entry described in `install/README.md` on 1.136.
+
+## Changelog
+
+Every release is listed in [CHANGELOG.md](CHANGELOG.md), and the reasoning behind the bigger
+judgement calls — including the ones deliberately *not* built — is in [ROADMAP.md](ROADMAP.md).
 
 ## Credits
 

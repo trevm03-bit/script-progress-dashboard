@@ -137,6 +137,28 @@ def _current_user() -> str:
         return ""
 
 
+def _find_on_path(name: str) -> str:
+    """
+    Absolute path to an executable, searching PATH only.
+
+    🔴 Never hand a bare name to subprocess on Windows: CreateProcess resolves it against the
+    CURRENT DIRECTORY before PATH, so a script run from a shared drive or a downloads folder
+    would execute an attacker's git.exe sitting next to it. `shutil.which` is no help here - on
+    Windows it deliberately searches the current directory too. So walk PATH ourselves and return
+    an absolute path, or nothing.
+    """
+    exts = [""] if os.name != "nt" else [e for e in os.environ.get("PATHEXT", ".EXE").split(os.pathsep) if e]
+    for folder in os.environ.get("PATH", "").split(os.pathsep):
+        folder = folder.strip('"')
+        if not folder or not os.path.isabs(folder):
+            continue          # a relative PATH entry resolves against the cwd; refuse it
+        for ext in exts:
+            candidate = os.path.join(folder, name + ext)
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+    return ""
+
+
 def _git_commit(start: Path) -> str:
     """
     The commit the scripts are running from, so a change in behaviour can be lined up against a
@@ -145,10 +167,13 @@ def _git_commit(start: Path) -> str:
     """
     if os.environ.get("PROGRESS_NO_GIT"):
         return ""
+    exe = _find_on_path("git")
+    if not exe:
+        return ""
     try:
         import subprocess
         out = subprocess.run(
-            ["git", "-C", str(start), "rev-parse", "--short", "HEAD"],
+            [exe, "-C", str(start), "rev-parse", "--short", "HEAD"],
             capture_output=True, text=True, timeout=3,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
@@ -303,11 +328,14 @@ class Progress:
             try:
                 item["count"] = int(count)
             except (TypeError, ValueError):
-                pass
+                self._say(f"  NOTE: count {count!r} ignored (not a whole number)")
         if category:
             item["category"] = str(category)[:60]
-        if severity in ("info", "warn", "error"):
-            item["severity"] = severity
+        if severity:
+            if severity in ("info", "warn", "error"):
+                item["severity"] = severity
+            else:
+                self._say(f"  NOTE: severity {severity!r} ignored (expected info, warn or error)")
         if actionable:
             item["actionable"] = True
         self.warnings.append(item)
@@ -515,7 +543,7 @@ class Progress:
             "substep": self.current.get("substep"),
             "elapsed": round(elapsed, 1),
             "eta": self._estimate_eta(elapsed) if status == "running" else None,
-            "warnings": self.warnings[-WARNINGS_IN_PROGRESS:],
+            "warnings": self._warnings_for_slot(),
             "log": self.log_lines[-LOG_KEEP:],
             "metrics": dict(self.metrics),
             "artifacts": list(self.artifacts),
@@ -589,7 +617,7 @@ class Progress:
             "runId": self.run_id,
             "startedAt": self.started_at,
             "metrics": dict(self.metrics),
-            "warningItems": self.warnings[-WARNINGS_IN_HISTORY:],
+            "warningItems": self._warnings_for_history(),
             "accessed": list(self.accessed),
             "artifacts": list(self.artifacts),
         }
@@ -612,6 +640,39 @@ class Progress:
             except PermissionError:
                 time.sleep(0.05 * (attempt + 1))
         self._say(f"  NOTE: could not update {self.history_file.name} (file busy); run not recorded")
+
+    def _warnings_for_slot(self):
+        """
+        Warnings to persist in the slot file.
+
+        🔴 The slot is not just a display cache: every CLI subcommand runs in a NEW process and
+        rebuilds its state by reading this back, so whatever is dropped here is gone for good —
+        including from the history row written at the end. Capping it at the display limit meant
+        a shell-driven run could never record more than 10 warnings, and an actionable finding
+        raised early simply vanished. Actionable items are always kept; ordinary ones keep the
+        most recent, up to the history limit rather than the display limit.
+        """
+        actionable = [w for w in self.warnings if w.get("actionable")]
+        ordinary = [w for w in self.warnings if not w.get("actionable")][-WARNINGS_IN_HISTORY:]
+        keep = {id(w) for w in actionable} | {id(w) for w in ordinary}
+        return [w for w in self.warnings if id(w) in keep]
+
+    def _warnings_for_history(self):
+        """
+        Warnings to keep in the history row.
+
+        🔴 An ACTIONABLE warning is never dropped. The cap exists to stop a chatty script bloating
+        the history file, but a chatty script is exactly the one whose findings matter, and the
+        dashboard's Pending Actions list is built from this field — so truncating an actionable
+        item silently retires a real finding and makes the dashboard claim nothing is outstanding.
+        Ordinary warnings still yield to the cap; actionable ones are kept in full.
+        """
+        actionable = [w for w in self.warnings if w.get("actionable")]
+        ordinary = [w for w in self.warnings if not w.get("actionable")]
+        kept = ordinary[-WARNINGS_IN_HISTORY:]
+        # Preserve the original order rather than grouping by kind.
+        keep_ids = {id(w) for w in kept} | {id(w) for w in actionable}
+        return [w for w in self.warnings if id(w) in keep_ids]
 
     def _read_json(self, path: Path, default=None):
         try:
@@ -746,6 +807,8 @@ def _take_flag(args, name, has_value=True):
         args.pop(i)
         return True
     if i + 1 >= len(args):
+        # Remove the dangling flag anyway: leaving it behind put "--count" into the warning text.
+        args.pop(i)
         return None
     args.pop(i)
     return args.pop(i)

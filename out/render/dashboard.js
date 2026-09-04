@@ -35,7 +35,7 @@ function renderSections(data, settings, ctx) {
             continue;
         switch (id) {
             case 'summary':
-                parts.push((0, summary_1.renderSummary)(data, settings, ctx.now));
+                parts.push((0, summary_1.renderSummary)(data, settings, ctx.now, narrow));
                 break;
             case 'activeTask':
                 parts.push((0, activeTask_1.renderActiveTask)(data, settings, ctx.now, o(id)));

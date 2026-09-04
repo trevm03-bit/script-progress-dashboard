@@ -96,16 +96,20 @@ function metricAnomalies(run, history, factor = 2, ignore = [], minSample = 4) {
         // the most normal thing a zero-valued metric can do.
         if (baseline === 0) {
             if (raw !== 0)
-                out.push({ key, value: raw, baseline, factor: 0, direction: 'up', sample: series.length });
+                out.push({ key, value: raw, baseline, factor: 0, direction: raw > 0 ? 'up' : 'down', sample: series.length });
             continue;
         }
-        const f = raw / baseline;
-        if (f >= factor)
-            out.push({ key, value: raw, baseline, factor: f, direction: 'up', sample: series.length });
-        else if (f > 0 && f <= 1 / factor)
-            out.push({ key, value: raw, baseline, factor: f, direction: 'down', sample: series.length });
-        else if (f <= 0 && baseline > 0)
-            out.push({ key, value: raw, baseline, factor: f, direction: 'down', sample: series.length });
+        // 🔴 Compare MAGNITUDES, and read the direction from the values themselves. Dividing signed
+        // numbers inverted everything for a negative baseline: a metric going from -100 to -1000 (ten
+        // times worse) reported "down", and -100 to 0 (a collapse) was not reported at all, because
+        // the ratio maths only ever made sense for positive medians. A variance, a net delta or a
+        // balance change is naturally negative, and those are exactly the numbers worth watching.
+        const ratio = Math.abs(raw) / Math.abs(baseline);
+        const flipped = (raw > 0 && baseline < 0) || (raw < 0 && baseline > 0);
+        const direction = raw > baseline ? 'up' : 'down';
+        if (flipped || ratio >= factor || ratio <= 1 / factor) {
+            out.push({ key, value: raw, baseline, factor: ratio, direction, sample: series.length });
+        }
     }
     return out;
 }

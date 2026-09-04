@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.copyHtmlRich = copyHtmlRich;
 // Putting FORMATTED text on the clipboard, so a digest pastes into an email as a digest rather
@@ -15,6 +48,26 @@ exports.copyHtmlRich = copyHtmlRich;
 // fallback (open the rendered page and copy from there) and a silent failure would send markup
 // to a colleague.
 const child_process_1 = require("child_process");
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
+/**
+ * The ABSOLUTE path to Windows PowerShell.
+ *
+ * 🔴 Never spawn it as a bare "powershell.exe". Windows resolves a bare executable name against
+ * the current directory BEFORE PATH, and the extension host's working directory is wherever the
+ * editor was launched from — routinely the workspace folder. A cloned repo containing its own
+ * powershell.exe would then run as the user the first time anyone copied a digest.
+ */
+function powershellPath() {
+    const root = process.env.SystemRoot || process.env.windir || 'C:\Windows';
+    const exe = path.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    try {
+        return fs.existsSync(exe) ? exe : null;
+    }
+    catch {
+        return null;
+    }
+}
 /**
  * Try to place `html` on the clipboard as formatted text. Windows only; resolves `ok: false`
  * with a reason everywhere else, and never throws or hangs (hard 10s cap).
@@ -23,6 +76,9 @@ function copyHtmlRich(html) {
     if (process.platform !== 'win32') {
         return Promise.resolve({ ok: false, reason: 'formatted copy needs Windows' });
     }
+    const exe = powershellPath();
+    if (!exe)
+        return Promise.resolve({ ok: false, reason: 'PowerShell was not found where Windows keeps it' });
     const script = powershell();
     return new Promise(resolve => {
         let settled = false;
@@ -32,7 +88,10 @@ function copyHtmlRich(html) {
         } };
         let child;
         try {
-            child = (0, child_process_1.spawn)('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { windowsHide: true });
+            child = (0, child_process_1.spawn)(exe, 
+            // -STA is required: Clipboard.SetDataObject throws on a multi-threaded apartment, and
+            // relying on 5.1's default would break the moment a different host is used.
+            ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-Command', script], { windowsHide: true, stdio: ['pipe', 'ignore', 'pipe'] });
         }
         catch (e) {
             return done({ ok: false, reason: `PowerShell could not start: ${e.message}` });
@@ -44,6 +103,10 @@ function copyHtmlRich(html) {
         catch { /* already gone */ } done({ ok: false, reason: 'PowerShell did not respond' }); }, 10000);
         let stderr = '';
         child.stderr?.on('data', d => { stderr += String(d); });
+        // If the shell exits before draining stdin — a policy block, its own early exit, or a digest
+        // larger than the pipe buffer — the write fails ASYNCHRONOUSLY. With no listener that is an
+        // uncaught exception in the extension host, i.e. this feature could take the editor down.
+        child.stdin?.on('error', () => { });
         child.on('error', e => { clearTimeout(timer); done({ ok: false, reason: `PowerShell could not start: ${e.message}` }); });
         child.on('close', code => {
             clearTimeout(timer);
@@ -97,7 +160,6 @@ $plain = [System.Net.WebUtility]::HtmlDecode($plain)
 $data = New-Object System.Windows.Forms.DataObject
 $data.SetData([System.Windows.Forms.DataFormats]::Html, $cf)
 $data.SetData([System.Windows.Forms.DataFormats]::UnicodeText, $plain)
-$t = [System.Threading.Thread]::CurrentThread
 [System.Windows.Forms.Clipboard]::SetDataObject($data, $true)
 exit 0
 `.trim();

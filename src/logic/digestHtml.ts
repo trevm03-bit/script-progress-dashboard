@@ -7,7 +7,7 @@ import { DashboardData, RunRecord, Settings } from '../types';
 import { calendarRows } from './calendar';
 import { coverage, impactTotals, pendingActions } from './compliance';
 import { failurePatterns, patternText } from './failures';
-import { formatMetric } from './sparkline';
+import { formatMetric, outOfRange as outOfRangeValue } from './sparkline';
 import { formatDuration, parseIso } from './time';
 
 const esc = (v: unknown) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -33,7 +33,14 @@ export function digestHtml(data: DashboardData, settings: Settings, now: Date, d
   P.push(`<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:${INK};max-width:760px">`);
   P.push(`<h2 style="margin:0 0 4px;font-size:18px">Script activity — ${esc(day(from))} to ${esc(day(now))}</h2>`);
 
-  const cov = coverage(rows, data.history, 0, 0, now);
+  // Same inputs as the dashboard computes, or the emailed number would disagree with the one on
+  // screen — which is the contradiction this project already fixed once and must not ship again.
+  const thresholds = Object.keys(settings.deltas.thresholds || {});
+  const outOfRange = thresholds.filter(name => {
+    const pts = data.deltas[name];
+    return !!pts?.length && outOfRangeValue(pts[pts.length - 1].value, settings.deltas.thresholds[name]);
+  }).length;
+  const cov = coverage(rows, data.history, outOfRange, thresholds.length, now, days, settings.coverage.weights, 100);
   if (cov.percent !== null) {
     P.push(`<p style="margin:0 0 14px;color:${MUTED};font-size:13px">Coverage ${cov.percent}% — ${esc(cov.inputs.map(i => i.detail).join(' · '))}</p>`);
   }
@@ -85,7 +92,7 @@ export function digestHtml(data: DashboardData, settings: Settings, now: Date, d
     P.push(`<p style="color:${MUTED}">Nothing ran in this window.</p>`);
   }
 
-  const impact = impactTotals(data.impact, now);
+  const impact = impactTotals(data.impact, now, data.history);
   if (impact.length) {
     P.push(h3('Contributed'));
     P.push(`<ul style="margin:0 0 12px;padding-left:20px">`);

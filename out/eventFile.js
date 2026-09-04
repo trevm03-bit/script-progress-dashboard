@@ -55,7 +55,17 @@ exports.EVENT_FILE = 'last_event.json';
  * dashboard, and never produces a dialog — the user asked for a side file, not for a new way
  * for their editor to complain at them.
  */
-function writeEvent(logsDir, event) {
+/**
+ * @param trusted the caller's workspace-trust decision. 🔴 Pass it — do not default it. `logsPath`
+ * comes from settings, which a cloned repo can supply, and it may name any absolute folder, so an
+ * untrusted workspace must not be able to have the extension create a directory and write a file
+ * wherever it likes. Both keys are declared restricted in the manifest too; this is the belt to
+ * that pair of braces. It is a parameter rather than a `vscode` import so this module stays pure
+ * and testable in plain Node, which is how the rest of the codebase is arranged.
+ */
+function writeEvent(logsDir, event, trusted) {
+    if (!trusted)
+        return;
     try {
         fs.mkdirSync(logsDir, { recursive: true });
         const file = path.join(logsDir, exports.EVENT_FILE);

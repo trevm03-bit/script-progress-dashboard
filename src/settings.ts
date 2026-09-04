@@ -101,7 +101,15 @@ export function readSettings(): Settings {
       points: num('deltaTracker.points', 50, 2),
     },
     pendingActions: { maxAgeDays: num('pendingActions.maxAgeDays', 90, 1, 3650) },
-    coverage: { show: bool('coverage.show', true) },
+    report: { includeIdentity: bool('report.includeIdentity', false) },
+    coverage: {
+      show: bool('coverage.show', true),
+      weights: {
+        schedule: num('coverage.weights.schedule', 2, 0, 10),
+        success: num('coverage.weights.success', 2, 0, 10),
+        metrics: num('coverage.weights.metrics', 1, 0, 10),
+      },
+    },
     staleHours: num('scriptHealth.staleHours', 168, 1),
     health: { resultDots: num('scriptHealth.resultDots', 5, 0, 20) },
     accessMap: {

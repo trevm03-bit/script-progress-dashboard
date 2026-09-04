@@ -75,7 +75,7 @@ function historyRow(r, settings, all) {
         parts.push(`<div class="detail-block"><div class="detail-h">Duration</div><div class="small ${verdict.slow ? 'status-warn' : 'muted'}">${verdict.slow ? (0, html_1.icon)('dashboard') + ' ' : ''}${(0, html_1.esc)(`${verdict.factor.toFixed(2)}× the usual ${(0, time_1.formatDuration)(verdict.baseline)} (median of the previous ${verdict.sample} successful runs)`)}${sla && limit ? ` · <span class="status-fail">over the ${(0, html_1.esc)((0, time_1.formatDuration)(limit * 60))} limit</span>` : ''}</div></div>`);
     else if (sla && limit)
         parts.push(`<div class="detail-block"><div class="detail-h">Duration</div><div class="small status-fail">${(0, html_1.icon)('alert')} Over the ${(0, html_1.esc)((0, time_1.formatDuration)(limit * 60))} limit set for this process.</div></div>`);
-    if (r.warningItems && r.warningItems.length)
+    if (Array.isArray(r.warningItems) && r.warningItems.length)
         parts.push(`<div class="detail-block"><div class="detail-h">Warnings</div>${r.warningItems.map(w => `<div class="warning-card"><span class="warning-time">${(0, html_1.esc)((0, time_1.clockTime)(w.time))}</span> ${(0, html_1.esc)(w.msg)}</div>`).join('')}</div>`);
     if (r.accessed && r.accessed.length)
         parts.push(`<div class="detail-block"><div class="detail-h">Touched</div><div class="chips">${r.accessed.map(id => { const [kind, ...rest] = id.split(':'); return `<span class="chip chip-${(0, html_1.esc)(kind)}"><span class="chip-k">${(0, html_1.esc)(kind)}</span><span class="chip-v">${(0, html_1.esc)(rest.join(':'))}</span></span>`; }).join('')}</div></div>`);
@@ -83,7 +83,7 @@ function historyRow(r, settings, all) {
         parts.push(`<div class="detail-block"><div class="detail-h">Artifacts</div><div class="artifacts">${r.artifacts.map(a => `<button class="link-btn" data-open="${(0, html_1.esc)(a)}" title="${(0, html_1.esc)(a)}">${(0, html_1.icon)('file')}${(0, html_1.esc)(a.split(/[\\/]/).pop() || a)}</button>`).join('')}</div></div>`);
     parts.push(`<div class="detail-actions"><button class="link-btn" data-msg="compare" data-key="${(0, html_1.esc)((0, compare_1.runKey)(r))}" title="Compare this run with another">${(0, html_1.icon)('git-compare')}Compare with…</button></div>`);
     if (drift.length) {
-        parts.push(`<div class="detail-block"><div class="detail-h">Metrics far from usual</div>${drift.map(d => `<div class="small ${d.direction === 'down' ? 'status-warn' : 'status-warn'}">${(0, html_1.icon)('graph-line')} <b>${(0, html_1.esc)(d.key)}</b> ${(0, html_1.esc)(String(d.value))} — usually about ${(0, html_1.esc)(String(Math.round(d.baseline * 100) / 100))} (${d.sample} prior runs)</div>`).join('')}</div>`);
+        parts.push(`<div class="detail-block"><div class="detail-h">Metrics far from usual</div>${drift.map(d => `<div class="small status-warn">${(0, html_1.icon)(d.direction === 'down' ? 'arrow-down' : 'arrow-up')} <b>${(0, html_1.esc)(d.key)}</b> ${(0, html_1.esc)(String(d.value))} — usually about ${(0, html_1.esc)(String(Math.round(d.baseline * 100) / 100))} (${d.sample} prior runs)</div>`).join('')}</div>`);
     }
     const who = [
         r.user ? `${(0, html_1.icon)('account')}${(0, html_1.esc)(r.user)}` : '',
@@ -104,10 +104,10 @@ function historyRow(r, settings, all) {
  * expand meant the row showed a count where it could have shown the answer.
  */
 function firstWarning(r) {
-    const first = r.warningItems && r.warningItems.length ? r.warningItems[0].msg : '';
+    const first = Array.isArray(r.warningItems) && r.warningItems.length ? r.warningItems[0]?.msg ?? '' : '';
     if (!first)
         return '';
-    const more = (r.warningItems?.length ?? 0) - 1;
+    const more = (Array.isArray(r.warningItems) ? r.warningItems.length : 0) - 1;
     const text = first.length > 90 ? first.slice(0, 89) + '…' : first;
     return `<div class="row-warn" title="${(0, html_1.esc)(first)}">${(0, html_1.icon)('warning')}${(0, html_1.esc)(text)}${more > 0 ? `<span class="muted"> +${more} more</span>` : ''}</div>`;
 }
