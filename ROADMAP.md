@@ -1,7 +1,7 @@
 # Roadmap
 
 Triaged from a field review of v1.3.0 by a second engineer running the extension against real
-recurring data jobs (5 processes, Windows, conda, OneDrive-synced workspace). Their verdict was
+recurring data jobs (5 processes, on Windows, in a sync-backed workspace). Their verdict was
 "production-ready", with the friction concentrated in **setup** rather than in the tool.
 
 Ordered by impact per unit of risk, not by the order they were reported.
