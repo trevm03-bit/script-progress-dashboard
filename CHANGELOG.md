@@ -1,6 +1,10 @@
 # Changelog
 
-## 1.6.0 — 2026-09-04
+## 1.6.1 — 2026-09-04
+
+> **1.6.0 was tagged and never published.** Five adversarial reviews went at that build before it
+> reached anyone; what they found is in *Hardened before release* below. The version number moved
+> rather than the tag, so the record of what was built when stays honest.
 
 The operations release. The tool always watched scripts; this is the version that answers the
 question underneath — *did it run, what did it find, and is it holding together.*
@@ -175,7 +179,7 @@ which on Windows hands its arguments to a detached window and never returns, so 
 instead of checking anything. It now goes through the CLI entry point the way `code.cmd` does.
 28 checks, green.
 
-Reporter 1.6.0. 207 Node tests, 30 + 27 Python tests, 28 packaged-install checks.
+Reporter 1.6.1. 207 Node tests, 30 + 27 Python tests, 28 packaged-install checks.
 
 ## 1.5.0 — 2026-09-04
 
