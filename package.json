@@ -251,8 +251,8 @@
         "order": 7,
         "properties": {
           "scriptProgress.deltaTracker.metrics": { "type": "array", "default": [], "items": { "type": "string" }, "description": "Metric names from deltas.json to chart. Empty = every metric present." },
-          "scriptProgress.deltaTracker.formats": { "type": "object", "default": {}, "additionalProperties": { "type": "object", "properties": { "unit": { "type": "string" }, "decimals": { "type": "number" }, "label": { "type": "string" } } }, "markdownDescription": "Per-metric display: `{ \"retention_delta\": { \"unit\": \"%\", \"decimals\": 2, \"label\": \"Retention Δ\" } }`." },
-          "scriptProgress.deltaTracker.thresholds": { "type": "object", "default": {}, "additionalProperties": { "type": "object", "properties": { "min": { "type": "number" }, "max": { "type": "number" } } }, "markdownDescription": "Per-metric acceptable range: `{ \"retention_delta\": { \"min\": -0.5, \"max\": 0.5 } }`. Out-of-range values are highlighted and counted in the summary strip." },
+          "scriptProgress.deltaTracker.formats": { "type": "object", "default": {}, "additionalProperties": { "type": "object", "properties": { "unit": { "type": "string" }, "decimals": { "type": "number" }, "label": { "type": "string" } } }, "markdownDescription": "Per-metric display: `{ \"reconciliation_delta\": { \"unit\": \"%\", \"decimals\": 2, \"label\": \"Reconciliation Δ\" } }`." },
+          "scriptProgress.deltaTracker.thresholds": { "type": "object", "default": {}, "additionalProperties": { "type": "object", "properties": { "min": { "type": "number" }, "max": { "type": "number" } } }, "markdownDescription": "Per-metric acceptable range: `{ \"reconciliation_delta\": { \"min\": -0.5, \"max\": 0.5 } }`. Out-of-range values are highlighted and counted in the summary strip." },
           "scriptProgress.deltaTracker.points": { "type": "number", "default": 50, "minimum": 2, "description": "How many recent points to chart per metric." }
         }
       },
