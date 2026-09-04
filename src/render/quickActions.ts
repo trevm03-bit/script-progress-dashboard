@@ -4,11 +4,17 @@
 // task shows that task's last result and is disabled while it runs.
 import { DashboardData, Settings } from '../types';
 import { parseIso, relativeTime, taskMatches, taskState } from '../logic/time';
-import { esc, icon, section, empty, SectionOpts } from './html';
+import { esc, icon, section, empty, problemList, SectionOpts } from './html';
+import { problemsFor } from '../logic/validate';
 
 export function renderQuickActions(data: DashboardData, settings: Settings, now: Date, trusted: boolean, opts: SectionOpts): string {
+  const problems = problemsFor(settings.problems, 'quickActions');
   if (settings.buttons.length === 0) {
-    return section('quickActions', 'Quick Actions', empty('No buttons configured yet.', { msg: 'settings', label: 'Add them in Settings', icon: 'settings-gear' }), opts);
+    // Distinguish "not set up" from "set up wrongly" — they need opposite responses.
+    const body = problems.length
+      ? problemList(problems) + empty('No usable buttons, so nothing is shown here.')
+      : empty('No buttons configured yet.', { msg: 'settings', label: 'Add them in Settings', icon: 'settings-gear' });
+    return section('quickActions', 'Quick Actions', body, opts);
   }
   const running = new Set(data.tasks.filter(t => taskState(t, settings.staleRunningMinutes, now, data.overlays) === 'running').map(t => t.task.toLowerCase()));
   const lastByTask = new Map<string, { success: boolean; date: string }>();
@@ -25,7 +31,7 @@ export function renderQuickActions(data: DashboardData, settings: Settings, now:
     groups.get(g)!.push(index);
   });
 
-  let body = '';
+  let body = problemList(problems);
   for (const [group, indexes] of groups) {
     if (group) body += `<div class="btn-group-label">${esc(group)}</div>`;
     body += `<div class="btn-row">`;

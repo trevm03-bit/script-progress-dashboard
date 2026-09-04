@@ -10,6 +10,7 @@ import { StateProvider } from './dashboardHost';
 import { DataReader } from './dataReader';
 import { Notifier } from './notifications';
 import { readSettings } from './settings';
+import { warnAboutIgnoredSettings } from './scopeCheck';
 import { StatusBarManager } from './statusBar';
 import { ALL_SECTIONS, DashboardData, SectionId, Settings } from './types';
 import { taskMatches } from './logic/time';
@@ -19,6 +20,9 @@ const COLLAPSED_KEY = 'scriptProgress.collapsedSections';
 export function activate(context: vscode.ExtensionContext): void {
   let settings = readSettings();
   const reader = new DataReader(resolveLogsDir(settings));
+  // Settings placed where this extension cannot read them look identical to no settings at all.
+  // Say so once, rather than letting the user re-do configuration that was already correct.
+  void warnAboutIgnoredSettings(context);
   let data: DashboardData = reader.readAll();
   const notifier = new Notifier();
   const statusBar = new StatusBarManager();
@@ -58,6 +62,7 @@ export function activate(context: vscode.ExtensionContext): void {
   let refreshTimer: NodeJS.Timeout | undefined;
   const refresh = (force = false) => {
     data = reader.readAll();
+    statusBar.logsDir = resolveLogsDir(settings);
     statusBar.update(data, settings);
     notifier.update(data, settings);
     view.refresh(force);

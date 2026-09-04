@@ -6,6 +6,7 @@ exports.esc = esc;
 exports.icon = icon;
 exports.section = section;
 exports.empty = empty;
+exports.problemList = problemList;
 exports.chip = chip;
 exports.metricText = metricText;
 function esc(value) {
@@ -44,6 +45,23 @@ function section(id, title, body, opts = {}) {
 /** Small muted line used for "nothing to show" states. */
 function empty(text, action) {
     return `<div class="empty">${esc(text)}${action ? ` <button class="link-btn" data-msg="${esc(action.msg)}">${icon(action.icon)}${esc(action.label)}</button>` : ''}</div>`;
+}
+/**
+ * Configuration that will not behave as written, shown in the section it belongs to.
+ * Silence here is the bug this replaces: a malformed entry used to be dropped without a word.
+ */
+function problemList(problems) {
+    if (!problems.length)
+        return '';
+    const li = problems.map(p => {
+        const who = p.index !== undefined ? `Entry ${p.index}${p.label ? ` (“${p.label}”)` : ''}` : p.label ? `“${p.label}”` : 'This setting';
+        return `<li>${esc(`${who} ${p.message}`)}</li>`;
+    }).join('');
+    return `<div class="problems" role="status">
+  <div class="problems-h">${icon('alert')}${problems.length === 1 ? 'One setting needs attention' : `${problems.length} settings need attention`}</div>
+  <ul>${li}</ul>
+  <button class="link-btn" data-msg="settings">${icon('settings-gear')}Open Settings</button>
+</div>`;
 }
 /** A tiny inline metric chip: label + value. */
 function chip(label, value, cls = '') {

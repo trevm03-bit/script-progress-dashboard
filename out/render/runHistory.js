@@ -55,7 +55,7 @@ function historyRow(r, settings, all) {
   <td class="col-date" data-sort="${t}">${(0, html_1.esc)((0, time_1.dateTime)(r.date))}</td>
   <td class="col-dur" data-sort="${Number(r.elapsed) || 0}">${(0, html_1.esc)((0, time_1.formatDuration)(Number(r.elapsed) || 0))}${flags}</td>
   <td class="col-warn ${r.warnings ? 'status-warn' : ''}" data-sort="${Number(r.warnings) || 0}">${Number(r.warnings) || 0}</td>
-  <td class="col-summary" title="${(0, html_1.esc)(r.summary)}">${(0, html_1.esc)(r.summary)}</td>
+  <td class="col-summary" title="${(0, html_1.esc)(r.summary)}">${(0, html_1.esc)(r.summary)}${firstWarning(r)}</td>
 </tr>`;
     if (!expandable)
         return main;
@@ -84,5 +84,18 @@ function historyRow(r, settings, all) {
     if (!parts.length)
         parts.push(`<div class="detail-block muted small">No extra detail recorded for this run (older reporter).</div>`);
     return main + `<tr class="detail" hidden><td colspan="6"><div class="detail-wrap">${parts.join('')}</div></td></tr>`;
+}
+/**
+ * The first warning, inline under the summary. For a diagnostic script the warning text IS the
+ * finding — "Section 5: 2 issues" is the whole point of the run — and putting it behind an
+ * expand meant the row showed a count where it could have shown the answer.
+ */
+function firstWarning(r) {
+    const first = r.warningItems && r.warningItems.length ? r.warningItems[0].msg : '';
+    if (!first)
+        return '';
+    const more = (r.warningItems?.length ?? 0) - 1;
+    const text = first.length > 90 ? first.slice(0, 89) + '…' : first;
+    return `<div class="row-warn" title="${(0, html_1.esc)(first)}">${(0, html_1.icon)('warning')}${(0, html_1.esc)(text)}${more > 0 ? `<span class="muted"> +${more} more</span>` : ''}</div>`;
 }
 //# sourceMappingURL=runHistory.js.map

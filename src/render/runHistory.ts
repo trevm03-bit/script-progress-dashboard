@@ -60,7 +60,7 @@ function historyRow(r: RunRecord, settings: Settings, all: RunRecord[]): string 
   <td class="col-date" data-sort="${t}">${esc(dateTime(r.date))}</td>
   <td class="col-dur" data-sort="${Number(r.elapsed) || 0}">${esc(formatDuration(Number(r.elapsed) || 0))}${flags}</td>
   <td class="col-warn ${r.warnings ? 'status-warn' : ''}" data-sort="${Number(r.warnings) || 0}">${Number(r.warnings) || 0}</td>
-  <td class="col-summary" title="${esc(r.summary)}">${esc(r.summary)}</td>
+  <td class="col-summary" title="${esc(r.summary)}">${esc(r.summary)}${firstWarning(r)}</td>
 </tr>`;
   if (!expandable) return main;
 
@@ -82,4 +82,17 @@ function historyRow(r: RunRecord, settings: Settings, all: RunRecord[]): string 
   if (ids) parts.push(`<div class="detail-block muted small mono">${esc(ids)}</div>`);
   if (!parts.length) parts.push(`<div class="detail-block muted small">No extra detail recorded for this run (older reporter).</div>`);
   return main + `<tr class="detail" hidden><td colspan="6"><div class="detail-wrap">${parts.join('')}</div></td></tr>`;
+}
+
+/**
+ * The first warning, inline under the summary. For a diagnostic script the warning text IS the
+ * finding — "Section 5: 2 issues" is the whole point of the run — and putting it behind an
+ * expand meant the row showed a count where it could have shown the answer.
+ */
+function firstWarning(r: RunRecord): string {
+  const first = r.warningItems && r.warningItems.length ? r.warningItems[0].msg : '';
+  if (!first) return '';
+  const more = (r.warningItems?.length ?? 0) - 1;
+  const text = first.length > 90 ? first.slice(0, 89) + '…' : first;
+  return `<div class="row-warn" title="${esc(first)}">${icon('warning')}${esc(text)}${more > 0 ? `<span class="muted"> +${more} more</span>` : ''}</div>`;
 }

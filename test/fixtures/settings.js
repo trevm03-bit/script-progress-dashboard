@@ -6,6 +6,7 @@ function settings(o = {}) {
   const sections = Object.fromEntries(ALL.map(id => [id, true]));
   Object.assign(sections, o.sections || {});
   return {
+    problems: o.problems || [],
     logsPath: 'logs',
     refreshInterval: 2000,
     staleRunningMinutes: 30,

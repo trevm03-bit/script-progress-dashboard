@@ -128,6 +128,20 @@ code --install-extension trevor-marshall.script-progress-dashboard
 Air-gapped or offline machine? The `.vsix` route and an unpacked-folder route are documented in
 [install/README.md](install/README.md).
 
+**If the install does not go smoothly**, these three came out of a real corporate install:
+
+- `code --install-extension <id>` reports "Extension not found" but the Extensions **view** works.
+  The CLI and the UI take different network paths, and a proxy can block one and not the other.
+  Use the view, or fall back to the `.vsix`.
+- `code --list-extensions` shows almost nothing when run from inside another tool's terminal.
+  Check the folder instead: `ls ~/.vscode/extensions/trevor-marshall.script-progress-dashboard-*`.
+- **A section stays empty although the settings look right.** If your window was opened from a
+  `.code-workspace` file, settings in a folder's `.vscode/settings.json` are *folder* scope and
+  are not read — they have to live in the workspace file's `"settings"` block. The extension now
+  detects this and says so, but that is the thing to check first. And if VS Code refuses to save
+  any setting at all ("unable to write"), the target file usually has a JSON syntax error: check
+  the Problems panel before anything else.
+
 ## Report progress
 
 ### Python

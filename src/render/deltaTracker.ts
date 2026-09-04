@@ -3,7 +3,8 @@
 import { DashboardData, Settings } from '../types';
 import { formatMetric, outOfRange, seriesStats, sparklinePath, sparklineY } from '../logic/sparkline';
 import { relativeTime } from '../logic/time';
-import { esc, icon, section, empty, SectionOpts } from './html';
+import { esc, icon, section, empty, problemList, SectionOpts } from './html';
+import { problemsFor } from '../logic/validate';
 
 const W = 220;
 const H = 48;
@@ -11,7 +12,8 @@ const H = 48;
 export function renderDeltaTracker(data: DashboardData, settings: Settings, now: Date, opts: SectionOpts): string {
   const available = Object.keys(data.deltas || {});
   const names = settings.deltaMetrics.length ? settings.deltaMetrics : available;
-  if (names.length === 0) return section('deltaTracker', 'Delta Tracker', empty('No metrics in deltas.json yet. Scripts add them with Progress.track_delta().'), opts);
+  const problems = problemsFor(settings.problems, 'deltaTracker');
+  if (names.length === 0) return section('deltaTracker', 'Delta Tracker', problemList(problems) + empty('No metrics in deltas.json yet. Scripts add them with Progress.track_delta().'), opts);
 
   let outCount = 0;
   // A metric several tasks report (rows_loaded from two pipelines, say) is one card per task;
@@ -61,7 +63,7 @@ export function renderDeltaTracker(data: DashboardData, settings: Settings, now:
   }).join('');
 
   const aside = outCount ? `<span class="status-fail">${outCount} out of range</span>` : '';
-  return section('deltaTracker', 'Delta Tracker', `<div class="delta-grid">${cards}</div>`, { ...opts, aside });
+  return section('deltaTracker', 'Delta Tracker', problemList(problems) + `<div class="delta-grid">${cards}</div>`, { ...opts, aside });
 }
 
 /** Path for `values` drawn on the scale of `scaleVals` (which contains the values plus guides). */

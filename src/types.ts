@@ -174,6 +174,8 @@ export interface DeltaFormat { unit?: string; decimals?: number; label?: string 
 export interface DeltaThreshold { min?: number; max?: number }
 
 export interface Settings {
+  /** Settings that will not behave as written. Surfaced in the section they belong to. */
+  problems: import('./logic/validate').Problem[];
   logsPath: string;
   refreshInterval: number;
   staleRunningMinutes: number;

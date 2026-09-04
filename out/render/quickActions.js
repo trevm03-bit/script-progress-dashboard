@@ -3,9 +3,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.renderQuickActions = renderQuickActions;
 const time_1 = require("../logic/time");
 const html_1 = require("./html");
+const validate_1 = require("../logic/validate");
 function renderQuickActions(data, settings, now, trusted, opts) {
+    const problems = (0, validate_1.problemsFor)(settings.problems, 'quickActions');
     if (settings.buttons.length === 0) {
-        return (0, html_1.section)('quickActions', 'Quick Actions', (0, html_1.empty)('No buttons configured yet.', { msg: 'settings', label: 'Add them in Settings', icon: 'settings-gear' }), opts);
+        // Distinguish "not set up" from "set up wrongly" — they need opposite responses.
+        const body = problems.length
+            ? (0, html_1.problemList)(problems) + (0, html_1.empty)('No usable buttons, so nothing is shown here.')
+            : (0, html_1.empty)('No buttons configured yet.', { msg: 'settings', label: 'Add them in Settings', icon: 'settings-gear' });
+        return (0, html_1.section)('quickActions', 'Quick Actions', body, opts);
     }
     const running = new Set(data.tasks.filter(t => (0, time_1.taskState)(t, settings.staleRunningMinutes, now, data.overlays) === 'running').map(t => t.task.toLowerCase()));
     const lastByTask = new Map();
@@ -22,7 +28,7 @@ function renderQuickActions(data, settings, now, trusted, opts) {
             groups.set(g, []);
         groups.get(g).push(index);
     });
-    let body = '';
+    let body = (0, html_1.problemList)(problems);
     for (const [group, indexes] of groups) {
         if (group)
             body += `<div class="btn-group-label">${(0, html_1.esc)(group)}</div>`;

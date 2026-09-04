@@ -203,9 +203,34 @@ function registerCommands(context, cx) {
         const on = new Set(picked.map(p => p.id));
         const cfg = vscode.workspace.getConfiguration('scriptProgress');
         const target = vscode.workspace.workspaceFolders ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
-        for (const id of types_1.ALL_SECTIONS) {
-            if (s.sections[id] !== on.has(id))
+        const changed = types_1.ALL_SECTIONS.filter(id => s.sections[id] !== on.has(id));
+        try {
+            for (const id of changed)
                 await cfg.update(`sections.${id}`, on.has(id), target);
+        }
+        catch (e) {
+            // VS Code refuses the write when the target file will not parse, is read-only or has
+            // unsaved edits — and its raw message says none of that in a way anyone can act on.
+            if (target === vscode.ConfigurationTarget.Global) {
+                void vscode.window.showErrorMessage(`Could not save the section settings: ${e.message}`);
+                return;
+            }
+            const USER = 'Save to User settings';
+            const OPEN = 'Open settings file';
+            const pick = await vscode.window.showErrorMessage('Could not write your workspace settings. Usually that means the settings file has a JSON error, is read-only, or has unsaved changes.', USER, OPEN);
+            if (pick === USER) {
+                try {
+                    for (const id of changed)
+                        await cfg.update(`sections.${id}`, on.has(id), vscode.ConfigurationTarget.Global);
+                    void vscode.window.showInformationMessage('Saved to your User settings instead.');
+                }
+                catch (e2) {
+                    void vscode.window.showErrorMessage(`User settings could not be written either: ${e2.message}`);
+                }
+            }
+            else if (pick === OPEN) {
+                await vscode.commands.executeCommand('workbench.action.openWorkspaceSettingsFile');
+            }
         }
     });
     reg('scriptProgress.simulateRun', async (mode) => {

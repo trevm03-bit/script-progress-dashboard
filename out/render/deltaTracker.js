@@ -4,13 +4,15 @@ exports.renderDeltaTracker = renderDeltaTracker;
 const sparkline_1 = require("../logic/sparkline");
 const time_1 = require("../logic/time");
 const html_1 = require("./html");
+const validate_1 = require("../logic/validate");
 const W = 220;
 const H = 48;
 function renderDeltaTracker(data, settings, now, opts) {
     const available = Object.keys(data.deltas || {});
     const names = settings.deltaMetrics.length ? settings.deltaMetrics : available;
+    const problems = (0, validate_1.problemsFor)(settings.problems, 'deltaTracker');
     if (names.length === 0)
-        return (0, html_1.section)('deltaTracker', 'Delta Tracker', (0, html_1.empty)('No metrics in deltas.json yet. Scripts add them with Progress.track_delta().'), opts);
+        return (0, html_1.section)('deltaTracker', 'Delta Tracker', (0, html_1.problemList)(problems) + (0, html_1.empty)('No metrics in deltas.json yet. Scripts add them with Progress.track_delta().'), opts);
     let outCount = 0;
     // A metric several tasks report (rows_loaded from two pipelines, say) is one card per task;
     // drawing them on one line would zigzag between two unrelated scales.
@@ -63,7 +65,7 @@ function renderDeltaTracker(data, settings, now, opts) {
 </div>`;
     }).join('');
     const aside = outCount ? `<span class="status-fail">${outCount} out of range</span>` : '';
-    return (0, html_1.section)('deltaTracker', 'Delta Tracker', `<div class="delta-grid">${cards}</div>`, { ...opts, aside });
+    return (0, html_1.section)('deltaTracker', 'Delta Tracker', (0, html_1.problemList)(problems) + `<div class="delta-grid">${cards}</div>`, { ...opts, aside });
 }
 /** Path for `values` drawn on the scale of `scaleVals` (which contains the values plus guides). */
 function rescaledPath(values, scaleVals, w, h, pad) {

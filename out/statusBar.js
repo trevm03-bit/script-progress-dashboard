@@ -42,6 +42,8 @@ class StatusBarManager {
     constructor() {
         this.data = null;
         this.settings = null;
+        /** Where the reader is looking, for the "nothing yet" tooltip. Set by the extension. */
+        this.logsDir = '';
         this.item = vscode.window.createStatusBarItem('scriptProgress.status', vscode.StatusBarAlignment.Left, 100);
         this.item.name = 'Script Progress';
     }
@@ -94,8 +96,22 @@ class StatusBarManager {
             md.appendMarkdown(`**${p.task}** still marked running but ${stalled[0].s === 'exited' ? 'its process exited' : `not updated for ${Math.round((0, time_1.minutesSinceUpdate)(p, now))} minutes`}.\n\nLast step: ${p.label}\n\n`);
         }
         else {
-            if (settings.statusBar.idleMode === 'hidden' || !data.progress) {
+            if (settings.statusBar.idleMode === 'hidden') {
                 this.item.hide();
+                return;
+            }
+            if (!data.progress) {
+                // Nothing has ever reported. Say so rather than showing a bare icon that could equally
+                // mean "extension broken" — the tooltip is the only place to answer "is this watching?".
+                this.item.text = '$(pulse) Script Progress';
+                md.appendMarkdown(`No runs recorded yet.
+
+Watching \`${this.logsHint()}\` for progress files. Run **Script Progress: Simulate a Demo Run** to see it work.
+
+`);
+                md.appendMarkdown(settings.statusBar.clickAction === 'menu' ? '_Click for actions_' : '_Click to open the dashboard_');
+                this.item.tooltip = md;
+                this.item.show();
                 return;
             }
             const p = data.progress;
@@ -114,6 +130,7 @@ class StatusBarManager {
         this.item.tooltip = md;
         this.item.show();
     }
+    logsHint() { return this.logsDir || 'the configured logs folder'; }
     dispose() {
         if (this.timer)
             clearInterval(this.timer);

@@ -2,7 +2,7 @@
 // the elapsed time moves even between writes. Click → a menu of actions (or the dashboard).
 import * as vscode from 'vscode';
 import { DashboardData, Settings, TaskState } from './types';
-import { clockTime, formatDuration, liveElapsed, liveEta, minutesSinceUpdate, percent, taskState } from './logic/time';
+import { clockTime, formatDuration, liveElapsed, liveEta, minutesSinceUpdate, percent, relativeTime, taskState } from './logic/time';
 
 export class StatusBarManager implements vscode.Disposable {
   private item: vscode.StatusBarItem;
@@ -56,7 +56,21 @@ export class StatusBarManager implements vscode.Disposable {
       this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
       md.appendMarkdown(`**${p.task}** still marked running but ${stalled[0].s === 'exited' ? 'its process exited' : `not updated for ${Math.round(minutesSinceUpdate(p, now))} minutes`}.\n\nLast step: ${p.label}\n\n`);
     } else {
-      if (settings.statusBar.idleMode === 'hidden' || !data.progress) { this.item.hide(); return; }
+      if (settings.statusBar.idleMode === 'hidden') { this.item.hide(); return; }
+      if (!data.progress) {
+        // Nothing has ever reported. Say so rather than showing a bare icon that could equally
+        // mean "extension broken" — the tooltip is the only place to answer "is this watching?".
+        this.item.text = '$(pulse) Script Progress';
+        md.appendMarkdown(`No runs recorded yet.
+
+Watching \`${this.logsHint()}\` for progress files. Run **Script Progress: Simulate a Demo Run** to see it work.
+
+`);
+        md.appendMarkdown(settings.statusBar.clickAction === 'menu' ? '_Click for actions_' : '_Click to open the dashboard_');
+        this.item.tooltip = md;
+        this.item.show();
+        return;
+      }
       const p = data.progress;
       const state: TaskState = taskState(p, settings.staleRunningMinutes, now, data.overlays);
       if (state === 'failed') {
@@ -72,6 +86,10 @@ export class StatusBarManager implements vscode.Disposable {
     this.item.tooltip = md;
     this.item.show();
   }
+
+  /** Where the reader is looking, for the "nothing yet" tooltip. Set by the extension. */
+  logsDir = '';
+  private logsHint(): string { return this.logsDir || 'the configured logs folder'; }
 
   dispose(): void {
     if (this.timer) clearInterval(this.timer);

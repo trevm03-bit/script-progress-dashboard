@@ -6,35 +6,36 @@ recurring data jobs (5 processes, on Windows, in a sync-backed workspace). Their
 
 Ordered by impact per unit of risk, not by the order they were reported.
 
-## 1.3.1 — remove the setup friction (no new surface)
+## 1.3.1 — remove the setup friction (no new surface) — **shipped 2026-09-04**
 
 Every item here is something that already went wrong for a real user, and none of it changes how the
 extension behaves once it is working.
 
-- [ ] **Warn when settings are in a scope that will not apply.** A workspace opened from a
+- [x] **Warn when settings are in a scope that will not apply.** A workspace opened from a
       `.code-workspace` file makes `.vscode/settings.json` folder-scope; keys set there lose to
       workspace scope and the section simply never appears — no error, no hint. On activation,
       compare `inspect()`'s `workspaceFolderValue` against `workspaceValue` for the settings that
       drive visible sections, and if buttons or processes are defined only at folder scope, say so
       once with a "move them" action. *(Reported as IS-1; the single biggest time sink in the field
       install.)*
-- [ ] **Catch failed settings writes.** `scriptProgress.toggleSections` lets a rejected
+- [x] **Catch failed settings writes.** `scriptProgress.toggleSections` lets a rejected
       `config.update()` surface as VS Code's bare "unable to write" message. Catch it, name the
       likely cause (invalid JSON in the target file, no folder open, file read-only or unsaved), and
       offer to write to User settings instead.
-- [ ] **Validate the settings that matter, loudly.** A button missing `command`, a process with a
+- [x] **Validate the settings that matter, loudly.** A button missing `command`, a process with a
       `dayOfMonth` out of range, a `logsPath` that resolves nowhere — all currently fail silently.
       Report them in the section itself rather than rendering an empty list.
-- [ ] **Metric columns in the CSV export.** History already stores per-run metrics; the export drops
-      them. Add a column per metric name seen in the exported range. *(IS-4.)*
-- [ ] **Distinguish read from write in the dependency map.** Write edges carry the risk and currently
+- [x] ~~**Metric columns in the CSV export.**~~ **Already shipped in 1.3.0** — verified against the
+      release commit: the export collects every metric key in range and adds a column per name.
+      No change needed. *(IS-4, reported in error.)*
+- [x] **Distinguish read from write in the dependency map.** *(Solid-vs-dashed and the arrowhead already shipped in 1.3.0; 1.3.1 adds the colour.)* Write edges carry the risk and currently
       look identical to reads. Colour and weight them differently, and say which is which in the
       legend. *(IS-5.)*
-- [ ] **Say "idle" when idle.** The status bar drops to an icon with no text between runs; the
+- [x] **Say "idle" when idle.** The status bar drops to an icon with no text between runs; the
       tooltip should still say when the last run was. *(IS-3.)*
-- [ ] **First warning inline in Run History.** For diagnostic scripts the warning text *is* the
+- [x] **First warning inline in Run History.** For diagnostic scripts the warning text *is* the
       finding; making it cost an expand hides the payload. Show the first one truncated. *(FR-6.)*
-- [ ] Install docs: verifying via `~/.vscode/extensions/<id>-*` when `code --list-extensions` is
+- [x] Install docs: verifying via `~/.vscode/extensions/<id>-*` when `code --list-extensions` is
       unavailable, and falling back to the Extensions UI when the CLI cannot reach the Marketplace
       through a corporate proxy. Both hit in the field.
 

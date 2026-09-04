@@ -47,6 +47,7 @@ const dashboardView_1 = require("./dashboardView");
 const dataReader_1 = require("./dataReader");
 const notifications_1 = require("./notifications");
 const settings_1 = require("./settings");
+const scopeCheck_1 = require("./scopeCheck");
 const statusBar_1 = require("./statusBar");
 const types_1 = require("./types");
 const time_1 = require("./logic/time");
@@ -54,6 +55,9 @@ const COLLAPSED_KEY = 'scriptProgress.collapsedSections';
 function activate(context) {
     let settings = (0, settings_1.readSettings)();
     const reader = new dataReader_1.DataReader(resolveLogsDir(settings));
+    // Settings placed where this extension cannot read them look identical to no settings at all.
+    // Say so once, rather than letting the user re-do configuration that was already correct.
+    void (0, scopeCheck_1.warnAboutIgnoredSettings)(context);
     let data = reader.readAll();
     const notifier = new notifications_1.Notifier();
     const statusBar = new statusBar_1.StatusBarManager();
@@ -86,6 +90,7 @@ function activate(context) {
     let refreshTimer;
     const refresh = (force = false) => {
         data = reader.readAll();
+        statusBar.logsDir = resolveLogsDir(settings);
         statusBar.update(data, settings);
         notifier.update(data, settings);
         view.refresh(force);

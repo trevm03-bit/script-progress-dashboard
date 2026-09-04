@@ -2,7 +2,7 @@
   "name": "script-progress-dashboard",
   "displayName": "Script Progress Dashboard",
   "description": "Live progress, run history and slow-run alerts for long-running Python and Node scripts. Local files only: no server, no telemetry.",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "publisher": "trevor-marshall",
   "license": "MIT",
   "icon": "media/icon.png",

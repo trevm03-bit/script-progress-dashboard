@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.3.1 — 2026-09-04
+
+Setup friction, all of it from a first independent install on someone else's machine. Nothing
+here changes how the extension behaves once it is working.
+
+- **Settings in a scope that cannot apply are now reported.** A window opened from a
+  `.code-workspace` file does not read a folder's `.vscode/settings.json`, so buttons and
+  processes defined there silently never appear — and an empty section reads as "not set up yet"
+  rather than "set up somewhere I can't see". The extension now checks on activation and says
+  which keys are affected, with a button to open the right file. Dismissible for good.
+- **Malformed settings are described instead of dropped.** A button with no `command`, a monthly
+  process with no `dayOfMonth` (which could never be overdue), an out-of-range `dayOfWeek`, a
+  delta threshold on a metric that is not tracked, an inverted min/max — each used to be filtered
+  out in silence. Each is now named, with its position and label, in the section it belongs to.
+- **A failed settings write explains itself.** "Choose Dashboard Sections…" used to surface VS
+  Code's bare "unable to write" message. It now names the likely causes — a JSON error in the
+  target file, no folder open, read-only or unsaved — and offers to save to User settings instead.
+- **Write edges in the Access Map are orange**, wider and solid against dashed reads: a script
+  that only reads something cannot damage it, and that difference should be visible without
+  hovering. In lineage view they stay neutral, so orange keeps meaning "upstream" there.
+- **Run History shows the first warning inline.** For a diagnostic script the warning text is the
+  finding; a count alone made you expand a row to learn what it found.
+- **The status bar says something useful when idle** — how long ago the last run was, or, when
+  nothing has ever reported, which folder it is watching.
+- Install docs: the proxy/CLI mismatch, verifying an install without `code --list-extensions`,
+  and the settings-scope trap above.
+
+Reported but already working in 1.3.0, verified rather than changed: the run-history CSV export
+already includes a column per metric, and the map already drew writes solid with an arrowhead.
+
 ## 1.3.0 — 2026-09-04
 
 The listing release: what a stranger sees before installing.

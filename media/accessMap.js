@@ -473,6 +473,10 @@
       const fg = css('--vscode-foreground', '#ccc');
       const bg = css('--vscode-editor-background', '#1e1e1e');
       const font = css('--vscode-font-family', 'sans-serif');
+      // Writes carry the risk: a script that only reads a table cannot damage it. They were
+      // already solid-with-an-arrow against dashed reads, but both drew in the foreground
+      // colour, so at a glance the map did not say which edges could change something.
+      const writeColor = css('--vscode-charts-orange', '#d18616');
       const upColor = css('--vscode-charts-orange', '#d18616');
       const downColor = css('--vscode-charts-green', '#89d185');
       const color = type => css(TYPE_VAR[type] || TYPE_VAR.other, FALLBACK[type] || FALLBACK.other);
@@ -524,7 +528,11 @@
         const hot = hoverSet && (e.from === this.hover || e.to === this.hover);
         const width = (0.8 + Math.min(4, Math.log2(1 + (e.count || 1)))) / Math.sqrt(s);
         const [mx, my] = this.ctrl(a, b);
-        let stroke = fg, alpha = dim ? 0.05 : hot ? 0.85 : e.mode === 'write' ? 0.38 : 0.22, lw = hot ? width + 0.6 : width;
+        const isWrite = e.mode === 'write';
+        // Writes are orange EXCEPT while a lineage is focused, where orange already means
+        // "upstream". One colour, one meaning per mode; the solid-vs-dashed line still says
+        // read or write in both.
+        let stroke = isWrite && !lin ? writeColor : fg, alpha = dim ? 0.05 : hot ? 0.9 : isWrite ? 0.55 : 0.22, lw = (hot ? width + 0.6 : width) * (isWrite ? 1.25 : 1);
         if (lin && !dim) {
           // Lineage colouring: upstream in orange, downstream in green.
           const other = e.from === lin.id ? e.to : e.to === lin.id ? e.from : null;

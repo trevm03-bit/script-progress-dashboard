@@ -2,6 +2,7 @@
 // changes in Settings apply without a reload.
 import * as vscode from 'vscode';
 import { ALL_SECTIONS, ProcessConfig, QuickActionConfig, SectionConfig, SectionId, Settings } from './types';
+import { validateSettings } from './logic/validate';
 
 export function readSettings(): Settings {
   const c = vscode.workspace.getConfiguration('scriptProgress');
@@ -27,7 +28,16 @@ export function readSettings(): Settings {
   const order = sectionList('dashboard.sectionOrder');
   const sectionOrder: SectionId[] = [...order, ...ALL_SECTIONS.filter(s => !order.includes(s))];
 
+  // Validate the RAW values before the filters below silently drop the malformed ones.
+  const problems = validateSettings({
+    buttons: c.get('quickActions.buttons'),
+    processes: c.get('processCalendar.processes'),
+    deltaMetrics: c.get('deltaTracker.metrics'),
+    deltaThresholds: c.get('deltaTracker.thresholds'),
+  });
+
   return {
+    problems,
     logsPath: c.get<string>('logsPath', 'logs') || 'logs',
     refreshInterval: num('refreshInterval', 2000, 500),
     staleRunningMinutes: num('staleRunningMinutes', 30, 1),

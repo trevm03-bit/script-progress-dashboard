@@ -38,6 +38,7 @@ exports.readSettings = readSettings;
 // changes in Settings apply without a reload.
 const vscode = __importStar(require("vscode"));
 const types_1 = require("./types");
+const validate_1 = require("./logic/validate");
 function readSettings() {
     const c = vscode.workspace.getConfiguration('scriptProgress');
     const num = (key, def, min, max = Infinity) => {
@@ -59,7 +60,15 @@ function readSettings() {
         sections[s] = c.get(`sections.${s}`, defaults[s]);
     const order = sectionList('dashboard.sectionOrder');
     const sectionOrder = [...order, ...types_1.ALL_SECTIONS.filter(s => !order.includes(s))];
+    // Validate the RAW values before the filters below silently drop the malformed ones.
+    const problems = (0, validate_1.validateSettings)({
+        buttons: c.get('quickActions.buttons'),
+        processes: c.get('processCalendar.processes'),
+        deltaMetrics: c.get('deltaTracker.metrics'),
+        deltaThresholds: c.get('deltaTracker.thresholds'),
+    });
     return {
+        problems,
         logsPath: c.get('logsPath', 'logs') || 'logs',
         refreshInterval: num('refreshInterval', 2000, 500),
         staleRunningMinutes: num('staleRunningMinutes', 30, 1),

@@ -106,6 +106,18 @@ body.surface-map #sections { flex: 1; display: flex; flex-direction: column; min
 .card.collapsed .section-title { margin-bottom: 0; }
 .empty { color: var(--sp-muted); font-size: var(--sp-font-small); padding: 4px 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .empty-state { text-align: center; padding: 36px 12px; color: var(--sp-muted); }
+
+/* Settings that will not behave as written. Deliberately prominent: the failure it replaces
+   was silent, and a warning nobody notices is the same bug with extra steps. */
+.problems { border: 1px solid var(--vscode-inputValidation-warningBorder, var(--sp-stalled)); background: var(--vscode-inputValidation-warningBackground, transparent); border-radius: var(--sp-radius); padding: 8px 10px; margin: 0 0 10px; font-size: var(--sp-font-small); }
+.problems-h { font-weight: 600; display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.problems-h .codicon { color: var(--sp-stalled); }
+.problems ul { margin: 0 0 6px; padding-left: 18px; }
+.problems li { margin: 2px 0; }
+
+/* First warning shown inline in a Run History row: for diagnostic scripts the warning is the payload. */
+.row-warn { display: flex; align-items: flex-start; gap: 4px; margin-top: 2px; font-size: var(--sp-font-small); color: var(--sp-stalled); opacity: 0.95; }
+.row-warn .codicon { flex: none; margin-top: 1px; }
 .es-icon { font-size: 28px; opacity: 0.5; margin-bottom: 8px; }
 .es-icon .codicon { font-size: 28px; }
 .es-title { font-size: 14px; font-weight: 600; color: var(--vscode-foreground); }
@@ -330,7 +342,7 @@ tr.detail td { padding: 0 8px 8px 24px; background: var(--vscode-editor-backgrou
 .map-legend .swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .map-legend .n { color: var(--sp-muted); }
 .edge-key { margin-left: auto; color: var(--sp-muted); display: inline-flex; gap: 5px; align-items: center; font-size: 10px; }
-.edge-key .k-write { width: 18px; height: 0; border-top: 2px solid var(--sp-muted); display: inline-block; }
+.edge-key .k-write { width: 18px; height: 0; border-top: 2px solid var(--vscode-charts-orange, #d18616); display: inline-block; }
 .edge-key .k-read { width: 18px; height: 0; border-top: 2px dashed var(--sp-muted); display: inline-block; margin-left: 6px; }
 .map-host { position: relative; height: 460px; min-height: 260px; border: 1px solid var(--sp-border); border-radius: var(--sp-radius); overflow: hidden; background: var(--vscode-editor-background); resize: vertical; }
 .map-host-large { flex: 1; height: auto; min-height: 300px; resize: none; }

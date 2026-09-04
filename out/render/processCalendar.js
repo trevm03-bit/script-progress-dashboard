@@ -4,14 +4,19 @@ exports.renderProcessCalendar = renderProcessCalendar;
 const calendar_1 = require("../logic/calendar");
 const time_1 = require("../logic/time");
 const html_1 = require("./html");
+const validate_1 = require("../logic/validate");
 const MARK = {
     done: { icon: 'check', cls: 'calendar-done', text: 'done' },
     pending: { icon: 'dash', cls: 'calendar-pending', text: 'pending' },
     overdue: { icon: 'close', cls: 'calendar-overdue', text: 'overdue' },
 };
 function renderProcessCalendar(data, settings, now, opts, narrow) {
+    const problems = (0, validate_1.problemsFor)(settings.problems, 'processCalendar');
     if (settings.processes.length === 0) {
-        return (0, html_1.section)('processCalendar', 'Process Calendar', (0, html_1.empty)('No processes configured yet.', { msg: 'settings', label: 'Add them in Settings', icon: 'settings-gear' }), opts);
+        const body = problems.length
+            ? (0, html_1.problemList)(problems) + (0, html_1.empty)('No usable processes, so nothing is tracked here.')
+            : (0, html_1.empty)('No processes configured yet.', { msg: 'settings', label: 'Add them in Settings', icon: 'settings-gear' });
+        return (0, html_1.section)('processCalendar', 'Process Calendar', body, opts);
     }
     const rows = (0, calendar_1.calendarRows)(settings.processes, data.history, now);
     const view = narrow && settings.calendar.view === 'both' ? 'list' : settings.calendar.view;
@@ -36,7 +41,7 @@ function renderProcessCalendar(data, settings, now, opts, narrow) {
     const title = 'Process Calendar';
     const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     const aside = `${overdue ? `<span class="status-fail">${overdue} overdue</span> · ` : ''}<span class="muted">${months[now.getMonth()]} ${now.getFullYear()}</span>`;
-    const body = renderGroup('Daily', groups.daily) + renderGroup('Weekly', groups.weekly) + renderGroup('Monthly', groups.monthly);
+    const body = (0, html_1.problemList)(problems) + renderGroup('Daily', groups.daily) + renderGroup('Weekly', groups.weekly) + renderGroup('Monthly', groups.monthly);
     return (0, html_1.section)('processCalendar', title, body, { ...opts, cls: overdue ? 'has-overdue' : '', aside });
 }
 function monthGridHtml(process, data, now) {

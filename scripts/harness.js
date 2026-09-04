@@ -3,6 +3,8 @@
 // data files — with a stub in place of acquireVsCodeApi(). Two modes:
 //
 //   node scripts/harness.js [logsDir]            write static pages, serve them with any server
+//   ... add --problems to inject malformed-settings warnings, the one state you cannot reach
+//       from data files alone (it comes from configuration, not from the logs folder).
 //   node scripts/harness.js --serve [port] [logsDir]
 //       a tiny live server (default 8765): the pages re-fetch a freshly rendered payload every
 //       second, so a `python demo/fake_run.py` in another terminal animates the browser exactly
@@ -23,7 +25,8 @@ const { settings } = require(path.join(repo, 'test/fixtures/settings.js'));
 
 const args = process.argv.slice(2);
 const serve = args.includes('--serve');
-const rest = args.filter(a => a !== '--serve');
+const withProblems = args.includes('--problems');
+const rest = args.filter(a => a !== '--serve' && a !== '--problems');
 const port = serve && /^\d+$/.test(rest[0] || '') ? Number(rest.shift()) : 8765;
 const logsDir = rest[0] ? path.resolve(rest[0]) : path.join(repo, 'demo', 'logs');
 const outDir = path.join(repo, '.harness');
@@ -32,6 +35,11 @@ fs.mkdirSync(outDir, { recursive: true });
 const reader = new DataReader(logsDir);
 const s = settings({
   timeline: { windowHours: 168 },
+  problems: withProblems ? [
+    { area: 'quickActions', index: 2, label: 'Nightly load', message: 'needs a "command" — the shell command to run.' },
+    { area: 'processCalendar', index: 1, label: 'Close', message: 'is monthly but has no "dayOfMonth", so it can never be overdue.' },
+    { area: 'deltaTracker', label: 'drift', message: 'has a threshold but is not in "deltaTracker.metrics", so it is never charted or checked.' },
+  ] : [],
   processes: [
     { name: 'Demo Pipeline', label: 'Demo', frequency: 'daily', maxMinutes: 1 },
     { name: 'Nightly', label: 'Nightly', frequency: 'daily' },
