@@ -30,6 +30,28 @@ minutes after an automated scan.
    ```
 Never paste the token into a chat, a file in this repo, or a settings file.
 
+## 2b. Releases after the first (automated)
+
+`.github/workflows/publish.yml` publishes on any tag that looks like `v1.3.0`. It checks the tag
+equals `package.json`'s version, compiles, runs the tests, packages, and runs `vsce publish` with
+the repository secret **`VSCE_PAT`** — an Azure DevOps Personal Access Token with the single scope
+*Marketplace › Manage* and organization *All accessible organizations*. The token is pasted once
+into GitHub (repo → Settings → Secrets and variables → Actions → New repository secret) and never
+appears in a log, a commit or a session. PATs expire (one year at most): a run failing with 401
+means a fresh token into the same secret.
+
+A release is then:
+
+```bash
+npm version 1.3.0 --no-git-tag-version   # or edit package.json + CHANGELOG.md by hand
+git commit -am "1.3.0: what changed"
+git tag v1.3.0
+git push origin main v1.3.0
+```
+
+The Actions run keeps the `.vsix` as a downloadable artifact, so the same file that went to the
+Marketplace can go to any machine that cannot reach it.
+
 ## 3. What the listing shows, and where it comes from
 
 | Listing element | Source in this repo |
