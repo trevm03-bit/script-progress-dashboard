@@ -42,7 +42,9 @@ jobs:
           npm test
 
       - name: Package
-        run: npm run package
+        run: |
+          mkdir -p dist        # gitignored, so a fresh checkout has no dist/ for vsce to write into
+          npm run package
 
       - name: Publish (skipped politely when no VSCE_PAT secret exists)
         env:
