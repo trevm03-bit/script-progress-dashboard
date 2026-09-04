@@ -3,7 +3,7 @@
 import { DashboardData, RunRecord, Settings } from '../types';
 import { dateTime, formatDuration, parseIso, clockTime } from '../logic/time';
 import { esc, icon, section, empty, metricText, SectionOpts } from './html';
-import { durationVerdict, metricChanges, overSla, previousRun, slaFor } from '../logic/anomaly';
+import { durationVerdict, metricAnomalies, metricChanges, overSla, previousRun, slaFor } from '../logic/anomaly';
 import { runKey } from '../logic/compare';
 
 export function renderRunHistory(data: DashboardData, settings: Settings, opts: SectionOpts): string {
@@ -48,7 +48,9 @@ function historyRow(r: RunRecord, settings: Settings, all: RunRecord[]): string 
   const verdict = settings.runHistory.anomalies ? durationVerdict(r, all, settings.runHistory.anomalyFactor) : undefined;
   const sla = overSla(r.task, Number(r.elapsed) || 0, settings.processes);
   const limit = slaFor(r.task, settings.processes);
+  const drift = settings.runHistory.anomalies ? metricAnomalies(r, all, settings.runHistory.anomalyFactor, settings.runHistory.ignoreMetrics) : [];
   const flags = [
+    drift.length ? `<span class="flag flag-drift" title="${esc(drift.map(d => `${d.key} ${d.value} vs a usual ${Math.round(d.baseline * 100) / 100}`).join(' · '))}">${icon('graph-line')}${drift.length}</span>` : '',
     verdict?.slow ? `<span class="flag flag-slow" title="${esc(`${verdict.factor.toFixed(1)}x the usual ${formatDuration(verdict.baseline)} (median of ${verdict.sample} runs)`)}">${icon('dashboard')}${verdict.factor.toFixed(1)}×</span>` : '',
     sla ? `<span class="flag flag-sla" title="Over the maxMinutes limit set for this process">${icon('alert')}SLA</span>` : '',
   ].join('');
@@ -80,6 +82,15 @@ function historyRow(r: RunRecord, settings: Settings, all: RunRecord[]): string 
   if (r.accessed && r.accessed.length) parts.push(`<div class="detail-block"><div class="detail-h">Touched</div><div class="chips">${r.accessed.map(id => { const [kind, ...rest] = id.split(':'); return `<span class="chip chip-${esc(kind)}"><span class="chip-k">${esc(kind)}</span><span class="chip-v">${esc(rest.join(':'))}</span></span>`; }).join('')}</div></div>`);
   if (r.artifacts && r.artifacts.length) parts.push(`<div class="detail-block"><div class="detail-h">Artifacts</div><div class="artifacts">${r.artifacts.map(a => `<button class="link-btn" data-open="${esc(a)}" title="${esc(a)}">${icon('file')}${esc(a.split(/[\\/]/).pop() || a)}</button>`).join('')}</div></div>`);
   parts.push(`<div class="detail-actions"><button class="link-btn" data-msg="compare" data-key="${esc(runKey(r))}" title="Compare this run with another">${icon('git-compare')}Compare with…</button></div>`);
+  if (drift.length) {
+    parts.push(`<div class="detail-block"><div class="detail-h">Metrics far from usual</div>${drift.map(d =>
+      `<div class="small ${d.direction === 'down' ? 'status-warn' : 'status-warn'}">${icon('graph-line')} <b>${esc(d.key)}</b> ${esc(String(d.value))} — usually about ${esc(String(Math.round(d.baseline * 100) / 100))} (${d.sample} prior runs)</div>`).join('')}</div>`);
+  }
+  const who = [
+    r.user ? `${icon('account')}${esc(r.user)}` : '',
+    r.commit ? `${icon('git-commit')}<code>${esc(r.commit)}</code>` : '',
+  ].filter(Boolean).join(' · ');
+  if (who) parts.push(`<div class="detail-block small muted">${who}</div>`);
   const ids = [r.runId ? `run ${r.runId}` : '', r.startedAt ? `started ${dateTime(r.startedAt)}` : ''].filter(Boolean).join(' · ');
   if (ids) parts.push(`<div class="detail-block muted small mono">${esc(ids)}</div>`);
   if (!parts.length) parts.push(`<div class="detail-block muted small">No extra detail recorded for this run (older reporter).</div>`);

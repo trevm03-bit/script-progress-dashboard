@@ -38,9 +38,19 @@ export function renderDeltaTracker(data: DashboardData, settings: Settings, now:
     const trendIcon = stats.trend === 'up' ? 'arrow-up' : stats.trend === 'down' ? 'arrow-down' : 'arrow-right';
     const last = pts[pts.length - 1];
     // Threshold guides share the chart's scale (including the threshold values so they are always visible).
-    const guideVals = [thr?.min, thr?.max].filter((v): v is number => typeof v === 'number');
+    // The target is part of the scale as well as the guides: a goal line off the top of the
+    // chart tells you nothing.
+    const target = typeof thr?.target === 'number' ? thr.target : undefined;
+    const guideVals = [thr?.min, thr?.max, target].filter((v): v is number => typeof v === 'number');
     const scaleVals = values.concat(guideVals);
-    const guides = guideVals.map(v => { const y = sparklineY(scaleVals, v, H, 3); return y === null ? '' : `<line class="guide" x1="0" x2="${W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}"/>`; }).join('');
+    const guides = [thr?.min, thr?.max]
+      .filter((v): v is number => typeof v === 'number')
+      .map(v => { const y = sparklineY(scaleVals, v, H, 3); return y === null ? '' : `<line class="guide" x1="0" x2="${W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}"/>`; })
+      .join('')
+      + (target !== undefined ? (() => {
+          const y = sparklineY(scaleVals, target, H, 3);
+          return y === null ? '' : `<line class="guide-target" x1="0" x2="${W}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}"><title>target ${esc(formatMetric(target, fmt))}</title></line>`;
+        })() : '');
     // When guides extend the scale, draw the path against the combined range so both agree.
     const pathScaled = guideVals.length ? rescaledPath(values, scaleVals, W, H, 3) : sparklinePath(values, W, H, 3);
     const lastX = values.length === 1 ? W / 2 : W - 3;
@@ -56,6 +66,7 @@ export function renderDeltaTracker(data: DashboardData, settings: Settings, now:
   <div class="delta-stats muted small">
     <span>min ${esc(formatMetric(stats.min, fmt))}</span><span>max ${esc(formatMetric(stats.max, fmt))}</span>
     <span>Δ ${stats.change >= 0 ? '+' : ''}${esc(formatMetric(stats.change, fmt))}</span>
+    ${target !== undefined ? `<span class="${stats.current === target ? 'status-pass' : ''}" title="Target">${stats.current === target ? '✓ at target' : `target ${esc(formatMetric(target, fmt))}`}</span>` : ''}
     ${thr ? `<span title="Threshold">${typeof thr.min === 'number' ? `≥ ${esc(formatMetric(thr.min, fmt))}` : ''}${typeof thr.min === 'number' && typeof thr.max === 'number' ? ' · ' : ''}${typeof thr.max === 'number' ? `≤ ${esc(formatMetric(thr.max, fmt))}` : ''}</span>` : ''}
     <span>${pts.length} pts · ${esc(relativeTime(last?.date, now))}</span>
   </div>

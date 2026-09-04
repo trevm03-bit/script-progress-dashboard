@@ -155,6 +155,11 @@
           "scriptProgress.sections.metrics": { "type": "boolean", "default": false, "order": 9, "description": "Metrics Explorer: every value reported with Progress.metric(), per task across recent runs, with change vs the previous run." },
           "scriptProgress.sections.warningTrends": { "type": "boolean", "default": false, "order": 10, "description": "Warning Trends: recurring warning messages grouped and counted, and warnings per day." },
           "scriptProgress.sections.scriptHealth": { "type": "boolean", "default": false, "order": 11, "description": "Script Health: last run per script, result dots, failure rate, duration trend, stale detection." },
+          "scriptProgress.sections.pendingActions": { "type": "boolean", "default": true, "markdownDescription": "Findings your scripts marked `actionable=True`, taken from each script's most recent **successful** run. A failed run never clears an item." },
+          "scriptProgress.sections.impact": { "type": "boolean", "default": false, "markdownDescription": "Running totals of what your scripts have contributed, from `Progress.impact()`." },
+          "scriptProgress.pendingActions.maxAgeDays": { "type": "number", "default": 90, "minimum": 1, "description": "Ignore actionable findings from runs older than this." },
+          "scriptProgress.coverage.show": { "type": "boolean", "default": true, "markdownDescription": "Show the coverage figure in the summary strip. It combines schedule adherence, run success and metrics-in-range, and always shows those inputs in its tooltip. It measures whether your jobs ran and what they reported — **not** the quality of the underlying data." },
+          "scriptProgress.runHistory.ignoreMetrics": { "type": "array", "items": { "type": "string" }, "default": [], "description": "Metric names to exclude from regression detection — anything naturally variable, such as a timestamp or an id." },
           "scriptProgress.sections.accessMap": { "type": "boolean", "default": false, "order": 12, "description": "Access Map: which scripts touch which files, tables and services, drawn as a constellation with data lineage." },
           "scriptProgress.dashboard.sectionOrder": { "type": "array", "items": { "type": "string", "enum": ["summary", "activeTask", "warnings", "lastCompleted", "quickActions", "processCalendar", "timeline", "deltaTracker", "metrics", "runHistory", "warningTrends", "scriptHealth", "accessMap"] }, "default": ["summary", "activeTask", "warnings", "lastCompleted", "quickActions", "processCalendar", "timeline", "deltaTracker", "metrics", "runHistory", "warningTrends", "scriptHealth", "accessMap"], "order": 13, "description": "Order of sections top to bottom. Sections not listed go last." },
           "scriptProgress.dashboard.sidebarSections": { "type": "array", "items": { "type": "string", "enum": ["summary", "activeTask", "warnings", "lastCompleted", "quickActions", "processCalendar", "timeline", "deltaTracker", "metrics", "runHistory", "warningTrends", "scriptHealth", "accessMap"] }, "default": [], "order": 14, "markdownDescription": "Sections to show in the **sidebar** (the narrow view). Empty = the same sections as the dashboard tab. Use this to keep only the core in the sidebar." },
@@ -245,7 +250,13 @@
               "confirm": { "type": "boolean", "default": true, "description": "Ask for confirmation before running." },
               "group": { "type": "string", "description": "Group heading." },
               "cwd": { "type": "string", "description": "Working directory (relative to the workspace folder). Default: the workspace folder." },
-              "task": { "type": "string", "description": "The task name this button starts (so the button can show its last run and be disabled while it runs)." }
+              "task": { "type": "string", "description": "The task name this button starts (so the button can show its last run and be disabled while it runs)." },
+              "enableWhen": { "type": "object", "required": ["metric"], "markdownDescription": "Only offer this button when the last **successful** run says it is worth it — e.g. `{ \"metric\": \"issues\", \"gt\": 0 }` on a fix button. The button stays visible and is disabled with the reason, never hidden. If the metric or the run is missing, the button stays enabled.", "properties": {
+                "task": { "type": "string", "description": "Task whose last successful run is inspected. Defaults to this button's own 'task'." },
+                "metric": { "type": "string", "description": "Metric name to read from that run." },
+                "gt": { "type": "number" }, "gte": { "type": "number" }, "lt": { "type": "number" }, "lte": { "type": "number" },
+                "eq": { "description": "Exact match, number or string." }
+              } }
             } }
           },
           "scriptProgress.quickActions.runVia": { "type": "string", "enum": ["terminal", "task"], "default": "terminal", "markdownDescription": "`terminal`: send the command to a reusable *Script Progress* terminal. `task`: run it as a VS Code task (appears in Terminal → Run Task, and the exit code is captured)." },
@@ -261,7 +272,7 @@
         "properties": {
           "scriptProgress.deltaTracker.metrics": { "type": "array", "default": [], "items": { "type": "string" }, "description": "Metric names from deltas.json to chart. Empty = every metric present." },
           "scriptProgress.deltaTracker.formats": { "type": "object", "default": {}, "additionalProperties": { "type": "object", "properties": { "unit": { "type": "string" }, "decimals": { "type": "number" }, "label": { "type": "string" } } }, "markdownDescription": "Per-metric display: `{ \"reconciliation_delta\": { \"unit\": \"%\", \"decimals\": 2, \"label\": \"Reconciliation Δ\" } }`." },
-          "scriptProgress.deltaTracker.thresholds": { "type": "object", "default": {}, "additionalProperties": { "type": "object", "properties": { "min": { "type": "number" }, "max": { "type": "number" } } }, "markdownDescription": "Per-metric acceptable range: `{ \"reconciliation_delta\": { \"min\": -0.5, \"max\": 0.5 } }`. Out-of-range values are highlighted and counted in the summary strip." },
+          "scriptProgress.deltaTracker.thresholds": { "type": "object", "default": {}, "additionalProperties": { "type": "object", "properties": { "min": { "type": "number" }, "max": { "type": "number" }, "target": { "type": "number", "description": "The value this metric is aiming at. Drawn as its own line on the chart — an acceptable band is not the same thing as a goal." } } }, "markdownDescription": "Per-metric acceptable range and goal: `{ \"reconciliation_delta\": { \"min\": -0.5, \"max\": 0.5, \"target\": 0 } }`. Out-of-range values are highlighted and counted in the summary strip; the target is drawn as a separate line." },
           "scriptProgress.deltaTracker.points": { "type": "number", "default": 50, "minimum": 2, "description": "How many recent points to chart per metric." }
         }
       },

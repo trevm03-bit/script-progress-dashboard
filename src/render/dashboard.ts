@@ -16,6 +16,8 @@ import { renderAccessMap } from './accessMapSummary';
 import { renderTimeline } from './timeline';
 import { renderMetricsExplorer } from './metricsExplorer';
 import { renderWarningTrends } from './warningTrends';
+import { renderPendingActions } from './pendingActions';
+import { renderImpact } from './impact';
 import { esc, icon, SectionOpts } from './html';
 
 export interface RenderContext {
@@ -54,6 +56,8 @@ export function renderSections(data: DashboardData, settings: Settings, ctx: Ren
       case 'warningTrends': parts.push(renderWarningTrends(data, settings, ctx.now, o(id), narrow)); break;
       case 'scriptHealth': parts.push(renderScriptHealth(data, settings, ctx.now, o(id))); break;
       case 'accessMap': parts.push(renderAccessMap(data, settings, ctx.now, ctx.surface, o(id), ctx.graph)); break;
+      case 'pendingActions': parts.push(renderPendingActions(data, settings, ctx.now, o(id))); break;
+      case 'impact': parts.push(renderImpact(data, settings, ctx.now, o(id))); break;
     }
   }
 

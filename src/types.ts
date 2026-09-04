@@ -170,6 +170,24 @@ export interface ProcessConfig {
   subtasks?: string[];
 }
 
+/**
+ * When a button is worth offering. Evaluated against the most recent successful run of `task`
+ * (or of the button's own `task` when omitted): the button stays VISIBLE and becomes disabled
+ * with the reason, because a button that vanishes leaves the reader hunting for it — and the
+ * reason ("last run found 0 issues") is usually the thing they wanted to know anyway.
+ */
+export interface EnableWhen {
+  /** Task whose last successful run is inspected. Defaults to the button's own `task`. */
+  task?: string;
+  /** Metric to read from that run. */
+  metric: string;
+  gt?: number;
+  gte?: number;
+  lt?: number;
+  lte?: number;
+  eq?: number | string;
+}
+
 export interface QuickActionConfig {
   label: string;
   command: string;
@@ -178,17 +196,18 @@ export interface QuickActionConfig {
   group?: string;
   cwd?: string;
   task?: string;
+  enableWhen?: EnableWhen;
 }
 
 export type SectionId =
   | 'summary' | 'activeTask' | 'warnings' | 'lastCompleted' | 'quickActions'
   | 'processCalendar' | 'timeline' | 'deltaTracker' | 'metrics' | 'runHistory'
-  | 'warningTrends' | 'scriptHealth' | 'accessMap';
+  | 'warningTrends' | 'scriptHealth' | 'accessMap' | 'pendingActions' | 'impact';
 
 export const ALL_SECTIONS: SectionId[] = [
-  'summary', 'activeTask', 'warnings', 'lastCompleted', 'quickActions',
+  'summary', 'activeTask', 'pendingActions', 'warnings', 'lastCompleted', 'quickActions',
   'processCalendar', 'timeline', 'deltaTracker', 'metrics', 'runHistory',
-  'warningTrends', 'scriptHealth', 'accessMap',
+  'warningTrends', 'scriptHealth', 'impact', 'accessMap',
 ];
 
 export const SECTION_TITLES: Record<SectionId, string> = {
@@ -205,6 +224,8 @@ export const SECTION_TITLES: Record<SectionId, string> = {
   warningTrends: 'Warning Trends',
   scriptHealth: 'Script Health',
   accessMap: 'Access Map',
+  pendingActions: 'Pending Actions',
+  impact: 'Impact Summary',
 };
 
 /** Codicon per section, for titles and pickers. */
@@ -212,12 +233,18 @@ export const SECTION_ICONS: Record<SectionId, string> = {
   summary: 'dashboard', activeTask: 'pulse', warnings: 'warning', lastCompleted: 'check-all', quickActions: 'play',
   processCalendar: 'calendar', timeline: 'timeline-view-icon', deltaTracker: 'graph-line', metrics: 'table', runHistory: 'history',
   warningTrends: 'flame', scriptHealth: 'heart', accessMap: 'graph',
+  pendingActions: 'checklist', impact: 'graph-scatter',
 };
 
 export type SectionConfig = Record<SectionId, boolean>;
 
 export interface DeltaFormat { unit?: string; decimals?: number; label?: string }
-export interface DeltaThreshold { min?: number; max?: number }
+export interface DeltaThreshold {
+  min?: number;
+  max?: number;
+  /** The value this metric is aiming at. Drawn as its own line: a band is not a goal. */
+  target?: number;
+}
 
 export interface Settings {
   /** Settings that will not behave as written. Surfaced in the section they belong to. */
@@ -230,7 +257,7 @@ export interface Settings {
   sidebarSections: SectionId[];
   dashboard: { collapsible: boolean; density: 'comfortable' | 'compact' };
   activeTask: { showLog: boolean; logLines: number; showMetrics: boolean; showArtifacts: boolean };
-  runHistory: { maxRows: number; filters: boolean; detail: boolean; trend: boolean; anomalies: boolean; anomalyFactor: number };
+  runHistory: { maxRows: number; filters: boolean; detail: boolean; trend: boolean; anomalies: boolean; anomalyFactor: number; ignoreMetrics: string[] };
   timeline: { windowHours: number; showFailed: boolean };
   metricsExplorer: { totals: boolean; maxRuns: number; metrics: string[] };
   warningTrends: { days: number; top: number };
@@ -240,6 +267,8 @@ export interface Settings {
   quickActions: { runVia: 'terminal' | 'task'; asTasks: boolean; contextMenu: boolean; disableWhileRunning: boolean; interpreters: Record<string, string> };
   deltaMetrics: string[];
   deltas: { formats: Record<string, DeltaFormat>; thresholds: Record<string, DeltaThreshold>; points: number };
+  pendingActions: { maxAgeDays: number };
+  coverage: { show: boolean };
   staleHours: number;
   health: { resultDots: number };
   accessMap: { maxNodes: number; layout: 'force' | 'radial'; timeWindowDays: number; labels: 'auto' | 'all' | 'scripts'; sidebarPreview: boolean; replay: boolean; ambient: boolean; halos: boolean; glyphs: boolean; minimap: boolean; starfield: boolean };

@@ -4,6 +4,7 @@ exports.renderQuickActions = renderQuickActions;
 const time_1 = require("../logic/time");
 const html_1 = require("./html");
 const validate_1 = require("../logic/validate");
+const buttons_1 = require("../logic/buttons");
 function renderQuickActions(data, settings, now, trusted, opts) {
     const problems = (0, validate_1.problemsFor)(settings.problems, 'quickActions');
     if (settings.buttons.length === 0) {
@@ -37,12 +38,19 @@ function renderQuickActions(data, settings, now, trusted, opts) {
             const b = settings.buttons[index];
             const taskKey = b.task || '';
             const isRunning = !!taskKey && [...running].some(t => (0, time_1.taskMatches)(t, taskKey));
-            const disabled = !trusted || (settings.quickActions.disableWhileRunning && isRunning);
+            // A button can also be pointless right now — a "fix" with nothing to fix. Disabled with
+            // the reason, never hidden.
+            const verdict = (0, buttons_1.buttonEnabled)(b.enableWhen, b.task, data.history);
+            const disabled = !trusted || (settings.quickActions.disableWhileRunning && isRunning) || !verdict.enabled;
             const last = taskKey ? [...lastByTask.entries()].filter(([k]) => (0, time_1.taskMatches)(k, taskKey)).map(([, v]) => v).sort((a, b2) => ((0, time_1.parseIso)(b2.date)?.getTime() ?? 0) - ((0, time_1.parseIso)(a.date)?.getTime() ?? 0))[0] : undefined;
             const status = isRunning
                 ? `<span class="btn-status">${(0, html_1.icon)('sync~spin')} running</span>`
                 : last ? `<span class="btn-status ${last.success ? 'status-pass' : 'status-fail'}" title="Last run">${(0, html_1.icon)(last.success ? 'check' : 'error')} ${(0, html_1.esc)((0, time_1.relativeTime)(last.date, now))}</span>` : '';
-            body += `<div class="btn-cell"><button class="btn" data-action="${index}" title="${(0, html_1.esc)(b.command)}" ${disabled ? 'disabled' : ''}>${(0, html_1.icon)(b.icon)}<span>${(0, html_1.esc)(b.label)}</span>${b.confirm === false ? (0, html_1.icon)('zap', 'btn-hint') : ''}</button>${status}</div>`;
+            const why = !verdict.enabled && trusted && !isRunning ? verdict.reason : '';
+            const tip = why ? `${b.command}
+
+Not needed right now: ${why}` : b.command;
+            body += `<div class="btn-cell"><button class="btn" data-action="${index}" title="${(0, html_1.esc)(tip)}" ${disabled ? 'disabled' : ''}>${(0, html_1.icon)(b.icon)}<span>${(0, html_1.esc)(b.label)}</span>${b.confirm === false ? (0, html_1.icon)('zap', 'btn-hint') : ''}</button>${why ? `<span class="btn-status muted" title="${(0, html_1.esc)(why)}">${(0, html_1.icon)('info')} not needed</span>` : status}</div>`;
         }
         body += `</div>`;
     }

@@ -55,6 +55,9 @@ function readSettings() {
     const defaults = {
         summary: true, activeTask: true, warnings: true, lastCompleted: true, runHistory: true, timeline: true,
         quickActions: false, processCalendar: false, deltaTracker: false, metrics: false, warningTrends: false, scriptHealth: false, accessMap: false,
+        // Pending Actions is ON by default: an outstanding item nobody sees is the failure this
+        // section exists to prevent, and it renders as a single quiet line when there is nothing.
+        pendingActions: true, impact: false,
     };
     for (const s of types_1.ALL_SECTIONS)
         sections[s] = c.get(`sections.${s}`, defaults[s]);
@@ -92,6 +95,7 @@ function readSettings() {
             trend: bool('runHistory.trend', true),
             anomalies: bool('runHistory.anomalies', true),
             anomalyFactor: num('runHistory.anomalyFactor', 2, 1.1),
+            ignoreMetrics: (c.get('runHistory.ignoreMetrics', []) || []).filter(m => typeof m === 'string' && m),
         },
         timeline: {
             windowHours: num('timeline.windowHours', 24, 1),
@@ -125,6 +129,8 @@ function readSettings() {
             thresholds: c.get('deltaTracker.thresholds', {}) || {},
             points: num('deltaTracker.points', 50, 2),
         },
+        pendingActions: { maxAgeDays: num('pendingActions.maxAgeDays', 90, 1, 3650) },
+        coverage: { show: bool('coverage.show', true) },
         staleHours: num('scriptHealth.staleHours', 168, 1),
         health: { resultDots: num('scriptHealth.resultDots', 5, 0, 20) },
         accessMap: {

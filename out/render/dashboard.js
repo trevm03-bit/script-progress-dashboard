@@ -18,6 +18,8 @@ const accessMapSummary_1 = require("./accessMapSummary");
 const timeline_1 = require("./timeline");
 const metricsExplorer_1 = require("./metricsExplorer");
 const warningTrends_1 = require("./warningTrends");
+const pendingActions_1 = require("./pendingActions");
+const impact_1 = require("./impact");
 const html_1 = require("./html");
 function renderSections(data, settings, ctx) {
     const parts = [];
@@ -70,6 +72,12 @@ function renderSections(data, settings, ctx) {
                 break;
             case 'accessMap':
                 parts.push((0, accessMapSummary_1.renderAccessMap)(data, settings, ctx.now, ctx.surface, o(id), ctx.graph));
+                break;
+            case 'pendingActions':
+                parts.push((0, pendingActions_1.renderPendingActions)(data, settings, ctx.now, o(id)));
+                break;
+            case 'impact':
+                parts.push((0, impact_1.renderImpact)(data, settings, ctx.now, o(id)));
                 break;
         }
     }

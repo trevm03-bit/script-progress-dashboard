@@ -129,6 +129,32 @@ body.surface-map #sections { flex: 1; display: flex; flex-direction: column; min
 /* Waiting on an upstream process. Deliberately NOT the overdue colour: nothing here is anyone's
    fault yet, and colouring it red sends the reader to the wrong process. */
 .calendar-blocked { color: var(--vscode-charts-purple, var(--sp-muted)); }
+
+/* Pending Actions — a to-do list, so it reads as a list of things, not a wall of prose. */
+.pa-group { margin-bottom: 10px; }
+.pa-task { font-weight: 600; font-size: var(--sp-font-small); margin-bottom: 4px; }
+.pa-item { display: flex; align-items: flex-start; gap: 6px; padding: 5px 8px; margin: 3px 0;
+  border-left: 3px solid var(--sp-stalled); background: var(--vscode-inputValidation-warningBackground, transparent);
+  border-radius: 0 var(--sp-radius) var(--sp-radius) 0; font-size: var(--sp-font-small); }
+.pa-item.pa-error { border-left-color: var(--sp-failed); }
+.pa-item.pa-info { border-left-color: var(--vscode-editorInfo-foreground, var(--sp-muted)); background: transparent; }
+.pa-item .codicon { flex: none; margin-top: 2px; opacity: 0.8; }
+.pa-msg { flex: 1; }
+.pa-count { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 2ch; }
+.pa-cat { font-size: 10px; padding: 0 5px; border: 1px solid var(--sp-border); border-radius: 8px; opacity: 0.85; white-space: nowrap; }
+.pa-foot, .imp-foot { margin-top: 8px; display: flex; gap: 5px; align-items: flex-start; }
+
+/* Impact Summary — totals, deliberately plain. */
+.imp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--sp-gap); }
+.imp-card { border: 1px solid var(--sp-border); border-radius: var(--sp-radius); padding: 10px 12px; }
+.imp-label { font-size: var(--sp-font-small); color: var(--sp-muted); }
+.imp-total { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; margin: 2px 0; }
+.imp-sub { font-size: var(--sp-font-small); font-variant-numeric: tabular-nums; }
+.imp-meta { margin-top: 4px; }
+
+/* The target line is the goal, so it must not look like the threshold band. */
+.guide-target { stroke: var(--sp-complete); stroke-width: 1.2; stroke-dasharray: none; opacity: 0.85; }
+.flag-drift { color: var(--sp-stalled); }
 .cal-blocked .cal-label { opacity: 0.9; }
 
 /* What a run actually did to a resource, under its name in the Access Map detail card. */

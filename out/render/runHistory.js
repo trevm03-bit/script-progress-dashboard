@@ -43,7 +43,9 @@ function historyRow(r, settings, all) {
     const verdict = settings.runHistory.anomalies ? (0, anomaly_1.durationVerdict)(r, all, settings.runHistory.anomalyFactor) : undefined;
     const sla = (0, anomaly_1.overSla)(r.task, Number(r.elapsed) || 0, settings.processes);
     const limit = (0, anomaly_1.slaFor)(r.task, settings.processes);
+    const drift = settings.runHistory.anomalies ? (0, anomaly_1.metricAnomalies)(r, all, settings.runHistory.anomalyFactor, settings.runHistory.ignoreMetrics) : [];
     const flags = [
+        drift.length ? `<span class="flag flag-drift" title="${(0, html_1.esc)(drift.map(d => `${d.key} ${d.value} vs a usual ${Math.round(d.baseline * 100) / 100}`).join(' · '))}">${(0, html_1.icon)('graph-line')}${drift.length}</span>` : '',
         verdict?.slow ? `<span class="flag flag-slow" title="${(0, html_1.esc)(`${verdict.factor.toFixed(1)}x the usual ${(0, time_1.formatDuration)(verdict.baseline)} (median of ${verdict.sample} runs)`)}">${(0, html_1.icon)('dashboard')}${verdict.factor.toFixed(1)}×</span>` : '',
         sla ? `<span class="flag flag-sla" title="Over the maxMinutes limit set for this process">${(0, html_1.icon)('alert')}SLA</span>` : '',
     ].join('');
@@ -80,6 +82,15 @@ function historyRow(r, settings, all) {
     if (r.artifacts && r.artifacts.length)
         parts.push(`<div class="detail-block"><div class="detail-h">Artifacts</div><div class="artifacts">${r.artifacts.map(a => `<button class="link-btn" data-open="${(0, html_1.esc)(a)}" title="${(0, html_1.esc)(a)}">${(0, html_1.icon)('file')}${(0, html_1.esc)(a.split(/[\\/]/).pop() || a)}</button>`).join('')}</div></div>`);
     parts.push(`<div class="detail-actions"><button class="link-btn" data-msg="compare" data-key="${(0, html_1.esc)((0, compare_1.runKey)(r))}" title="Compare this run with another">${(0, html_1.icon)('git-compare')}Compare with…</button></div>`);
+    if (drift.length) {
+        parts.push(`<div class="detail-block"><div class="detail-h">Metrics far from usual</div>${drift.map(d => `<div class="small ${d.direction === 'down' ? 'status-warn' : 'status-warn'}">${(0, html_1.icon)('graph-line')} <b>${(0, html_1.esc)(d.key)}</b> ${(0, html_1.esc)(String(d.value))} — usually about ${(0, html_1.esc)(String(Math.round(d.baseline * 100) / 100))} (${d.sample} prior runs)</div>`).join('')}</div>`);
+    }
+    const who = [
+        r.user ? `${(0, html_1.icon)('account')}${(0, html_1.esc)(r.user)}` : '',
+        r.commit ? `${(0, html_1.icon)('git-commit')}<code>${(0, html_1.esc)(r.commit)}</code>` : '',
+    ].filter(Boolean).join(' · ');
+    if (who)
+        parts.push(`<div class="detail-block small muted">${who}</div>`);
     const ids = [r.runId ? `run ${r.runId}` : '', r.startedAt ? `started ${(0, time_1.dateTime)(r.startedAt)}` : ''].filter(Boolean).join(' · ');
     if (ids)
         parts.push(`<div class="detail-block muted small mono">${(0, html_1.esc)(ids)}</div>`);

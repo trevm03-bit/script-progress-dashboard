@@ -1,6 +1,6 @@
 // A complete Settings object for tests, mirroring src/settings.ts defaults, with overrides.
 'use strict';
-const ALL = ['summary', 'activeTask', 'warnings', 'lastCompleted', 'quickActions', 'processCalendar', 'timeline', 'deltaTracker', 'metrics', 'runHistory', 'warningTrends', 'scriptHealth', 'accessMap'];
+const ALL = ['summary', 'activeTask', 'pendingActions', 'warnings', 'lastCompleted', 'quickActions', 'processCalendar', 'timeline', 'deltaTracker', 'metrics', 'runHistory', 'warningTrends', 'scriptHealth', 'impact', 'accessMap'];
 
 function settings(o = {}) {
   const sections = Object.fromEntries(ALL.map(id => [id, true]));
@@ -16,7 +16,7 @@ function settings(o = {}) {
     sidebarSections: o.sidebarSections || [],
     dashboard: { collapsible: true, density: 'comfortable', ...(o.dashboard || {}) },
     activeTask: { showLog: true, logLines: 6, showMetrics: true, showArtifacts: true, ...(o.activeTask || {}) },
-    runHistory: { maxRows: 15, filters: true, detail: true, trend: true, anomalies: true, anomalyFactor: 2, ...(o.runHistory || {}) },
+    runHistory: { maxRows: 15, filters: true, detail: true, trend: true, anomalies: true, anomalyFactor: 2, ignoreMetrics: [], ...(o.runHistory || {}) },
     timeline: { windowHours: 24, showFailed: true, ...(o.timeline || {}) },
     metricsExplorer: { totals: true, maxRuns: 12, metrics: [], ...(o.metricsExplorer || {}) },
     warningTrends: { days: 14, top: 8, ...(o.warningTrends || {}) },
@@ -33,6 +33,8 @@ function settings(o = {}) {
     quickActions: { runVia: 'terminal', asTasks: true, contextMenu: true, disableWhileRunning: true, interpreters: { '.py': 'python' }, ...(o.quickActions || {}) },
     deltaMetrics: o.deltaMetrics || [],
     deltas: { formats: {}, thresholds: {}, points: 50, ...(o.deltas || {}) },
+    pendingActions: { maxAgeDays: 90, ...(o.pendingActions || {}) },
+    coverage: { show: true, ...(o.coverage || {}) },
     staleHours: o.staleHours || 24,
     health: { resultDots: 5, ...(o.health || {}) },
     accessMap: { maxNodes: 150, layout: 'force', timeWindowDays: 0, labels: 'auto', sidebarPreview: true, replay: true, ambient: true, halos: true, glyphs: true, minimap: true, starfield: true, ...(o.accessMap || {}) },

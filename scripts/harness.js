@@ -49,6 +49,15 @@ const s = settings({
     { name: 'Quarter Close', label: 'Quarter Close', frequency: 'monthly', dayOfMonth: 25,
       subtasks: ['Quarter Close Phase 1', 'Quarter Close Phase 2', 'Quarter Close Phase 3'] },
     { name: 'Never Wired', label: 'Never Wired', frequency: 'daily' },
+    // A process blocked on an upstream one that has not run this period.
+    { name: 'Downstream Load', label: 'Downstream', frequency: 'monthly', dayOfMonth: 5, dependsOn: ['Upstream Extract'] },
+  ],
+  deltaMetrics: ['rows_loaded'],
+  deltas: { formats: { rows_loaded: { label: 'Rows loaded' } }, thresholds: { rows_loaded: { min: 1000, max: 30000, target: 20000 } }, points: 50 },
+  buttons: [
+    { label: 'Run demo', command: 'python demo/fake_run.py', icon: 'play', group: 'Ops', task: 'Demo Pipeline' },
+    { label: 'Fix issues', command: 'python demo/fake_run.py --fix', icon: 'wrench', group: 'Ops', task: 'Demo Pipeline',
+      enableWhen: { metric: 'rows_seen', gt: 999999 } },
   ],
 });
 s.accessMap.starfield = false;

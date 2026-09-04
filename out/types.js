@@ -5,9 +5,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SECTION_ICONS = exports.SECTION_TITLES = exports.ALL_SECTIONS = void 0;
 exports.ALL_SECTIONS = [
-    'summary', 'activeTask', 'warnings', 'lastCompleted', 'quickActions',
+    'summary', 'activeTask', 'pendingActions', 'warnings', 'lastCompleted', 'quickActions',
     'processCalendar', 'timeline', 'deltaTracker', 'metrics', 'runHistory',
-    'warningTrends', 'scriptHealth', 'accessMap',
+    'warningTrends', 'scriptHealth', 'impact', 'accessMap',
 ];
 exports.SECTION_TITLES = {
     summary: 'Summary strip',
@@ -23,11 +23,14 @@ exports.SECTION_TITLES = {
     warningTrends: 'Warning Trends',
     scriptHealth: 'Script Health',
     accessMap: 'Access Map',
+    pendingActions: 'Pending Actions',
+    impact: 'Impact Summary',
 };
 /** Codicon per section, for titles and pickers. */
 exports.SECTION_ICONS = {
     summary: 'dashboard', activeTask: 'pulse', warnings: 'warning', lastCompleted: 'check-all', quickActions: 'play',
     processCalendar: 'calendar', timeline: 'timeline-view-icon', deltaTracker: 'graph-line', metrics: 'table', runHistory: 'history',
     warningTrends: 'flame', scriptHealth: 'heart', accessMap: 'graph',
+    pendingActions: 'checklist', impact: 'graph-scatter',
 };
 //# sourceMappingURL=types.js.map

@@ -3,12 +3,23 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.renderSummary = renderSummary;
 const summary_1 = require("../logic/summary");
 const failures_1 = require("../logic/failures");
+const compliance_1 = require("../logic/compliance");
+const calendar_1 = require("../logic/calendar");
 const time_1 = require("../logic/time");
 const html_1 = require("./html");
 function renderSummary(data, settings, now) {
     const f = (0, summary_1.summaryFacts)(data, settings, now);
     const tiles = [];
     const tile = (value, label, cls = '', title = '') => tiles.push(`<div class="tile ${cls}" title="${(0, html_1.esc)(title)}"><div class="tile-v">${value}</div><div class="tile-l">${(0, html_1.esc)(label)}</div></div>`);
+    // The composite goes FIRST and carries its inputs in the tooltip. A number like this is only
+    // honest while the reader can see what went into it.
+    if (settings.coverage.show && settings.processes.length) {
+        const cov = (0, compliance_1.coverage)((0, calendar_1.calendarRows)(settings.processes, data.history, now), data.history, f.metricsOutOfRange.length, Object.keys(settings.deltas.thresholds || {}).length, now);
+        if (cov.percent !== null) {
+            const cls = cov.percent >= 90 ? 'tile-ok' : cov.percent >= 70 ? 'tile-warn' : 'tile-bad';
+            tile(`${cov.percent}%`, 'coverage', cls, cov.inputs.map(i => i.detail).join(' · '));
+        }
+    }
     if (f.runningCount)
         tile(`${(0, html_1.icon)('sync~spin')} ${f.runningCount}`, 'running', 'tile-running');
     if (f.stalledCount)
