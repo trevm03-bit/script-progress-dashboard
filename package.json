@@ -2,7 +2,7 @@
   "name": "script-progress-dashboard",
   "displayName": "Script Progress Dashboard",
   "description": "Live progress, run history and slow-run alerts for long-running Python and Node scripts. Local files only: no server, no telemetry.",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "publisher": "trevor-marshall",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -42,7 +42,10 @@
       { "command": "scriptProgress.simulateRun", "title": "Simulate a Demo Run", "category": "Script Progress", "icon": "$(beaker)" },
       { "command": "scriptProgress.statusMenu", "title": "Status Menu", "category": "Script Progress" },
       { "command": "scriptProgress.openSettings", "title": "Open Settings", "category": "Script Progress", "icon": "$(settings-gear)" },
-      { "command": "scriptProgress.openWalkthrough", "title": "Open Getting Started", "category": "Script Progress" }
+      { "command": "scriptProgress.openWalkthrough", "title": "Open Getting Started", "category": "Script Progress" },
+      { "command": "scriptProgress.compareRuns", "title": "Compare Two Runs…", "category": "Script Progress", "icon": "$(git-compare)" },
+      { "command": "scriptProgress.copyWeeklyDigest", "title": "Copy Weekly Digest", "category": "Script Progress", "icon": "$(mail)" },
+      { "command": "scriptProgress.importDeltas", "title": "Import Delta History…", "category": "Script Progress", "icon": "$(cloud-upload)" }
     ],
     "keybindings": [
       { "command": "scriptProgress.openPanel", "key": "ctrl+alt+shift+d", "mac": "cmd+alt+shift+d" },
@@ -220,6 +223,7 @@
               "dayOfWeek": { "type": "number", "minimum": 1, "maximum": 7, "description": "Weekly only: ISO weekday it is due by (1 = Monday … 7 = Sunday). Default: end of the week." },
               "dueHour": { "type": "number", "minimum": 0, "maximum": 23, "description": "Daily only: hour (local) after which a missing run is overdue. Default 12." },
               "maxMinutes": { "type": "number", "minimum": 1, "description": "SLA: a run of this process longer than this is flagged as over its time budget (and notified when notifications.onSlow is on)." },
+              "reminderDays": { "type": "number", "minimum": 1, "description": "Notify when the due date is this many days away, instead of only once it has been missed. Fires once per due date." },
               "subtasks": { "type": "array", "items": { "type": "string" }, "markdownDescription": "Task-name prefixes of the phases this process is made of, when it is not one script. The process counts as done only once **every** phase has run successfully in the period; until then it shows `2 of 3 phases`. Leave it out for a single-script process." }
             } }
           },
@@ -302,6 +306,7 @@
       {
         "title": "Events",
         "properties": {
+          "scriptProgress.metricsExplorer.totals": { "type": "boolean", "default": true, "description": "Show a total and mean per metric across the runs in view. Useful for anything worth accumulating, such as a per-run cost." },
           "scriptProgress.events.file": { "type": "boolean", "default": false, "markdownDescription": "Write `last_event.json` into the logs folder whenever a run completes, fails, stalls or exits, so a tool outside VS Code can watch for it. Off by default: this is the only file the extension writes. It stays local — the extension makes no network requests of any kind." }
         }
       },

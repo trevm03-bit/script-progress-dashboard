@@ -1,7 +1,7 @@
 // Delta Tracker: one inline SVG sparkline per metric with current / min / max / trend, optional
 // unit formatting and threshold bands.
-import { DashboardData, Settings } from '../types';
-import { formatMetric, outOfRange, seriesStats, sparklinePath, sparklineY } from '../logic/sparkline';
+import { DashboardData, DeltaFormat, DeltaPoint, Settings } from '../types';
+import { formatMetric, outOfRange, seriesStats, sparklinePath, sparklineY, withinRunPairs } from '../logic/sparkline';
 import { relativeTime } from '../logic/time';
 import { esc, icon, section, empty, problemList, SectionOpts } from './html';
 import { problemsFor } from '../logic/validate';
@@ -59,6 +59,7 @@ export function renderDeltaTracker(data: DashboardData, settings: Settings, now:
     ${thr ? `<span title="Threshold">${typeof thr.min === 'number' ? `≥ ${esc(formatMetric(thr.min, fmt))}` : ''}${typeof thr.min === 'number' && typeof thr.max === 'number' ? ' · ' : ''}${typeof thr.max === 'number' ? `≤ ${esc(formatMetric(thr.max, fmt))}` : ''}</span>` : ''}
     <span>${pts.length} pts · ${esc(relativeTime(last?.date, now))}</span>
   </div>
+  ${pairLine(pts, fmt)}
 </div>`;
   }).join('');
 
@@ -80,4 +81,16 @@ function rescaledPath(values: number[], scaleVals: number[], w: number, h: numbe
   });
   if (pts.length === 1) { const [x, y] = pts[0].split(',').map(Number); return `M ${(x - 4).toFixed(1)},${y} L ${(x + 4).toFixed(1)},${y}`; }
   return `M ${pts[0]} L ${pts.slice(1).join(' ')}`;
+}
+
+/**
+ * One run that measured the same thing twice — what it found, and what it left behind after
+ * fixing it. Both points were always stored; without this the chart draws two dots and the story
+ * ("found this much, resolved it to that") is the thing the reader has to guess.
+ */
+function pairLine(pts: DeltaPoint[], fmt: DeltaFormat | undefined): string {
+  const pair = withinRunPairs(pts)[0];
+  if (!pair || pair.change === 0) return '';
+  const verb = Math.abs(pair.last.value) < Math.abs(pair.first.value) ? 'resolved to' : 'moved to';
+  return `<div class="delta-pair" title="Two values reported by the same run">${icon('history')}latest run: found <b>${esc(formatMetric(pair.first.value, fmt))}</b>, ${verb} <b>${esc(formatMetric(pair.last.value, fmt))}</b></div>`;
 }

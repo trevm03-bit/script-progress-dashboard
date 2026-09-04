@@ -201,6 +201,12 @@ class DashboardHost {
             case 'exportCsv':
                 await vscode.commands.executeCommand('scriptProgress.exportHistoryCsv');
                 break;
+            // The webview sends only a run KEY; the command resolves it against history itself, so the
+            // page can never hand the extension a run it invented.
+            case 'compare':
+                if (typeof msg.key === 'string' && msg.key.length < 200)
+                    await vscode.commands.executeCommand('scriptProgress.compareRuns', msg.key);
+                break;
             case 'exportReport':
                 await vscode.commands.executeCommand('scriptProgress.exportReport');
                 break;

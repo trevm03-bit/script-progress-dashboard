@@ -117,7 +117,7 @@ export class DashboardHost {
     });
   }
 
-  private async onMessage(msg: { type: string; index?: number; id?: string; collapsed?: boolean; path?: string; label?: string; value?: string; text?: string; data?: string }): Promise<void> {
+  private async onMessage(msg: { type: string; index?: number; id?: string; collapsed?: boolean; path?: string; label?: string; value?: string; text?: string; data?: string; key?: string }): Promise<void> {
     switch (msg?.type) {
       case 'ready':
         this.refresh(true);
@@ -170,6 +170,11 @@ export class DashboardHost {
         if (this.surface === 'map') await vscode.commands.executeCommand('scriptProgress.openPanel');
         break;
       case 'exportCsv': await vscode.commands.executeCommand('scriptProgress.exportHistoryCsv'); break;
+      // The webview sends only a run KEY; the command resolves it against history itself, so the
+      // page can never hand the extension a run it invented.
+      case 'compare':
+        if (typeof msg.key === 'string' && msg.key.length < 200) await vscode.commands.executeCommand('scriptProgress.compareRuns', msg.key);
+        break;
       case 'exportReport': await vscode.commands.executeCommand('scriptProgress.exportReport'); break;
       case 'openPanel': await vscode.commands.executeCommand('scriptProgress.openPanel'); break;
       case 'openMap': await vscode.commands.executeCommand('scriptProgress.openMap'); break;

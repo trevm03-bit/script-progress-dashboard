@@ -6,7 +6,10 @@ import * as vscode from 'vscode';
 import { ActionRunner, commandForFile } from './actions';
 import { DashboardPanel } from './dashboardPanel';
 import { FILES } from './dataReader';
-import { dailySummaryText, historyCsv } from './logic/summary';
+import { dailySummaryText, historyCsv, weeklyDigestText } from './logic/summary';
+import { compareRuns, defaultBaseline, runKey } from './logic/compare';
+import { comparisonText } from './logic/compareText';
+import { DeltaPoint, RunRecord } from './types';
 import { dateTime, formatDuration, parseIso, taskState } from './logic/time';
 import { simulateRun } from './simulate';
 import { reportHtml } from './logic/report';
@@ -111,6 +114,112 @@ export function registerCommands(context: vscode.ExtensionContext, cx: CommandCo
     if (pick) await vscode.window.showTextDocument(target);
   });
 
+
+  reg('scriptProgress.copyWeeklyDigest', async () => {
+    const text = weeklyDigestText(cx.getData(), cx.getSettings(), new Date());
+    await vscode.env.clipboard.writeText(text);
+    const pick = await vscode.window.showInformationMessage('Weekly digest copied to the clipboard.', 'Show it');
+    if (pick) {
+      const doc = await vscode.workspace.openTextDocument({ content: text, language: 'plaintext' });
+      await vscode.window.showTextDocument(doc, { preview: true });
+    }
+  });
+
+  reg('scriptProgress.compareRuns', async (preselected?: unknown) => {
+    const data = cx.getData();
+    if (data.history.length < 2) { void vscode.window.showInformationMessage('Two runs are needed to compare. There are fewer than two in history.'); return; }
+    const newestFirst = data.history.slice().sort((a, b) => (parseIso(b.date)?.getTime() ?? 0) - (parseIso(a.date)?.getTime() ?? 0));
+    const item = (r: RunRecord) => ({
+      label: `${r.success ? '$(check)' : '$(error)'} ${r.task}`,
+      description: `${dateTime(r.date)} · ${formatDuration(Number(r.elapsed) || 0)}${r.warnings ? ` · ${r.warnings} warning(s)` : ''}`,
+      detail: r.summary || undefined,
+      run: r,
+    });
+
+    // Called from a Run History row: that run is the subject, and we only ask what to compare to.
+    let subject = typeof preselected === 'string' ? newestFirst.find(r => runKey(r) === preselected) : undefined;
+    if (!subject) {
+      const pick = await vscode.window.showQuickPick(newestFirst.map(item), { title: 'Compare runs (1 of 2): the run you are looking at', matchOnDescription: true });
+      if (!pick) return;
+      subject = pick.run;
+    }
+    const others = newestFirst.filter(r => r !== subject);
+    const suggested = defaultBaseline(subject, data.history);
+    const choices = others.map(item);
+    if (suggested) {
+      const i = choices.findIndex(c => c.run === suggested);
+      if (i >= 0) { choices[i] = { ...choices[i], label: `${choices[i].label}  $(star-full)`, detail: `Previous run of this task${choices[i].detail ? ' · ' + choices[i].detail : ''}` }; choices.unshift(choices.splice(i, 1)[0]); }
+    }
+    const against = await vscode.window.showQuickPick(choices, { title: `Compare "${subject.task}" against…`, matchOnDescription: true });
+    if (!against) return;
+
+    // Baseline first, so the numbers read as "what changed since then".
+    const cmp = compareRuns(against.run, subject);
+    const doc = await vscode.workspace.openTextDocument({ content: comparisonText(cmp), language: 'markdown' });
+    await vscode.window.showTextDocument(doc, { preview: true });
+  });
+
+  reg('scriptProgress.importDeltas', async () => {
+    const picked = await vscode.window.showOpenDialog({
+      title: 'Import delta history', canSelectMany: false, filters: { JSON: ['json'] },
+      openLabel: 'Import',
+    });
+    if (!picked || !picked[0]) return;
+    let incoming: unknown;
+    try {
+      incoming = JSON.parse(fs.readFileSync(picked[0].fsPath, 'utf-8'));
+    } catch (e) {
+      void vscode.window.showErrorMessage(`Could not read that file: ${(e as Error).message}`);
+      return;
+    }
+    // Accept either a bare array for one metric, or { metric: [...] } for several.
+    const series: Record<string, unknown[]> = Array.isArray(incoming)
+      ? {}
+      : (incoming && typeof incoming === 'object') ? incoming as Record<string, unknown[]> : {};
+    if (Array.isArray(incoming)) {
+      const name = await vscode.window.showInputBox({ title: 'Import delta history', prompt: 'Which metric are these points for?', placeHolder: 'e.g. reconciliation_delta' });
+      if (!name) return;
+      series[name] = incoming;
+    }
+    const file = path.join(cx.logsDir(), FILES.deltas);
+    let existing: Record<string, DeltaPoint[]> = {};
+    try { existing = JSON.parse(fs.readFileSync(file, 'utf-8')); } catch { existing = {}; }
+    if (!existing || typeof existing !== 'object' || Array.isArray(existing)) existing = {};
+
+    let added = 0, skipped = 0, rejected = 0;
+    for (const [name, pts] of Object.entries(series)) {
+      if (!Array.isArray(pts)) { rejected++; continue; }
+      const current = Array.isArray(existing[name]) ? existing[name] : [];
+      // Never replace what is already there, and never import the same point twice.
+      const seen = new Set(current.map(p => `${p.date}|${p.value}`));
+      for (const raw of pts) {
+        const p = raw as Partial<DeltaPoint>;
+        const value = Number(p?.value);
+        if (!p || typeof p.date !== 'string' || !isFinite(value)) { rejected++; continue; }
+        const key = `${p.date}|${value}`;
+        if (seen.has(key)) { skipped++; continue; }
+        seen.add(key);
+        current.push({ date: p.date, value, task: typeof p.task === 'string' ? p.task : 'imported' });
+        added++;
+      }
+      current.sort((a, b) => (parseIso(a.date)?.getTime() ?? 0) - (parseIso(b.date)?.getTime() ?? 0));
+      existing[name] = current;
+    }
+    if (!added) {
+      void vscode.window.showWarningMessage(`Nothing imported. ${skipped} point(s) were already there, ${rejected} could not be read (each needs a "date" and a numeric "value").`);
+      return;
+    }
+    try {
+      fs.mkdirSync(cx.logsDir(), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify(existing, null, 2), 'utf-8');
+    } catch (e) {
+      void vscode.window.showErrorMessage(`Could not write ${FILES.deltas}: ${(e as Error).message}`);
+      return;
+    }
+    cx.refresh(true);
+    void vscode.window.showInformationMessage(`Imported ${added} point(s) into ${FILES.deltas}${skipped ? `, skipped ${skipped} already present` : ''}${rejected ? `, ${rejected} unreadable` : ''}.`);
+  });
+
   reg('scriptProgress.exportReport', async () => {
     const data = cx.getData();
     const stamp = new Date().toISOString().slice(0, 10);
@@ -203,6 +312,8 @@ export function registerCommands(context: vscode.ExtensionContext, cx: CommandCo
     items.push({ label: '$(graph) Open Access Map', run: () => vscode.commands.executeCommand('scriptProgress.openMap') });
     if (s.buttons.length) items.push({ label: '$(play) Run Quick Action…', run: () => vscode.commands.executeCommand('scriptProgress.runQuickAction') });
     items.push({ label: '$(clippy) Copy Daily Summary', run: () => vscode.commands.executeCommand('scriptProgress.copyDailySummary') });
+    items.push({ label: '$(mail) Copy Weekly Digest', run: () => vscode.commands.executeCommand('scriptProgress.copyWeeklyDigest') });
+    items.push({ label: '$(git-compare) Compare Two Runs…', run: () => vscode.commands.executeCommand('scriptProgress.compareRuns') });
     items.push({ label: '$(file-pdf) Export HTML Report', run: () => vscode.commands.executeCommand('scriptProgress.exportReport') });
     items.push({ label: '$(history) Show Run History', run: () => vscode.commands.executeCommand('scriptProgress.showHistory') });
     items.push({ label: '$(folder-opened) Open Logs Folder', run: () => vscode.commands.executeCommand('scriptProgress.openLogsFolder') });

@@ -40,6 +40,7 @@ exports.Notifier = void 0;
 const vscode = __importStar(require("vscode"));
 const time_1 = require("./logic/time");
 const anomaly_1 = require("./logic/anomaly");
+const calendar_1 = require("./logic/calendar");
 const eventFile_1 = require("./eventFile");
 class Notifier {
     constructor() {
@@ -47,6 +48,7 @@ class Notifier {
         this.primed = false;
         /** Set by the extension; where the optional event file goes. */
         this.logsDir = '';
+        this.reminded = new Set();
         this.actions = ['Open Dashboard', 'Run History'];
     }
     update(data, settings) {
@@ -109,7 +111,29 @@ class Notifier {
             if (!live.has(k))
                 this.seen.delete(k);
         this.primed = true;
+        this.remind(data, settings, now);
         this.updateMirror(data, settings, now);
+    }
+    /**
+     * "Due in 2 days" — once per process per due date. Reminders are the one notification that is
+     * about something that has NOT happened, so they must not repeat: a nag every refresh would
+     * be worse than no reminder at all.
+     */
+    remind(data, settings, now) {
+        if (!settings.processes.length)
+            return;
+        for (const { row, daysLeft } of (0, calendar_1.dueReminders)((0, calendar_1.calendarRows)(settings.processes, data.history, now), now)) {
+            const key = `${row.process.name}|${row.nextDue.toDateString()}`;
+            if (this.reminded.has(key))
+                continue;
+            this.reminded.add(key);
+            if (!this.primed)
+                continue; // do not fire a burst on activation
+            const label = row.process.label || row.process.name;
+            const when = daysLeft < 1 ? 'today' : daysLeft < 2 ? 'tomorrow' : `in ${Math.round(daysLeft)} days`;
+            const phases = row.phases.length ? ` (${row.note})` : '';
+            this.info(`${label} is due ${when}${phases}`);
+        }
     }
     /** A native VS Code progress toast that follows the (first) running task. */
     updateMirror(data, settings, now) {

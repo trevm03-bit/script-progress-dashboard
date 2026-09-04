@@ -5,6 +5,7 @@ import { calendarRows, dueText } from './calendar';
 import { healthRows } from './health';
 import { outOfRange, formatMetric } from './sparkline';
 import { formatDuration, parseIso, taskState } from './time';
+import { failurePatterns, patternText } from './failures';
 
 export interface SummaryFacts {
   runningCount: number;
@@ -82,6 +83,92 @@ export function dailySummaryText(data: DashboardData, settings: Settings, now: D
   if (f.staleScripts.length) lines.push(`Stale scripts: ${f.staleScripts.join(', ')}`);
   if (f.metricsOutOfRange.length) lines.push(`Metrics out of range: ${f.metricsOutOfRange.join(', ')}`);
   return lines.join('\n');
+}
+
+/**
+ * A week's worth, for the kind of status note that goes to someone who was not watching.
+ * Same shape as the daily summary, rolled up: what ran, what did not, what is overdue, how the
+ * tracked metrics moved, and the failure pattern if there is one.
+ */
+const NL = '\n';
+
+export function weeklyDigestText(data: DashboardData, settings: Settings, now: Date, days = 7): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  const day = (d: Date) => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1));
+  const runs = data.history
+    .filter(r => { const d = parseIso(r.date); return !!d && d >= from; })
+    .sort((a, b) => (parseIso(a.date)?.getTime() ?? 0) - (parseIso(b.date)?.getTime() ?? 0));
+
+  const lines: string[] = [];
+  lines.push(`Script Progress — week of ${day(from)} to ${day(now)}`);
+  lines.push('');
+
+  const failed = runs.filter(r => !r.success);
+  const warnings = runs.reduce((n, r) => n + (r.warnings || 0), 0);
+  lines.push(`${runs.length} run(s) · ${failed.length} failed · ${warnings} warning(s)`);
+  lines.push('');
+
+  // Per task: how often, how it went, how long it typically took.
+  const byTask = new Map<string, RunRecord[]>();
+  for (const r of runs) {
+    const list = byTask.get(r.task);
+    if (list) list.push(r); else byTask.set(r.task, [r]);
+  }
+  if (byTask.size) {
+    lines.push('By script:');
+    for (const [task, list] of Array.from(byTask.entries()).sort((a, b) => b[1].length - a[1].length)) {
+      const bad = list.filter(r => !r.success).length;
+      const avg = list.reduce((n, r) => n + (Number(r.elapsed) || 0), 0) / list.length;
+      const warn = list.reduce((n, r) => n + (r.warnings || 0), 0);
+      lines.push(`  ${task}: ${list.length} run(s)${bad ? `, ${bad} FAILED` : ''}${warn ? `, ${warn} warning(s)` : ''} · typically ${formatDuration(avg)}`);
+    }
+    lines.push('');
+  }
+
+  // Scripts the calendar expected but never saw this week.
+  const rows = calendarRows(settings.processes, data.history, now);
+  const overdue = rows.filter(r => r.status === 'overdue');
+  const partial = rows.filter(r => r.status === 'partial');
+  const unseen = rows.filter(r => r.status === 'unseen');
+  if (settings.processes.length) {
+    lines.push(`Calendar: ${overdue.length ? 'OVERDUE ' + overdue.map(r => r.process.label || r.process.name).join(', ') : 'nothing overdue'}`);
+    for (const r of partial) lines.push(`  ${r.process.label || r.process.name}: ${r.note}`);
+    if (unseen.length) lines.push(`  not wired yet: ${unseen.map(r => r.process.label || r.process.name).join(', ')}`);
+    lines.push('');
+  }
+
+  // How the tracked numbers moved across the week.
+  const moved: string[] = [];
+  for (const name of settings.deltaMetrics) {
+    const pts = (data.deltas[name] ?? []).filter(pt => { const d = parseIso(pt.date); return !!d && d >= from; });
+    if (pts.length < 1) continue;
+    const fmt = settings.deltas.formats?.[name];
+    const first = pts[0].value, last = pts[pts.length - 1].value;
+    const arrow = last > first ? 'up' : last < first ? 'down' : 'flat';
+    moved.push(`  ${fmt?.label || name}: ${formatMetric(first, fmt)} -> ${formatMetric(last, fmt)} (${arrow})`);
+  }
+  if (moved.length) {
+    lines.push('Tracked metrics:');
+    lines.push(...moved);
+    lines.push('');
+  }
+
+  if (failed.length) {
+    lines.push('Failures:');
+    for (const r of failed) {
+      const d = parseIso(r.date);
+      lines.push(`  ${d ? day(d) : ''} ${r.task}${r.category ? ` [${r.category}]` : ''}${r.summary ? ` — ${r.summary}` : ''}`);
+    }
+    const pattern = patternText(failurePatterns(data.history, now, days, 20));
+    if (pattern) lines.push(`  Pattern: ${pattern}`);
+    lines.push('');
+  }
+
+  const f = summaryFacts(data, settings, now);
+  if (f.staleScripts.length) lines.push(`Stale scripts: ${f.staleScripts.join(', ')}`);
+  if (f.metricsOutOfRange.length) lines.push(`Metrics out of range: ${f.metricsOutOfRange.join(', ')}`);
+  return lines.join(NL).replace(new RegExp(`${NL}{3,}`, 'g'), NL + NL).trimEnd();
 }
 
 /** CSV of run history (RFC 4180 quoting). */

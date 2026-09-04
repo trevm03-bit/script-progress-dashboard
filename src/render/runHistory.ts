@@ -4,6 +4,7 @@ import { DashboardData, RunRecord, Settings } from '../types';
 import { dateTime, formatDuration, parseIso, clockTime } from '../logic/time';
 import { esc, icon, section, empty, metricText, SectionOpts } from './html';
 import { durationVerdict, metricChanges, overSla, previousRun, slaFor } from '../logic/anomaly';
+import { runKey } from '../logic/compare';
 
 export function renderRunHistory(data: DashboardData, settings: Settings, opts: SectionOpts): string {
   const all = data.history
@@ -60,7 +61,7 @@ function historyRow(r: RunRecord, settings: Settings, all: RunRecord[]): string 
   <td class="col-date" data-sort="${t}">${esc(dateTime(r.date))}</td>
   <td class="col-dur" data-sort="${Number(r.elapsed) || 0}">${esc(formatDuration(Number(r.elapsed) || 0))}${flags}</td>
   <td class="col-warn ${r.warnings ? 'status-warn' : ''}" data-sort="${Number(r.warnings) || 0}">${Number(r.warnings) || 0}</td>
-  <td class="col-summary" title="${esc(r.summary)}">${esc(r.summary)}${firstWarning(r)}</td>
+  <td class="col-summary" title="${esc(r.summary)}">${r.category ? `<span class="cat-chip" title="Failure category reported by the script">${esc(r.category)}</span>` : ''}${esc(r.summary)}${firstWarning(r)}</td>
 </tr>`;
   if (!expandable) return main;
 
@@ -78,6 +79,7 @@ function historyRow(r: RunRecord, settings: Settings, all: RunRecord[]): string 
   if (r.warningItems && r.warningItems.length) parts.push(`<div class="detail-block"><div class="detail-h">Warnings</div>${r.warningItems.map(w => `<div class="warning-card"><span class="warning-time">${esc(clockTime(w.time))}</span> ${esc(w.msg)}</div>`).join('')}</div>`);
   if (r.accessed && r.accessed.length) parts.push(`<div class="detail-block"><div class="detail-h">Touched</div><div class="chips">${r.accessed.map(id => { const [kind, ...rest] = id.split(':'); return `<span class="chip chip-${esc(kind)}"><span class="chip-k">${esc(kind)}</span><span class="chip-v">${esc(rest.join(':'))}</span></span>`; }).join('')}</div></div>`);
   if (r.artifacts && r.artifacts.length) parts.push(`<div class="detail-block"><div class="detail-h">Artifacts</div><div class="artifacts">${r.artifacts.map(a => `<button class="link-btn" data-open="${esc(a)}" title="${esc(a)}">${icon('file')}${esc(a.split(/[\\/]/).pop() || a)}</button>`).join('')}</div></div>`);
+  parts.push(`<div class="detail-actions"><button class="link-btn" data-msg="compare" data-key="${esc(runKey(r))}" title="Compare this run with another">${icon('git-compare')}Compare with…</button></div>`);
   const ids = [r.runId ? `run ${r.runId}` : '', r.startedAt ? `started ${dateTime(r.startedAt)}` : ''].filter(Boolean).join(' · ');
   if (ids) parts.push(`<div class="detail-block muted small mono">${esc(ids)}</div>`);
   if (!parts.length) parts.push(`<div class="detail-block muted small">No extra detail recorded for this run (older reporter).</div>`);

@@ -35,6 +35,11 @@ export interface MetricsRow {
   pct: number | null;
   min: number | null;
   max: number | null;
+  /** Sum of the numeric values in view. Null for a text row. A per-run cost or row count is
+   *  usually more interesting as a period total than as a list of individual numbers. */
+  total: number | null;
+  /** Mean of the numeric values in view. Null for a text row. */
+  mean: number | null;
 }
 
 export interface MetricsTask {
@@ -54,6 +59,11 @@ export interface MetricsModel {
   /** Distinct metric keys across every task. */
   metricCount: number;
   taskCount: number;
+}
+
+/** Keep sums readable: floating point makes 0.1 + 0.2 into 0.30000000000000004. */
+function round(n: number): number {
+  return Math.round(n * 1e6) / 1e6;
 }
 
 /** The metrics of one run, minus anything the filter excludes; null when nothing is left. */
@@ -142,6 +152,8 @@ export function metricsModel(data: DashboardData, settings: Settings): MetricsMo
         pct: change?.pct ?? null,
         min: series.length ? Math.min(...series) : null,
         max: series.length ? Math.max(...series) : null,
+        total: series.length ? round(series.reduce((a, b) => a + b, 0)) : null,
+        mean: series.length ? round(series.reduce((a, b) => a + b, 0) / series.length) : null,
       };
     });
 

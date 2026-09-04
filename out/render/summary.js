@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.renderSummary = renderSummary;
 const summary_1 = require("../logic/summary");
+const failures_1 = require("../logic/failures");
 const time_1 = require("../logic/time");
 const html_1 = require("./html");
 function renderSummary(data, settings, now) {
@@ -25,6 +26,12 @@ function renderSummary(data, settings, now) {
         tile(String(f.staleScripts.length), 'stale scripts', 'tile-warn', f.staleScripts.join(', '));
     if (Object.keys(settings.deltas.thresholds || {}).length)
         tile(String(f.metricsOutOfRange.length), 'metrics out of range', f.metricsOutOfRange.length ? 'tile-bad' : 'tile-ok', f.metricsOutOfRange.join(', '));
+    // A repeated cause is worth more than a count of failures: five stack traces hide the fact
+    // that four were the same expired credential.
+    const pattern = (0, failures_1.failurePatterns)(data.history, now, 30, 20);
+    if (pattern.dominant) {
+        tile(`${pattern.dominant.count}/${pattern.dominant.of}`, `failures: ${pattern.dominant.category}`, 'tile-bad', `${pattern.dominant.count} of the last ${pattern.dominant.of} failures were "${pattern.dominant.category}" (last 30 days)`);
+    }
     if (f.lastRun && !f.runningCount)
         tile(`${(0, html_1.icon)(f.lastRun.success ? 'check' : 'error')} ${(0, html_1.esc)((0, time_1.formatDuration)(f.lastRun.elapsed))}`, `last run · ${(0, time_1.relativeTime)(f.lastRun.date, now)}`, f.lastRun.success ? 'tile-ok' : 'tile-bad', f.lastRun.task);
     return `<section class="strip" data-section="summary"><div class="tiles">${tiles.join('')}</div></section>`;

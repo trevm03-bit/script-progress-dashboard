@@ -38,6 +38,17 @@ function deltaCell(row) {
     const title = row.previous === undefined ? '' : ` title="previous ${(0, html_1.esc)((0, html_1.metricText)(row.previous))}"`;
     return `<td class="mx-delta ${cls}"${title}>${value}${pct}</td>`;
 }
+/**
+ * Sum across the runs in view, with the mean alongside. A per-run number that is worth
+ * accumulating — a cost, a row count — reads as a period total, which the run-by-run columns
+ * never answer on their own.
+ */
+function totalCell(row) {
+    if (row.total === null)
+        return '<td class="mx-total muted">—</td>';
+    const title = row.mean === null ? '' : ` title="${(0, html_1.esc)(`${row.series.length} run(s) · mean ${(0, sparkline_1.formatMetric)(row.mean)}`)}"`;
+    return `<td class="mx-total"${title}>${(0, html_1.esc)((0, sparkline_1.formatMetric)(row.total))}</td>`;
+}
 /** Metric name plus, for numeric metrics, the trend of the values in view. */
 function keyCell(row) {
     const spark = row.numeric && row.series.length > 0
@@ -66,13 +77,13 @@ function renderMetricsExplorer(data, settings, now, opts, narrow) {
             const cells = narrow
                 ? `<td class="mx-val mx-val-latest">${cell(row.latest)}</td>`
                 : row.values.map((v, i) => `<td class="mx-val${i === row.values.length - 1 ? ' mx-val-latest' : ''}">${cell(v)}</td>`).join('');
-            return `<tr>${keyCell(row)}${cells}${deltaCell(row)}</tr>`;
+            return `<tr>${keyCell(row)}${cells}${deltaCell(row)}${settings.metricsExplorer.totals ? totalCell(row) : ''}</tr>`;
         }).join('');
         const runWord = t.runs.length === 1 ? 'run' : 'runs';
         return `<div class="mx-task">
   <div class="mx-task-head"><span class="mx-task-name" title="${(0, html_1.esc)(t.task)}">${(0, html_1.esc)(t.task)}</span><span class="mx-task-meta muted small">${t.runs.length} ${runWord} · latest ${(0, html_1.esc)((0, time_1.relativeTime)(t.latestDate, now))}</span></div>
   <div class="table-wrap"><table class="mx-table">
-    <thead><tr><th class="mx-key-h">Metric</th>${head}<th class="mx-delta-h" title="Change against the previous value">Δ vs prev</th></tr></thead>
+    <thead><tr><th class="mx-key-h">Metric</th>${head}<th class="mx-delta-h" title="Change against the previous value">Δ vs prev</th>${settings.metricsExplorer.totals ? '<th class="mx-total-h" title="Sum of the runs in view (mean in the tooltip)">Total</th>' : ''}</tr></thead>
     <tbody>${rows}</tbody>
   </table></div>
 </div>`;

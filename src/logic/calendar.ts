@@ -264,3 +264,22 @@ export function dueText(nextDue: Date, now: Date): string {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `due ${nextDue.getDate()} ${months[nextDue.getMonth()]}`;
 }
+
+/**
+ * Processes worth a heads-up: due within their `reminderDays` and not done yet. The calendar
+ * has always known this; until now it could only report the past, which is the least useful
+ * moment to hear about a deadline.
+ */
+export function dueReminders(rows: CalendarRow[], now: Date): { row: CalendarRow; daysLeft: number }[] {
+  const out: { row: CalendarRow; daysLeft: number }[] = [];
+  for (const row of rows) {
+    const days = row.process.reminderDays;
+    if (!days || days <= 0) continue;
+    if (row.status === 'done' || row.status === 'overdue' || row.status === 'unseen') continue;
+    const ms = row.nextDue.getTime() - now.getTime();
+    if (ms < 0) continue;
+    const daysLeft = ms / 86400000;
+    if (daysLeft <= days) out.push({ row, daysLeft });
+  }
+  return out.sort((a, b) => a.daysLeft - b.daysLeft);
+}

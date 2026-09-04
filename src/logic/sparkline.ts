@@ -1,6 +1,6 @@
 // Delta Tracker maths: turn a series of numbers into an SVG path and a few stats; format values;
 // evaluate thresholds.
-import { DeltaFormat, DeltaThreshold } from '../types';
+import { DeltaFormat, DeltaPoint, DeltaThreshold } from '../types';
 
 export interface SeriesStats {
   current: number;
@@ -85,4 +85,28 @@ export function outOfRange(value: number, t?: DeltaThreshold): boolean {
   if (typeof t.min === 'number' && value < t.min) return true;
   if (typeof t.max === 'number' && value > t.max) return true;
   return false;
+}
+
+/**
+ * Points that came from the SAME run, i.e. a value a script found and the value it left behind
+ * after fixing it. Without this the chart draws two unrelated dots and the story — "found this
+ * much, resolved it to that" — is lost, which is the whole point of measuring twice.
+ *
+ * Only runs that reported more than one point are returned, newest run first.
+ */
+export function withinRunPairs(points: DeltaPoint[]): { runId: string; task: string; first: DeltaPoint; last: DeltaPoint; change: number }[] {
+  const byRun = new Map<string, DeltaPoint[]>();
+  for (const p of points) {
+    if (!p.runId) continue;              // older reporters did not record it; nothing to pair
+    const list = byRun.get(p.runId);
+    if (list) list.push(p); else byRun.set(p.runId, [p]);
+  }
+  const out = [];
+  for (const [runId, list] of byRun) {
+    if (list.length < 2) continue;
+    const first = list[0];
+    const last = list[list.length - 1];
+    out.push({ runId, task: last.task, first, last, change: last.value - first.value });
+  }
+  return out.reverse();                  // deltas.json is oldest first
 }

@@ -1,6 +1,7 @@
 // The summary strip: the numbers worth seeing before anything else.
 import { DashboardData, Settings } from '../types';
 import { summaryFacts } from '../logic/summary';
+import { failurePatterns } from '../logic/failures';
 import { relativeTime, formatDuration } from '../logic/time';
 import { esc, icon } from './html';
 
@@ -20,6 +21,13 @@ export function renderSummary(data: DashboardData, settings: Settings, now: Date
   }
   if (settings.sections.scriptHealth && f.staleScripts.length) tile(String(f.staleScripts.length), 'stale scripts', 'tile-warn', f.staleScripts.join(', '));
   if (Object.keys(settings.deltas.thresholds || {}).length) tile(String(f.metricsOutOfRange.length), 'metrics out of range', f.metricsOutOfRange.length ? 'tile-bad' : 'tile-ok', f.metricsOutOfRange.join(', '));
+  // A repeated cause is worth more than a count of failures: five stack traces hide the fact
+  // that four were the same expired credential.
+  const pattern = failurePatterns(data.history, now, 30, 20);
+  if (pattern.dominant) {
+    tile(`${pattern.dominant.count}/${pattern.dominant.of}`, `failures: ${pattern.dominant.category}`, 'tile-bad',
+      `${pattern.dominant.count} of the last ${pattern.dominant.of} failures were "${pattern.dominant.category}" (last 30 days)`);
+  }
   if (f.lastRun && !f.runningCount) tile(`${icon(f.lastRun.success ? 'check' : 'error')} ${esc(formatDuration(f.lastRun.elapsed))}`, `last run · ${relativeTime(f.lastRun.date, now)}`, f.lastRun.success ? 'tile-ok' : 'tile-bad', f.lastRun.task);
 
   return `<section class="strip" data-section="summary"><div class="tiles">${tiles.join('')}</div></section>`;

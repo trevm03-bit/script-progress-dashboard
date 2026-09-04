@@ -3,6 +3,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.metricsModel = metricsModel;
 const anomaly_1 = require("./anomaly");
 const time_1 = require("./time");
+/** Keep sums readable: floating point makes 0.1 + 0.2 into 0.30000000000000004. */
+function round(n) {
+    return Math.round(n * 1e6) / 1e6;
+}
 /** The metrics of one run, minus anything the filter excludes; null when nothing is left. */
 function pickMetrics(metrics, allow) {
     if (!metrics || typeof metrics !== 'object')
@@ -83,6 +87,8 @@ function metricsModel(data, settings) {
                 pct: change?.pct ?? null,
                 min: series.length ? Math.min(...series) : null,
                 max: series.length ? Math.max(...series) : null,
+                total: series.length ? round(series.reduce((a, b) => a + b, 0)) : null,
+                mean: series.length ? round(series.reduce((a, b) => a + b, 0) / series.length) : null,
             };
         });
         tasks.push({ task, runs, keys, rows, latestDate: newest.date });

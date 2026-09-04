@@ -72,29 +72,29 @@ extension behaves once it is working.
   contend. `substep()` already covers the common case. *(4d.)*
 - **Grouped metric series and mail export.** Both reasonable, neither blocking anything. *(FR-5, FR-7.)*
 
-## 1.5.0 — from "did it run?" to "what did it find?"
+## 1.5.0 — from "did it run?" to "what did it find?" — **shipped 2026-09-04**
 
 A second round of field proposals, triaged the same way. The theme is right: the tool answers
 "did it run" well, and the next question a diagnostic script provokes is always "what did it find,
 how does that compare, and what do I do now?"
 
-- [ ] **Compare two runs.** Pick two rows in Run History and see the difference: metrics with their
+- [x] **Compare two runs.** Pick two rows in Run History and see the difference: metrics with their
       deltas, warnings gained and lost, duration change, which parts were clean either side. For a
       script whose output *is* the finding, comparison is the natural next question after "did it
       run?", and every input already exists in the history file. *(No new reporter API.)*
-- [ ] **Failure categories.** `p.fail(category="auth", summary="token expired")`, so the dashboard
+- [x] **Failure categories.** `p.fail(category="auth", summary="token expired")`, so the dashboard
       can say *3 of the last 5 failures were auth* instead of showing five separate stack traces.
       Categories are free text — the reporter must not pretend to know a taxonomy of everyone's
       failures. Cheap, and it turns repeat failures into a pattern you can act on.
-- [ ] **Import historical series.** A command that reads a plain `[{date, value, task}]` array into
+- [x] **Import historical series.** A command that reads a plain `[{date, value, task}]` array into
       `deltas.json`, so a series that existed before this tool did starts with its real depth
       instead of at zero. Merge and de-duplicate by date; never silently replace what is there.
-- [ ] **Reminders from the calendar.** An optional `reminderDays` on a process: notify when a due
+- [x] **Reminders from the calendar.** An optional `reminderDays` on a process: notify when a due
       date is approaching, not only once it has been missed. The calendar already knows everything
       needed; today it can only report the past.
-- [ ] **Weekly digest.** "Copy Daily Summary" for a week: what ran, what did not, what is overdue,
+- [x] **Weekly digest.** "Copy Daily Summary" for a week: what ran, what did not, what is overdue,
       how the tracked metrics moved, total warnings. One click, pasteable into a status email.
-- [ ] **Totals in Metrics Explorer.** Sum and mean per metric over the shown range, so a per-run
+- [x] **Totals in Metrics Explorer.** Sum and mean per metric over the shown range, so a per-run
       number that is worth accumulating (a cost, a row count, a duration) can be read as a period
       total. *(See the note below: recording such a metric already works today.)*
 
@@ -103,9 +103,9 @@ how does that compare, and what do I do now?"
 - **Several `track_delta()` calls in one run.** Every call already appends its own point, and both
   survive: a "detected" value and a post-fix "resolved" value are both in `deltas.json` today.
   What is genuinely missing is that the chart cannot tell they belong to the *same run*, so it
-  cannot say "found X, resolved to Y" — it just draws two points. **The real change is small and
-  different from the one proposed**: put the run id on each delta point, then pair them in the
-  chart. Queued with the 1.5.0 items above.
+  cannot say "found X, resolved to Y" — it just draws two points. **The real change was small and
+  different from the one proposed**: the run id now rides on each delta point and the chart pairs
+  them. Shipped in 1.5.0.
 - **Recording a cost (or any other per-run number).** `p.metric("cost_usd", 0.12)` already works
   and already reaches the metric cards, run history and the CSV export. The gap is only that
   nothing *adds them up* — hence "Totals in Metrics Explorer" above rather than a reporter change.

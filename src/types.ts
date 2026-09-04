@@ -53,6 +53,8 @@ export interface RunRecord {
   warningItems?: Warning[];
   accessed?: string[];
   artifacts?: string[];
+  /** Free-text kind of failure the script named, e.g. "auth", "quota". Failures only. */
+  category?: string;
 }
 
 /** deltas.json: metric name -> points. */
@@ -60,6 +62,8 @@ export interface DeltaPoint {
   date: string;
   value: number;
   task: string;
+  /** Which run produced it, so several points from one run can be told apart from a trend. */
+  runId?: string;
 }
 export type DeltaSeries = Record<string, DeltaPoint[]>;
 
@@ -124,6 +128,8 @@ export interface ProcessConfig {
   dueHour?: number;
   /** SLA: a run of this process longer than this many minutes is flagged (and notified if enabled). */
   maxMinutes?: number;
+  /** Notify this many days before the due date, instead of only once it has been missed. */
+  reminderDays?: number;
   /**
    * Task names of the phases this process is made of, when it is not one script. The process
    * counts as done only when every phase has run successfully in the period; until then it
@@ -194,7 +200,7 @@ export interface Settings {
   activeTask: { showLog: boolean; logLines: number; showMetrics: boolean; showArtifacts: boolean };
   runHistory: { maxRows: number; filters: boolean; detail: boolean; trend: boolean; anomalies: boolean; anomalyFactor: number };
   timeline: { windowHours: number; showFailed: boolean };
-  metricsExplorer: { maxRuns: number; metrics: string[] };
+  metricsExplorer: { totals: boolean; maxRuns: number; metrics: string[] };
   warningTrends: { days: number; top: number };
   processes: ProcessConfig[];
   calendar: { view: 'list' | 'grid' | 'both'; upcoming: boolean };

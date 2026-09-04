@@ -217,6 +217,20 @@ python progress.py                 # reads the folder it would write to
 python progress.py /path/to/logs   # or an explicit one
 ```
 
+### Naming a failure
+
+When a run fails for a reason you can name, say so:
+
+```python
+p.fail("token expired", category="auth")     # or p.complete(success=False, category="auth")
+```
+
+The category is free text you choose — `auth`, `quota`, `missing-input`, `validation`. Nothing
+interprets it; the dashboard groups by it, so a repeated cause reads as *3 of the last 5 failures
+were auth* in the summary strip instead of five separate stack traces. Keep the words short and
+stable or the grouping is worthless. An unhandled exception is categorised by its type
+automatically.
+
 ### Anything else: the command line
 
 Plenty of real work is not a Python script — a shell script, a scheduled task, a Makefile, an
@@ -256,6 +270,16 @@ python progress.py complete --run "$RUN" --summary "3 items"
 
 Better still, give concurrent runs distinct names. The task name is the key for the calendar,
 history and ETA, so two things sharing one are indistinguishable everywhere, not just here.
+
+### Comparing two runs
+
+Expand a row in Run History and click **Compare with…**, or run **Script Progress: Compare Two
+Runs…**. The previous run of the same task is offered first. You get a Markdown document: every
+metric with its change, warnings split into new / gone / still there, the duration difference,
+whether the outcome flipped, and which resources one run touched and the other did not.
+
+It never silently reorders your choice — comparing backwards in time is allowed and says so at
+the top, as does comparing two different scripts.
 
 ### Node
 
@@ -382,6 +406,10 @@ A worked example, in workspace or user `settings.json` (every setting is describ
 | `weekly` | `dayOfWeek` (1 = Monday … 7 = Sunday, default end of week) | Done if a successful run happened since Monday. Overdue past the end of that weekday, or if a whole week was missed. |
 | `monthly` | `dayOfMonth` (1–31, default last day) | Done if a successful run happened this calendar month. Overdue past the end of that day. |
 
+`reminderDays` on a process notifies you when its due date is approaching rather than only once
+it has been missed — `"reminderDays": 2` fires once, two days out. The calendar always knew this;
+until now it could only report the past.
+
 A process that has **never** reported is shown as *not wired yet* rather than overdue. That is
 deliberate: a permanent red for something that was never connected teaches you to ignore red,
 which costs the calendar the only signal it exists to give.
@@ -462,11 +490,25 @@ draws (default 50).
 `scriptProgress.deltaTracker.thresholds` sets an acceptable range per metric with `min` and `max`.
 Values outside the range are highlighted on the chart and counted in the summary strip.
 
+**Measuring twice in one run.** Call `track_delta()` more than once and the card says what the
+run found and what it left behind — *found 26K, resolved to 0* — instead of drawing two dots you
+have to interpret. Points are paired by run id, so unrelated readings are never joined up.
+
+**Bringing history with you.** **Script Progress: Import Delta History…** reads a plain
+`[{ "date": "...", "value": 1.23, "task": "..." }]` array (or `{ "metric": [ ... ] }` for several
+series) into `deltas.json`, so a series that existed before this extension did starts with its
+real depth. It merges rather than replaces, skips points already present, and reports anything it
+could not read.
+
 ### Metrics Explorer
 
 One table per script: its metrics down the side, its last `scriptProgress.metricsExplorer.maxRuns`
 runs across (default 12), a sparkline per numeric metric and the change against the previous run
 that reported it. `scriptProgress.metricsExplorer.metrics` narrows it to the names you care about.
+
+A **Total** column sums each numeric metric over the runs in view, with the mean in its tooltip —
+so a per-run number worth accumulating, such as a cost, reads as a period total. Turn it off with
+`scriptProgress.metricsExplorer.totals`.
 
 ### Warning Trends
 
@@ -547,6 +589,9 @@ Everything is under the **Script Progress** category in the Command Palette.
 | Run Quick Action… | Picks one of your buttons and runs it |
 | Run with Script Progress | Runs the current or selected script file using the configured interpreter |
 | Copy Daily Summary | Copies today's runs, failures and warnings to the clipboard |
+| Copy Weekly Digest | A week's rollup: what ran, what failed, what is overdue, how tracked metrics moved |
+| Compare Two Runs… | Picks two runs and opens their differences as Markdown |
+| Import Delta History… | Merges an existing `[{date, value, task}]` series into `deltas.json` |
 | Export Run History (CSV) | Writes run history, with metrics, to a CSV file |
 | Export HTML Report | Writes a self-contained HTML page of the whole dashboard, static map included, to share |
 | Archive Run History | Moves the current history aside into a dated file and starts fresh |

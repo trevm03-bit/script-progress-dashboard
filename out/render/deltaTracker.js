@@ -62,6 +62,7 @@ function renderDeltaTracker(data, settings, now, opts) {
     ${thr ? `<span title="Threshold">${typeof thr.min === 'number' ? `≥ ${(0, html_1.esc)((0, sparkline_1.formatMetric)(thr.min, fmt))}` : ''}${typeof thr.min === 'number' && typeof thr.max === 'number' ? ' · ' : ''}${typeof thr.max === 'number' ? `≤ ${(0, html_1.esc)((0, sparkline_1.formatMetric)(thr.max, fmt))}` : ''}</span>` : ''}
     <span>${pts.length} pts · ${(0, html_1.esc)((0, time_1.relativeTime)(last?.date, now))}</span>
   </div>
+  ${pairLine(pts, fmt)}
 </div>`;
     }).join('');
     const aside = outCount ? `<span class="status-fail">${outCount} out of range</span>` : '';
@@ -84,5 +85,17 @@ function rescaledPath(values, scaleVals, w, h, pad) {
         return `M ${(x - 4).toFixed(1)},${y} L ${(x + 4).toFixed(1)},${y}`;
     }
     return `M ${pts[0]} L ${pts.slice(1).join(' ')}`;
+}
+/**
+ * One run that measured the same thing twice — what it found, and what it left behind after
+ * fixing it. Both points were always stored; without this the chart draws two dots and the story
+ * ("found this much, resolved it to that") is the thing the reader has to guess.
+ */
+function pairLine(pts, fmt) {
+    const pair = (0, sparkline_1.withinRunPairs)(pts)[0];
+    if (!pair || pair.change === 0)
+        return '';
+    const verb = Math.abs(pair.last.value) < Math.abs(pair.first.value) ? 'resolved to' : 'moved to';
+    return `<div class="delta-pair" title="Two values reported by the same run">${(0, html_1.icon)('history')}latest run: found <b>${(0, html_1.esc)((0, sparkline_1.formatMetric)(pair.first.value, fmt))}</b>, ${verb} <b>${(0, html_1.esc)((0, sparkline_1.formatMetric)(pair.last.value, fmt))}</b></div>`;
 }
 //# sourceMappingURL=deltaTracker.js.map

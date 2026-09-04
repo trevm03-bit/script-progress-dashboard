@@ -67,6 +67,7 @@ export function readSettings(): Settings {
       showFailed: bool('timeline.showFailed', true),
     },
     metricsExplorer: {
+      totals: bool('metricsExplorer.totals', true),
       maxRuns: num('metricsExplorer.maxRuns', 12, 2, 100),
       metrics: (c.get<string[]>('metricsExplorer.metrics', []) || []).filter(m => typeof m === 'string' && m),
     },

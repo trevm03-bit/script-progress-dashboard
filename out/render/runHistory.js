@@ -4,6 +4,7 @@ exports.renderRunHistory = renderRunHistory;
 const time_1 = require("../logic/time");
 const html_1 = require("./html");
 const anomaly_1 = require("../logic/anomaly");
+const compare_1 = require("../logic/compare");
 function renderRunHistory(data, settings, opts) {
     const all = data.history
         .slice()
@@ -55,7 +56,7 @@ function historyRow(r, settings, all) {
   <td class="col-date" data-sort="${t}">${(0, html_1.esc)((0, time_1.dateTime)(r.date))}</td>
   <td class="col-dur" data-sort="${Number(r.elapsed) || 0}">${(0, html_1.esc)((0, time_1.formatDuration)(Number(r.elapsed) || 0))}${flags}</td>
   <td class="col-warn ${r.warnings ? 'status-warn' : ''}" data-sort="${Number(r.warnings) || 0}">${Number(r.warnings) || 0}</td>
-  <td class="col-summary" title="${(0, html_1.esc)(r.summary)}">${(0, html_1.esc)(r.summary)}${firstWarning(r)}</td>
+  <td class="col-summary" title="${(0, html_1.esc)(r.summary)}">${r.category ? `<span class="cat-chip" title="Failure category reported by the script">${(0, html_1.esc)(r.category)}</span>` : ''}${(0, html_1.esc)(r.summary)}${firstWarning(r)}</td>
 </tr>`;
     if (!expandable)
         return main;
@@ -78,6 +79,7 @@ function historyRow(r, settings, all) {
         parts.push(`<div class="detail-block"><div class="detail-h">Touched</div><div class="chips">${r.accessed.map(id => { const [kind, ...rest] = id.split(':'); return `<span class="chip chip-${(0, html_1.esc)(kind)}"><span class="chip-k">${(0, html_1.esc)(kind)}</span><span class="chip-v">${(0, html_1.esc)(rest.join(':'))}</span></span>`; }).join('')}</div></div>`);
     if (r.artifacts && r.artifacts.length)
         parts.push(`<div class="detail-block"><div class="detail-h">Artifacts</div><div class="artifacts">${r.artifacts.map(a => `<button class="link-btn" data-open="${(0, html_1.esc)(a)}" title="${(0, html_1.esc)(a)}">${(0, html_1.icon)('file')}${(0, html_1.esc)(a.split(/[\\/]/).pop() || a)}</button>`).join('')}</div></div>`);
+    parts.push(`<div class="detail-actions"><button class="link-btn" data-msg="compare" data-key="${(0, html_1.esc)((0, compare_1.runKey)(r))}" title="Compare this run with another">${(0, html_1.icon)('git-compare')}Compare with…</button></div>`);
     const ids = [r.runId ? `run ${r.runId}` : '', r.startedAt ? `started ${(0, time_1.dateTime)(r.startedAt)}` : ''].filter(Boolean).join(' · ');
     if (ids)
         parts.push(`<div class="detail-block muted small mono">${(0, html_1.esc)(ids)}</div>`);

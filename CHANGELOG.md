@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.5.0 — 2026-09-04
+
+From "did it run?" to "what did it find?". A second round of field proposals, triaged; the ones
+here are the ones that survived it.
+
+- **Compare two runs.** Expand a Run History row and click *Compare with…*, or run **Compare Two
+  Runs…**. Every metric with its change, warnings split into new / gone / still there, the
+  duration difference, whether the outcome flipped, and which resources one run touched and the
+  other did not — as Markdown you can paste into a ticket. The previous run of the same task is
+  offered first. Comparing backwards in time, or across two different scripts, is allowed and
+  says so rather than being silently reordered.
+- **Failures can name their kind.** `p.fail("token expired", category="auth")`. The summary strip
+  then reports *2 of the last 6 failures were auth* instead of leaving six stack traces to be
+  read one at a time, and each failed row carries its category. Categories are free text: nothing
+  here pretends to know a taxonomy of everyone's failure modes. An unhandled exception is
+  categorised by its type automatically.
+- **A run that measures twice tells the whole story.** Call `track_delta()` more than once and the
+  card reads *found 26K, resolved to 0*. Both values were always stored; they are now paired by
+  run id, so unrelated readings are never joined up.
+- **Weekly digest.** *Copy Weekly Digest* rolls up the week — what ran and how often, what failed
+  and why, what is overdue or part-done, how each tracked metric moved — for the kind of status
+  note that goes to someone who was not watching.
+- **Calendar reminders.** `reminderDays` on a process notifies you before a due date instead of
+  only once it has been missed. Once per due date, never a nag.
+- **Totals in Metrics Explorer.** A sum per numeric metric across the runs in view, mean in the
+  tooltip, so a per-run cost or row count reads as a period total.
+- **Import an existing series.** *Import Delta History…* merges a plain `[{date, value, task}]`
+  array into `deltas.json`, so a metric that predates this extension starts with real depth. It
+  merges rather than replaces, skips duplicates, and says what it could not read.
+
+Reporter 1.2.1. Two proposals from the same round were already working and are documented in
+ROADMAP.md rather than rebuilt; one — a blocking approval gate inside the reporter — was rejected
+there, because the reporter must never be able to stop the job it is only watching.
+
 ## 1.4.0 — 2026-09-04
 
 Coverage for work that is not a Python script, and a calendar that stops asserting things that

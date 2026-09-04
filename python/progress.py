@@ -24,6 +24,7 @@ Usage:
         p.step(3, 3, "Reconciling")
         p.track_delta("reconciliation_delta", 0.0) # optional: feeds the Delta Tracker
         p.complete(success=True, summary="INSERT: 3,990 rows")
+        # ...or, on a failure you can name:  p.fail("token expired", category="auth")
 
 Also:
     @Progress.wrap("Nightly Load")                 # decorator form: wraps a function in a run
@@ -68,7 +69,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 __all__ = ["Progress", "resolve_logs_dir"]
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 
 # Windows consoles default to cp1252; a stray non-ASCII character in a summary must never
 # crash the script that is doing the real work.
@@ -124,6 +125,7 @@ class Progress:
         self.artifacts = []
         self.accessed = []            # node ids touched this run, in order
         self.completed = False
+        self.category = ""
         self.current = {"step": 0, "total": 0, "label": "Starting", "detail": "", "substep": None}
         self._prior_durations = self._get_prior_durations()
         self._prune_slots()
@@ -185,6 +187,7 @@ class Progress:
         self.artifacts = list(data.get("artifacts") or [])
         self.accessed = list(data.get("accessed") or [])
         self.completed = False
+        self.category = ""
         self.current = {
             "step": int(data.get("step") or 0),
             "total": int(data.get("totalSteps") or 0),
@@ -262,7 +265,9 @@ class Progress:
         if not isinstance(deltas, dict):
             deltas = {}
         series = deltas.setdefault(metric_name, [])
-        series.append({"date": _now_iso(), "value": v, "task": self.task_name})
+        # runId lets the chart tell that two points came from the SAME run - a value found and
+        # the value after a fix - instead of drawing two unrelated dots.
+        series.append({"date": _now_iso(), "value": v, "task": self.task_name, "runId": self.run_id})
         deltas[metric_name] = series[-DELTA_KEEP:]
         self._safe_write(self.deltas_file, deltas)
 
@@ -317,13 +322,25 @@ class Progress:
             self.accessed.append(res_id)
             self._write()
 
-    def complete(self, success: bool = True, summary: str = "", metrics: dict = None):
+    def fail(self, summary: str = "", category: str = "", metrics: dict = None):
+        """
+        Finish the run as a failure, optionally saying what KIND of failure it was.
+
+        `category` is free text you choose - "auth", "quota", "missing-input", "validation".
+        Nothing here interprets it; the dashboard groups by it, so repeated trouble reads as
+        "3 of the last 5 failures were auth" instead of five unrelated stack traces. Keep the
+        words stable and short, or the grouping is worthless.
+        """
+        self.complete(success=False, summary=summary, metrics=metrics, category=category)
+
+    def complete(self, success: bool = True, summary: str = "", metrics: dict = None, category: str = ""):
         """Mark the run finished and add it to run history. Called for you by 'with'."""
         if self.completed:
             return
         if metrics:
             for k, v in dict(metrics).items():
                 self.metric(k, v)
+        self.category = str(category)[:60] if category else ""
         self.completed = True
         elapsed = time.time() - self.start_time
         self.current["label"] = "Complete" if success else "FAILED"
@@ -345,7 +362,8 @@ class Progress:
             # The script crashed. Report it as a failure so the dashboard never shows a
             # phantom "running" task, then let the exception continue as normal.
             first_line = "".join(traceback.format_exception_only(exc_type, exc)).strip().splitlines()[-1]
-            self.complete(success=False, summary=f"Unhandled error: {first_line}")
+            # The exception type is a serviceable category when the script did not choose one.
+            self.complete(success=False, summary=f"Unhandled error: {first_line}", category=exc_type.__name__)
         elif not self.completed:
             self.complete(success=True, summary=self.current.get("detail", ""))
         return False  # never swallow the exception
@@ -451,6 +469,8 @@ class Progress:
             "accessed": list(self.accessed),
             "artifacts": list(self.artifacts),
         }
+        if getattr(self, "category", ""):
+            row["category"] = self.category
         for attempt in range(3):
             history = self._read_json(self.history_file, default=[])
             if not isinstance(history, list):
@@ -549,7 +569,7 @@ def _print_status(logs_dir=None):
 #   python progress.py delta    "Nightly Load" reconciliation_delta 0.0
 #   python progress.py access   "Nightly Load" table sales.orders --mode write --detail "5 rows"
 #   python progress.py complete "Nightly Load" --summary "INSERT: 3,990 rows"
-#   python progress.py complete "Nightly Load" --fail --summary "source file missing"
+#   python progress.py complete "Nightly Load" --fail --summary "source file missing" --category auth
 #   python progress.py status                       # what the dashboard would show
 #
 # The task name can be left out of every command after `start` if PROGRESS_TASK is set:
@@ -694,9 +714,10 @@ def _cli(argv) -> int:
                 return _cli_usage('access needs: <kind> <name> [--mode write] [--detail "..."]')
             p.access(args[0], " ".join(args[1:]), mode=mode, detail=detail)
         elif cmd == "complete":
+            category = _take_flag(args, "--category") or ""
             summary = _take_flag(args, "--summary") or " ".join(args)
             failed = _take_flag(args, "--fail", has_value=False) is not None
-            p.complete(success=not failed, summary=summary)
+            p.complete(success=not failed, summary=summary, category=category if failed else "")
     except (ValueError, IndexError) as e:
         return _cli_usage(f"{cmd}: {e}")
     return 0

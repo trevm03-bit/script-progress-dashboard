@@ -129,6 +129,17 @@ body.surface-map #sections { flex: 1; display: flex; flex-direction: column; min
 
 /* What a run actually did to a resource, under its name in the Access Map detail card. */
 .det-note { display: block; font-size: 10px; color: var(--sp-muted); margin-top: 1px; }
+
+/* The kind of failure a script named for itself, next to its summary. */
+.cat-chip { display: inline-block; font-size: 10px; padding: 0 5px; margin-right: 5px; border-radius: 8px; border: 1px solid var(--sp-failed); color: var(--sp-failed); vertical-align: 1px; }
+.detail-actions { margin-top: 6px; }
+/* Totals under a metric row in the explorer. */
+.metric-total { color: var(--sp-muted); font-size: var(--sp-font-small); white-space: nowrap; }
+/* One run that measured twice: what it found, and what it left behind. */
+.delta-pair { margin-top: 4px; font-size: var(--sp-font-small); color: var(--sp-muted); }
+.delta-pair b { color: var(--vscode-foreground); font-weight: 600; }
+.mx-total, .mx-total-h { text-align: right; white-space: nowrap; padding-left: 10px; border-left: 1px solid var(--sp-border); }
+.mx-total { font-variant-numeric: tabular-nums; }
 .es-icon { font-size: 28px; opacity: 0.5; margin-bottom: 8px; }
 .es-icon .codicon { font-size: 28px; }
 .es-title { font-size: 14px; font-weight: 600; color: var(--vscode-foreground); }

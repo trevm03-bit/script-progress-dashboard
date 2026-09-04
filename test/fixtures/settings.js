@@ -18,7 +18,7 @@ function settings(o = {}) {
     activeTask: { showLog: true, logLines: 6, showMetrics: true, showArtifacts: true, ...(o.activeTask || {}) },
     runHistory: { maxRows: 15, filters: true, detail: true, trend: true, anomalies: true, anomalyFactor: 2, ...(o.runHistory || {}) },
     timeline: { windowHours: 24, showFailed: true, ...(o.timeline || {}) },
-    metricsExplorer: { maxRuns: 12, metrics: [], ...(o.metricsExplorer || {}) },
+    metricsExplorer: { totals: true, maxRuns: 12, metrics: [], ...(o.metricsExplorer || {}) },
     warningTrends: { days: 14, top: 8, ...(o.warningTrends || {}) },
     processes: o.processes || [
       { name: 'Demo Pipeline', label: 'Demo', frequency: 'daily' },

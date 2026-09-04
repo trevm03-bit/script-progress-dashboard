@@ -116,7 +116,9 @@
       if (t.disabled) return;
       vscode.postMessage({ type: 'runAction', index: Number(t.getAttribute('data-action')) });
     } else if (t.hasAttribute('data-msg')) {
-      vscode.postMessage({ type: t.getAttribute('data-msg') });
+      // data-key rides along for messages that name a specific run (Compare with…).
+      const key = t.getAttribute('data-key');
+      vscode.postMessage(key ? { type: t.getAttribute('data-msg'), key } : { type: t.getAttribute('data-msg') });
     } else if (t.hasAttribute('data-open')) {
       vscode.postMessage({ type: 'openFile', path: t.getAttribute('data-open') });
     } else if (t.hasAttribute('data-filter-task')) {
