@@ -80,8 +80,8 @@ function formatMetric(n, fmt) {
     }
     if (fmt?.unit) {
         if (CURRENCY.has(fmt.unit)) {
-            // A currency symbol goes BEFORE the digits and AFTER the sign: -$25,984.76, never
-            // -25,984.76$ (and never -$25,984.76$, which is what suffixing a already-prefixed value
+            // A currency symbol goes BEFORE the digits and AFTER the sign: -$1,204.50, never
+            // -1,204.50$ (and never -$1,204.50$, which is what suffixing a already-prefixed value
             // produced). Only the symbol moves; everything else formats as before.
             s = s.startsWith('-') ? `-${fmt.unit}${s.slice(1)}` : `${fmt.unit}${s}`;
         }

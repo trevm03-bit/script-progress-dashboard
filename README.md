@@ -491,7 +491,7 @@ draws (default 50).
 Values outside the range are highlighted on the chart and counted in the summary strip.
 
 **Measuring twice in one run.** Call `track_delta()` more than once and the card says what the
-run found and what it left behind — *found 26K, resolved to 0* — instead of drawing two dots you
+run found and what it left behind — *found 4.2K, resolved to 0* — instead of drawing two dots you
 have to interpret. Points are paired by run id, so unrelated readings are never joined up.
 
 **Bringing history with you.** **Script Progress: Import Delta History…** reads a plain

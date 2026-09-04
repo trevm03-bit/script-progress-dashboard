@@ -98,9 +98,92 @@ A third round, from watching 1.5.0 run against real work. Two bugs reported alon
       due" candidate, and its nominal due date is usually already past. Two views of one fact must
       never disagree — a dashboard that contradicts itself is worse than one that says less.
       Regression-tested, plus a guard that a "next due" can never be a past date.
-- [x] **Currency symbols sat on the wrong side of the number** (`-25,984.76$`). A one-character
+- [x] **Currency symbols sat on the wrong side of the number** (`-1,204.50$`). A one-character
       unit was always appended; a currency symbol belongs before the digits and after the minus
       sign. Fixed for `$ £ € ¥ ₹ ₽ ₩ R$ C$ A$`; `%` and word units are unchanged.
+
+## 1.7.0 — the positioning round
+
+A third-party proposal to move the extension from "script tracker" to "operational intelligence".
+The underlying observation is right and worth acting on: **what anyone actually cares about is
+whether the data is right; the script is only the mechanism.** Most of this is buildable as
+proposed. Two items are not, for reasons that matter more than the features.
+
+### Build as proposed
+
+- [ ] **SLA compliance over time.** "On time 11 of 12 months", "every week since August with none
+      missed". The calendar already decides per-period status; this is that decision, kept. Unlike
+      a score, it is a *measurement* — which is what makes it usable as reliability evidence.
+- [ ] **Regression detection on metrics, not just duration.** The anomaly detector already flags a
+      run slower than N× its median; apply the same maths to metric values. Duration anomalies
+      catch infrastructure, metric anomalies catch data — and the second is the point of the tool.
+      Needs a per-metric opt-out, or a naturally variable number will cry wolf until it is ignored.
+- [ ] **Who ran it.** Capture the OS username per run (`USERNAME` / `os.getlogin()`, best-effort)
+      so history reads "X ran it at 10:08". Matters the moment a second person touches the same
+      scripts. ⚠️ It puts a personal identifier into `run_history.json`, which is exported to CSV
+      and HTML — so it must be **opt-out** and named in the privacy section.
+- [ ] **Structured warnings.** `p.warn(msg, count=…, category=…, severity=…)`, backward compatible
+      with the free-text form. Warning Trends exists but can only group by exact message text
+      today, so "steady at ~310 for three weeks" versus "dropped to 0 after the fix" is not
+      currently expressible.
+- [ ] **More snippets.** Four already ship (`progress`, `progress-step`, `progress-access`,
+      `progress-wrap`); the proposal is domain starters — a query script, a data load with failure
+      categories, a reconciliation with delta tracking, a file ETL, a shell script using CLI mode.
+      Wiring the first script is the real adoption barrier, so this is cheap and well aimed.
+- [ ] **Git correlation.** Record the commit SHA per run and show "code changed between these runs"
+      in the comparison view. Best-effort only: the reporter is stdlib-only and must never fail, or
+      hang, because a repo is absent, detached, or slow.
+
+### Build, but not in the shape proposed
+
+- [ ] **Cumulative impact** — `p.impact(metric, value, label)` accumulating separately from
+      `track_delta` (current state) — is a sound and cheap addition, and "we correct roughly X per
+      month" is a real operations number. 🔴 **The proposed *use* is where the risk is, not the
+      code.** A total produced by one's own script, under one's own definition of "identified", is
+      self-reported: a discrepancy that passed through a check is not value created, and presenting
+      it as business impact invites exactly one question — *who validated this?* Ship the
+      accumulator; require a written definition of what the number counts before it is quoted
+      anywhere it matters; and never let a figure derived from an employer's records leave the
+      machine (a public post is out of the question, not a judgement call).
+- [ ] **Runbook generation.** The extension does know the scripts, their order, what they read and
+      write, and what they produce — that is most of a runbook, and it would write itself. 🔴 But
+      the steps it *cannot* see are the human ones ("send the output to someone, wait for it to
+      come back"), and a generated runbook that silently omits them is worse than none: it is
+      followed in an emergency by whoever is covering. So it must **mark its own gaps** — between
+      two phases it can only say "a step happens here that this tool cannot observe; describe it" —
+      and never present itself as complete.
+- [ ] **A formatted digest for email.** ⚠️ **"Copy as HTML" cannot work from an extension.** VS
+      Code's clipboard API writes plain text only; pasting HTML *source* into a mail client shows
+      the markup, not the formatting. Rich paste on Windows needs the `CF_HTML` clipboard format
+      with byte-offset headers — see the Knowledge Base chapter *Rich-text clipboard handoff*,
+      where every naive attempt fails **silently**. The shape that works: render the digest to a
+      small self-contained HTML file (the full dashboard already exports this way) and open it, so
+      it can be copied *from a rendered page* — the browser puts real `CF_HTML` on the clipboard —
+      or attached as-is.
+
+### Not as specified
+
+- 🔴 **A single "Data Quality: 94%" score.** The instinct — leadership wants one number, not 311
+      findings — is correct, and the four inputs proposed are all real. The problem is the label.
+      This extension can see whether scripts **ran**, whether they **succeeded**, and how the
+      numbers they **report about themselves** moved. It cannot see the data. A composite with
+      invented weights, presented as *data quality*, is a claim the tool cannot substantiate, and
+      it is the kind of number that gets quoted in a meeting and then cannot be defended when
+      someone asks how it is calculated.
+      **The defensible version**, if a headline number is wanted: call it what it measures —
+      *coverage and compliance* — make the weights explicit and configurable, and always render the
+      inputs beside it ("4/4 processes on time · 0 failures · 2 metrics out of range"). A composite
+      is legitimate when the reader can see what went into it; it stops being legitimate the moment
+      the name promises more than the inputs support.
+
+### Positioning and listing
+
+- [ ] The tagline should describe the outcome rather than the mechanism — closer to *"know your
+      recurring jobs ran, what they found, and whether the trend is improving"*. Add `Testing` and
+      `Other` categories and keywords a data or BI engineer would actually search: data quality,
+      ETL monitoring, pipeline, reconciliation. Cheap, and it reaches a different and larger
+      audience than "script progress". 🔴 The listing must not promise the *data quality* claim the
+      tool cannot make — see above; describe what it does, which is already worth installing.
 
 ## Considered and deferred
 

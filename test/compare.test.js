@@ -156,7 +156,7 @@ test('points without a run id cannot be paired and are skipped', () => {
 test('a currency unit goes before the digits and after the minus sign', () => {
   const { formatMetric } = require('../out/logic/sparkline.js');
   const usd = { unit: '$', decimals: 2 };
-  assert.equal(formatMetric(-25984.76, usd), '-$25,984.76', 'was "-25,984.76$"');
+  assert.equal(formatMetric(-1204.5, usd), '-$1,204.50', 'was "-1,204.50$"');
   assert.equal(formatMetric(4408.67, usd), '$4,408.67', 'was "4,408.67$"');
   assert.equal(formatMetric(0, usd), '$0.00');
   // Non-currency units are unchanged.

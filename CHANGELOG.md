@@ -17,7 +17,7 @@ here are the ones that survived it.
   here pretends to know a taxonomy of everyone's failure modes. An unhandled exception is
   categorised by its type automatically.
 - **A run that measures twice tells the whole story.** Call `track_delta()` more than once and the
-  card reads *found 26K, resolved to 0*. Both values were always stored; they are now paired by
+  card reads *found 4.2K, resolved to 0*. Both values were always stored; they are now paired by
   run id, so unrelated readings are never joined up.
 - **Weekly digest.** *Copy Weekly Digest* rolls up the week — what ran and how often, what failed
   and why, what is overdue or part-done, how each tracked metric moved — for the kind of status
