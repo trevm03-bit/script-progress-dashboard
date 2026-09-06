@@ -741,6 +741,31 @@ const slot = (name, warnings, over = {}) => ({
     /setAttribute\('aria-expanded'/.test(js) && /setAttribute\('aria-sort'/.test(js));
 }
 
+// 17h — the Access Map used to leak an entire instance per dashboard refresh.
+//
+// 🔴 The dashboard swaps a section's innerHTML, which makes a new .map-host and therefore a new
+// AccessMap. The instance cache is a WeakMap keyed by host, so it does not hold the old one — but
+// the two document-level listeners and the watchdog interval it registered do, and they kept the
+// whole instance alive with its canvas and its graph. Measured in a real browser before this fix:
+// five refreshes of one section added ten document listeners and removed none, created five
+// ResizeObservers and started five intervals. After: ten added, ten removed, four of five
+// observers disconnected (the fifth is the live one, correctly still observing).
+//
+// The suite has no DOM, so this is the static half — the shape that made it possible.
+{
+  const map = fs.readFileSync(path.join(repo, 'media/accessMap.js'), 'utf8');
+  const docAdds = (map.match(/document\.addEventListener\(/g) || []).length;
+  const docRemoves = (map.match(/document\.removeEventListener\(/g) || []).length;
+  check('every document-level listener the map adds has a matching removal',
+    docRemoves >= docAdds, `${docAdds} added, ${docRemoves} removed`);
+  check('the map can be torn down at all', /\bdestroy\(\)\s*\{/.test(map));
+  check('the ResizeObserver is disconnected on teardown', /this\.ro\.disconnect\(\)/.test(map));
+  check('the watchdog interval is cleared on teardown', /destroy\(\)[\s\S]{0,600}clearInterval\(this\.watchdog\)/.test(map));
+  check('a detached instance is reaped when a new one attaches',
+    /reapDetached\(\)/.test(map) && /isConnected/.test(map),
+    'nothing calls destroy(), so it may as well not exist');
+}
+
 // 18 — runbook stamps local time
 const rb = runbookMarkdown({ ...base, history: big.slice(0, 5) }, S({}), NOW);
 check('runbook is stamped in local time', rb.includes('2026-09-02 10:00'), (rb.match(/_Generated [^_]+_/) || [])[0]);
