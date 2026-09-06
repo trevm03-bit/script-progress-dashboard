@@ -70,7 +70,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 __all__ = ["Progress", "resolve_logs_dir", "RunDisplaced"]
-__version__ = "1.7.1"
+__version__ = "1.7.2"
 
 # Windows consoles default to cp1252; a stray non-ASCII character in a summary must never
 # crash the script that is doing the real work.
@@ -1037,7 +1037,13 @@ class Progress:
         """
         try:
             return json.loads(path.read_text(encoding="utf-8-sig"))
-        except (FileNotFoundError, PermissionError):
+        except OSError:
+            # 🔴 Every OSError, not a hand-picked two. logsPath pointing at a FILE raises
+            # NotADirectoryError on Linux and macOS for every read underneath it, which sailed
+            # straight through into the caller's script — on the one platform pair CI never ran
+            # the Python suite on. FileNotFoundError, PermissionError, NotADirectoryError,
+            # IsADirectoryError and a dead network share are all the same answer here: there is
+            # no readable file, so use the default.
             return default if default is not None else {}
         except (json.JSONDecodeError, UnicodeDecodeError):
             # The file exists and holds something we cannot read. Everything that calls this

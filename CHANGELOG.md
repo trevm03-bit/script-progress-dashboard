@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.7.2 — 2026-09-06
+
+A real defect CI found on its second run, and the reason `test:python` was added to it in 1.7.0:
+this had been broken on Linux and macOS the whole time, on a path no Windows machine can reach.
+
+- `scriptProgress.logsPath` pointing at a **file** rather than a folder raised `NotADirectoryError`
+  out of every read underneath it and took the caller's script down with it. `_read_json` caught
+  `FileNotFoundError` and `PermissionError` by name; Windows happens to raise one of those for that
+  shape and Linux and macOS raise a third. It catches every `OSError` now — there is no readable
+  file in any of those cases, which is the same answer. The reporter's standing promise is that it
+  is never the reason a job dies.
+
 ## 1.7.1 — 2026-09-06
 
 Two cross-platform failures the first 1.7.0 CI run found, both of them in the tests added by that
