@@ -11,6 +11,17 @@ export interface DurationVerdict {
   /** How many prior runs the baseline used. */
   sample: number;
   slow: boolean;
+  /**
+   * Whether this run could be compared at all.
+   *
+   * 🔴 `sample` answers "how much history was there", which is a different question, and the
+   * detail block gated on it. A run with no usable duration bailed out with factor 1 and a
+   * full sample, so the expanded row printed "1.00x the usual 1m (median of the previous 10
+   * successful runs)" directly under a Duration column reading 0s - asserting the run took
+   * exactly its normal time when it recorded no time at all. Reachable in the wild: the
+   * reporter writes round(elapsed, 1), so any sub-50ms run stores 0.0.
+   */
+  comparable: boolean;
 }
 
 function median(values: number[]): number {
@@ -35,10 +46,12 @@ export function durationVerdict(run: RunRecord, history: RunRecord[], factor = 2
     .sort((a, b) => (parseIso(a.date)?.getTime() ?? 0) - (parseIso(b.date)?.getTime() ?? 0))
     .map(r => r.elapsed)
     .slice(-20);
-  if (prior.length < 3 || !(run.elapsed > 0)) return { factor: 1, baseline: median(prior), sample: prior.length, slow: false };
+  if (prior.length < 3 || !(run.elapsed > 0)) {
+    return { factor: 1, baseline: median(prior), sample: prior.length, slow: false, comparable: false };
+  }
   const baseline = median(prior);
   const f = baseline > 0 ? run.elapsed / baseline : 1;
-  return { factor: f, baseline, sample: prior.length, slow: f >= factor && run.elapsed - baseline >= 5 };
+  return { factor: f, baseline, sample: prior.length, slow: f >= factor && run.elapsed - baseline >= 5, comparable: true };
 }
 
 /**
@@ -73,10 +86,10 @@ export function durationVerdicts(history: RunRecord[], factor = 2): Map<RunRecor
       const window = prior.slice(-20);
       const baseline = median(window);
       if (window.length < 3 || !(cur.r.elapsed > 0)) {
-        out.set(cur.r, { factor: 1, baseline, sample: window.length, slow: false });
+        out.set(cur.r, { factor: 1, baseline, sample: window.length, slow: false, comparable: false });
       } else {
         const f = baseline > 0 ? cur.r.elapsed / baseline : 1;
-        out.set(cur.r, { factor: f, baseline, sample: window.length, slow: f >= factor && cur.r.elapsed - baseline >= 5 });
+        out.set(cur.r, { factor: f, baseline, sample: window.length, slow: f >= factor && cur.r.elapsed - baseline >= 5, comparable: true });
       }
     }
   }
@@ -155,8 +168,14 @@ export function metricAnomalies(
   if (!metrics) return [];
   const skip = new Set(ignore.map(s => s.toLowerCase()));
   const t = parseIso(run.date)?.getTime() ?? 0;
-  const prior = history.filter(r =>
-    r !== run && r.task === run.task && r.success && (parseIso(r.date)?.getTime() ?? 0) < t);
+  // 🔴 Sorted before slicing, for exactly the reason durationVerdict is. `series.slice(-20)`
+  // takes the last twenty of whatever order it is handed, and renderRunHistory hands this
+  // NEWEST-first - so every metric was measured against its twenty OLDEST runs. With
+  // HISTORY_KEEP at 100 that is the normal case, and it inverts the detector: a genuine
+  // collapse gets no flag while every healthy run gets one.
+  const prior = history
+    .filter(r => r !== run && r.task === run.task && r.success && (parseIso(r.date)?.getTime() ?? 0) < t)
+    .sort((a, b) => (parseIso(a.date)?.getTime() ?? 0) - (parseIso(b.date)?.getTime() ?? 0));
   const out: MetricVerdict[] = [];
   for (const [key, raw] of Object.entries(metrics)) {
     if (skip.has(key.toLowerCase()) || typeof raw !== 'number' || !isFinite(raw)) continue;
@@ -190,10 +209,25 @@ export function metricAnomalies(
     // that "down" because -1000 < -100 tells the reader the opposite of what happened.
     const ratio = Math.abs(raw) / Math.abs(baseline);
     const direction: 'up' | 'down' = Math.abs(raw) >= Math.abs(baseline) ? 'up' : 'down';
-    // A sign flip is only notable when the SIZE also moved. A net delta that swings between +5
-    // and -4 every run flips constantly and is behaving exactly as expected; flagging it taught
-    // the reader to ignore the flag.
-    if (ratio >= factor || ratio <= 1 / factor) {
+    // 🔴 Judge the move against the series' OWN volatility, not against the size of the median.
+    // Two defects met here, and this one test settles both:
+    //
+    //   * A net_delta oscillating +5/-4 was still flagged on every other run - the guard added
+    //     for oscillators sat only on the baseline===0 path, and an EVEN number of priors puts
+    //     the median BETWEEN the two values (median of [-4,-4,5,5] = 0.5), giving ratio 10.
+    //     Its spread is 4.5, so a move of 4.5 is exactly what it always does: not news.
+    //   * Deleting the sign-flip term made a genuine reversal silent. A reconciliation delta
+    //     sitting at +1200 for eight runs and coming back at -1150 has a ratio of 0.96 -
+    //     neither >= 2 nor <= 0.5 - so nothing appeared anywhere, though the README promises a
+    //     metric "far from its own median" is flagged and -1150 is 2,351 away from it. Against
+    //     a spread of a few units that move is enormous, which is the whole point.
+    //
+    // A series that never moves has spread 0, so any movement is notable - the same rule the
+    // zero-baseline branch above already applies.
+    const spread = median(series.map(v => Math.abs(v - baseline)));
+    const moved = Math.abs(raw - baseline) >= factor * spread;
+    const flipped = (raw > 0 && baseline < 0) || (raw < 0 && baseline > 0);
+    if (moved && (flipped || ratio >= factor || ratio <= 1 / factor)) {
       out.push({ key, value: raw, baseline, factor: ratio, direction, sample: series.length });
     }
   }

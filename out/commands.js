@@ -42,6 +42,7 @@ const os = __importStar(require("os"));
 const path = __importStar(require("path"));
 const vscode = __importStar(require("vscode"));
 const actions_1 = require("./actions");
+const shell_1 = require("./logic/shell");
 const dashboardPanel_1 = require("./dashboardPanel");
 const dataReader_1 = require("./dataReader");
 const summary_1 = require("./logic/summary");
@@ -118,7 +119,17 @@ function registerCommands(context, cx) {
             void vscode.window.showInformationMessage('Open or select a script file first.');
             return;
         }
-        const cmd = (0, actions_1.commandForFile)(file, cx.getSettings().quickActions.interpreters);
+        // The command is built for the shell that will actually receive it, not for "Windows":
+        // PowerShell and cmd.exe have incompatible quoting rules, and one string cannot be safe
+        // for both. vscode.env.shell is the only reliable answer.
+        const qa = cx.getSettings().quickActions;
+        const shell = (0, shell_1.shellKindFor)(vscode.env.shell);
+        const hazard = (0, shell_1.shellHazard)(file, shell);
+        if (hazard) {
+            void vscode.window.showWarningMessage(hazard);
+            return;
+        }
+        const cmd = (0, actions_1.commandForFile)(file, qa.interpreters, { shell, userConfigured: qa.userInterpreters });
         if (!cmd) {
             void vscode.window.showInformationMessage(`No interpreter configured for ${path.extname(file)} — see scriptProgress.quickActions.interpreters.`);
             return;

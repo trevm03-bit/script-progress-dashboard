@@ -54,14 +54,6 @@ export function validateSettings(raw: {
     return label;
   }));
 
-  // Collected first: a dependsOn is checked against every OTHER configured process, so the whole
-  // list has to be known before any single entry can be judged.
-  const knownNames = new Set(
-    (Array.isArray(raw.processes) ? raw.processes : [])
-      .map(p => (isObject(p) ? str((p as Record<string, unknown>).name) : ''))
-      .filter(Boolean)
-      .map(s2 => s2.toLowerCase()),
-  );
   out.push(...validateArray(raw.processes, 'processCalendar', 'processCalendar.processes', (p, add) => {
     const label = str(p.label) || str(p.name);
     if (!str(p.name)) add('needs a "name" — it is matched against the task name your script reports.');
@@ -72,8 +64,13 @@ export function validateSettings(raw: {
       if (p.dayOfMonth === undefined) add('is monthly but has no "dayOfMonth", so it can never be overdue.', label);
       else if (!isInt(p.dayOfMonth, 1, 31)) add(`has dayOfMonth ${fmt(p.dayOfMonth)}; expected a whole number from 1 to 31.`, label);
     }
-    if (freq === 'weekly' && p.dayOfWeek !== undefined && !isInt(p.dayOfWeek, 0, 6)) {
-      add(`has dayOfWeek ${fmt(p.dayOfWeek)}; expected 0 (Sunday) to 6 (Saturday).`, label);
+    // 🔴 ISO 1-7, matching package.json (minimum 1, maximum 7, "1 = Monday … 7 = Sunday"), the
+    // README, and dueDate()'s own clamp and default. This alone checked 0-6, so dayOfWeek: 7 -
+    // the schema maximum, the documented value for Sunday and the code's default - was reported
+    // to the user as an error. Worse, the correction it printed was acted on: 0 validated clean
+    // and dueDate clamped it to 1, i.e. MONDAY, flipping a Sunday process to red six days early.
+    if (freq === 'weekly' && p.dayOfWeek !== undefined && !isInt(p.dayOfWeek, 1, 7)) {
+      add(`has dayOfWeek ${fmt(p.dayOfWeek)}; expected 1 (Monday) to 7 (Sunday).`, label);
     }
     if (p.dueHour !== undefined && !isInt(p.dueHour, 0, 23)) add(`has dueHour ${fmt(p.dueHour)}; expected 0 to 23.`, label);
     if (p.maxMinutes !== undefined && !(typeof p.maxMinutes === 'number' && p.maxMinutes > 0)) {
@@ -87,10 +84,16 @@ export function validateSettings(raw: {
       if (!Array.isArray(p.dependsOn)) add(`has a "dependsOn" that is ${fmt(p.dependsOn)}; expected a list of process names.`, label);
       else for (const dep of p.dependsOn) {
         if (typeof dep !== 'string' || !dep.trim()) { add(`has a "dependsOn" entry that is ${fmt(dep)}; expected a process name.`, label); continue; }
+        // 🔴 Self-dependency is the only thing settings alone can prove wrong. dependsOn lists
+        // TASK-name prefixes resolved against RUN HISTORY - README, types.ts and
+        // unmetDependencies all agree - so checking them against configured PROCESS names
+        // reported a broken dependency for every real reported task the user did not also want
+        // a calendar row for. The shipped demo config was itself an instance, and the panel
+        // printed "will stay blocked for ever" directly above the row that was working. The
+        // genuine typo guard now lives in calendar.ts:unresolvableDependencies, where the run
+        // history that can actually answer the question is in scope.
         if (str(p.name) && dep.trim().toLowerCase() === str(p.name).toLowerCase()) {
           add(`depends on itself ("${dep}"), so it can never be anything but blocked.`, label);
-        } else if (!knownNames.has(dep.trim().toLowerCase())) {
-          add(`depends on "${dep}", which is not the name of any configured process — it will stay "blocked" for ever, and a blocked process counts as neither overdue nor missing.`, label);
         }
       }
     }
@@ -101,10 +104,17 @@ export function validateSettings(raw: {
   }));
 
   // A threshold for a metric that is not tracked is a no-op the user almost certainly did not intend.
+  // 🔴 An EMPTY metrics list means every metric, not none. package.json ships
+  // deltaTracker.metrics as [] and documents "Empty = every metric present", and
+  // renderDeltaTracker implements exactly that. So the documented default way to use this
+  // feature - add a threshold, leave metrics alone - raised one problem per threshold, and the
+  // card printed "has a threshold but is not in deltaTracker.metrics, so it is never charted or
+  // checked" directly above the chart drawing that metric, beside a header reading "1 out of
+  // range". The existing test only covered the non-empty case.
   const tracked = Array.isArray(raw.deltaMetrics) ? raw.deltaMetrics.filter(m => typeof m === 'string') : [];
   const thresholds = isObject(raw.deltaThresholds) ? Object.keys(raw.deltaThresholds) : [];
   for (const key of thresholds) {
-    if (!tracked.includes(key)) {
+    if (tracked.length && !tracked.includes(key)) {
       out.push({ area: 'deltaTracker', label: key, message: `has a threshold but is not in "deltaTracker.metrics", so it is never charted or checked.` });
     }
   }

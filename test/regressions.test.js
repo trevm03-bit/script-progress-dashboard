@@ -16,7 +16,8 @@ const { coverage } = require(path.join(repo, 'out/logic/compliance.js'));
 const { healthRows } = require(path.join(repo, 'out/logic/health.js'));
 const { durationVerdicts, durationVerdict } = require(path.join(repo, 'out/logic/anomaly.js'));
 const { validateSettings } = require(path.join(repo, 'out/logic/validate.js'));
-const { commandForFile } = require(path.join(repo, 'out/logic/shell.js'));
+const { matchesProcess, normaliseProcesses, unmetDependencies, unresolvableDependencies, processStatus } = require(path.join(repo, 'out/logic/calendar.js'));
+const { commandForFile, shellHazard, shellKindFor } = require(path.join(repo, 'out/logic/shell.js'));
 const { runbookMarkdown } = require(path.join(repo, 'out/logic/runbook.js'));
 const { settings: S } = require(path.join(repo, 'test/fixtures/settings.js'));
 
@@ -74,9 +75,61 @@ s0.processes = [{ name: 'P', label: 'P', frequency: 'daily' }];
 const h0 = render({ ...base, history: [{ task: 'P', date: '2026-09-02T09:00:00', success: true, elapsed: 1, warnings: 0, summary: '' }] }, s0);
 check('all-zero coverage weights are explained on the page', /every weight is 0/.test(h0));
 
-// 8 — dependsOn validation
-const probs = validateSettings({ processes: [{ name: 'Daily Load', label: 'Daily', frequency: 'daily', dependsOn: ['Upstrem Extract'] }] });
-check('a dependsOn naming nothing is reported', probs.some(p => /Upstrem Extract/.test(p.message || String(p))), JSON.stringify(probs));
+// 8 — dependsOn: the typo guard, and the false positive it used to come with
+//
+// 🔴 dependsOn lists TASK-name prefixes resolved against RUN HISTORY - README, types.ts and
+// unmetDependencies all say so. validateSettings was checking them against configured PROCESS
+// names, so depending on any real reported task the user did not also want a calendar row for was
+// reported as broken, with the panel printing "will stay blocked for ever" directly above a row
+// that was working. The shipped demo config was itself an instance. The guard now lives in
+// calendar.ts, where the history that can actually answer the question is in scope.
+const ranUpstream = [{ task: 'Upstream Extract', date: '2026-09-02T08:00:00', success: true, elapsed: 1, warnings: 0, summary: '' }];
+const dependent = { name: 'Daily Load', label: 'Daily', frequency: 'daily', dependsOn: ['Upstream Extract'] };
+check('a dependsOn on a real task that is not a configured process is NOT reported',
+  validateSettings({ processes: [dependent] }).length === 0,
+  JSON.stringify(validateSettings({ processes: [dependent] })));
+check('a dependsOn naming nothing that ever ran is caught where the history is',
+  unresolvableDependencies({ ...dependent, dependsOn: ['Upstrem Extract'] }, ranUpstream).length === 1);
+check('a dependsOn that a real task satisfies is not flagged',
+  unresolvableDependencies(dependent, ranUpstream).length === 0);
+check('with no history at all, nothing is judged',
+  unresolvableDependencies({ ...dependent, dependsOn: ['Upstrem Extract'] }, []).length === 0);
+check('the typo reaches the user in the row note',
+  /has ever run/.test(processStatus({ ...dependent, dependsOn: ['Upstrem Extract'] }, ranUpstream, NOW).note || ''),
+  processStatus({ ...dependent, dependsOn: ['Upstrem Extract'] }, ranUpstream, NOW).note);
+check('self-dependency is still a settings error settings alone can prove',
+  validateSettings({ processes: [{ name: 'A', frequency: 'daily', dependsOn: ['A'] }] })
+    .some(x => /depends on itself/.test(x.message)));
+
+// 🔴 One normalisation point. validate() trims every field before judging it and the consumers
+// used the raw value, so all three of these validated clean and then misbehaved silently.
+check('a name with stray whitespace still matches its runs',
+  matchesProcess('Revenue Load Nightly', { name: ' Revenue Load', frequency: 'daily' }));
+check('a non-string name cannot throw out of the render',
+  matchesProcess('anything', { name: 5, frequency: 'daily' }) === false);
+check('normaliseProcesses trims name, frequency, dependsOn and subtasks',
+  JSON.stringify(normaliseProcesses([{ name: ' Revenue Load ', frequency: ' daily ', dependsOn: [' Extract '], subtasks: [' Phase 1 '] }]))
+  === JSON.stringify([{ name: 'Revenue Load', frequency: 'daily', dependsOn: ['Extract'], subtasks: ['Phase 1'] }]),
+  JSON.stringify(normaliseProcesses([{ name: ' Revenue Load ', frequency: ' daily ', dependsOn: [' Extract '], subtasks: [' Phase 1 '] }])));
+check('normaliseProcesses drops an entry whose name cannot be used',
+  normaliseProcesses([{ name: 5 }, { name: '  ' }, null, 'x', { name: 'Good', frequency: 'daily' }]).length === 1);
+check('a trimmed dependsOn resolves against a real run',
+  unmetDependencies({ name: 'D', frequency: 'daily', dependsOn: [' Upstream Extract '] }, ranUpstream, NOW).length === 0);
+
+// dayOfWeek is ISO 1-7 everywhere else in the product; validate alone said 0-6, and the correction
+// it printed was acted on - 0 validates clean and dueDate clamps it to Monday, six days early.
+check('dayOfWeek 7 (Sunday) validates', validateSettings({ processes: [{ name: 'W', frequency: 'weekly', dayOfWeek: 7 }] }).length === 0);
+check('dayOfWeek 0 is now reported', validateSettings({ processes: [{ name: 'W', frequency: 'weekly', dayOfWeek: 0 }] }).some(x => /dayOfWeek/.test(x.message)));
+
+// An empty deltaTracker.metrics means EVERY metric, which is how the setting ships and what the
+// renderer implements - so the documented default way to use a threshold raised a false problem
+// per threshold, printed above the chart that was drawing it.
+check('a threshold with the default empty metrics list is not reported',
+  validateSettings({ deltaMetrics: [], deltaThresholds: { net_delta: { min: -5, max: 5 } } }).length === 0,
+  JSON.stringify(validateSettings({ deltaMetrics: [], deltaThresholds: { net_delta: { min: -5, max: 5 } } })));
+check('a threshold outside a NON-empty metrics list is still reported',
+  validateSettings({ deltaMetrics: ['other'], deltaThresholds: { net_delta: { min: -5, max: 5 } } })
+    .some(x => /never charted/.test(x.message)));
 const self = validateSettings({ processes: [{ name: 'A', label: 'A', frequency: 'daily', dependsOn: ['A'] }] });
 check('a self-referential dependsOn is reported', self.some(p => /depends on itself/.test(p.message || String(p))), JSON.stringify(self));
 
@@ -170,8 +223,271 @@ check('posix quotes a shell metacharacter', commandForFile('/x/report(v2).py', {
   commandForFile('/x/report(v2).py', { '.py': 'python' }, 'darwin'));
 check('posix neutralises command substitution', commandForFile('/x/run$(id).py', { '.py': 'python' }, 'linux') === "python3 '/x/run$(id).py'",
   commandForFile('/x/run$(id).py', { '.py': 'python' }, 'linux'));
-check('windows doubles a quote rather than backslashing it', commandForFile('C:\\a b\\r".py', { '.py': 'python' }, 'win32').includes('""'),
-  commandForFile('C:\\a b\\r".py', { '.py': 'python' }, 'win32'));
+
+// 17b — 🔴 "Windows" is not a shell. The old win32 branch wrapped the path in DOUBLE quotes, which
+// PowerShell (VS Code's default profile on Windows) treats as expandable: $(...), $var and the
+// backtick are all live inside them. Verified against a real PowerShell before this was written:
+// "Run with Script Progress" on a file called `$(ni PWNED.txt).py` created PWNED.txt and never ran
+// the script. Single quotes are the only PowerShell string that is literal all the way through.
+const ps = (f, i = { '.py': 'python' }) => commandForFile(f, i, { shell: 'powershell', platform: 'win32' });
+for (const [label, name] of [
+  ['a subexpression', 'C:\\s\\$(ni PWNED.txt).py'],
+  ['a variable', 'C:\\s\\$HOME-report.py'],
+  ['a backtick', 'C:\\s\\back`tick.py'],
+  ['parentheses', 'C:\\s\\report(v2).py'],
+  ['a semicolon', 'C:\\s\\a;b.py'],
+  ['braces', 'C:\\s\\{month}.py'],
+  ['an ampersand', 'C:\\s\\a&b.py'],
+  ['a space', 'C:\\s\\month end.py'],
+]) {
+  const cmd = ps(name);
+  check(`powershell: ${label} in a filename is quoted literally`,
+    cmd === `python '${name}'`, cmd);
+}
+check('powershell: an apostrophe is doubled, the PowerShell escape',
+  ps("C:\\s\\month-end's.py") === "python 'C:\\s\\month-end''s.py'", ps("C:\\s\\month-end's.py"));
+
+// 🔴 In PowerShell a bare quoted string is an EXPRESSION, not a command: it prints the path and
+// exits 0. .cmd and .bat ship with an empty interpreter, so "Run with Script Progress" on any
+// batch file under a folder with a space echoed the filename and never ran it - no error, exit
+// code 0, so the extension's own exit-code hook stayed quiet too. The call operator is required.
+check('powershell: a .cmd with no interpreter gets the call operator',
+  ps('C:\\my scripts\\nightly.cmd', { '.cmd': '' }) === "& 'C:\\my scripts\\nightly.cmd'",
+  ps('C:\\my scripts\\nightly.cmd', { '.cmd': '' }));
+check('cmd.exe: the same file needs no call operator',
+  commandForFile('C:\\my scripts\\nightly.cmd', { '.cmd': '' }, { shell: 'cmd', platform: 'win32' })
+    === '"C:\\my scripts\\nightly.cmd"');
+
+// The one case correct quoting cannot fix: cmd.exe expands %NAME% inside double quotes and has no
+// command-line escape for it, so the interpreter is handed a filename that is not on disk.
+check('cmd.exe: a %VAR% filename is reported as a hazard', !!shellHazard('C:\\logs\\run_%DATE%.py', 'cmd'));
+check('powershell is unaffected by %, so no false alarm', shellHazard('C:\\logs\\run_%DATE%.py', 'powershell') === null);
+check('an ordinary path raises no hazard', shellHazard('C:\\logs\\run.py', 'cmd') === null);
+
+// vscode.env.shell is the only reliable answer to "which shell will receive this".
+for (const [path_, want] of [['C:\\...\\powershell.exe', 'powershell'], ['/usr/bin/pwsh', 'powershell'],
+  ['C:\\Windows\\System32\\cmd.exe', 'cmd'], ['/bin/bash', 'posix'], ['/usr/bin/zsh', 'posix'],
+  ['C:\\Program Files\\Git\\bin\\bash.exe', 'posix']]) {
+  check(`shellKindFor(${path_}) is ${want}`, shellKindFor(path_, 'win32') === want, shellKindFor(path_, 'win32'));
+}
+// Nothing to go on: PowerShell is VS Code's Windows default AND the safe direction to be wrong in,
+// because its stricter quoting fails visibly rather than dangerously.
+check('an unknown shell on Windows is treated as PowerShell', shellKindFor(undefined, 'win32') === 'powershell');
+check('an unknown shell elsewhere is treated as POSIX', shellKindFor('', 'linux') === 'posix');
+
+// 17c — the interpreters map is user input, and was trusted as if it were not.
+let interpThrew = null;
+try { commandForFile('/w/run.py', { '.py': 3 }, 'linux'); } catch (e) { interpThrew = e.message; }
+check('a non-string interpreter does not throw out of the command handler', interpThrew === null, interpThrew || '');
+
+// 🔴 defaultInterpreter promised "the moment someone sets their own interpreter, theirs is used
+// verbatim" and could not keep it: it compared strings, not provenance, and matched .ps1 with
+// /^powershell\b/i - so `powershell -NoProfile -NonInteractive -File`, `powershell.exe -File` for
+// WSL interop and even `powershell-lts -File` were all thrown away and replaced wholesale.
+check('an interpreter the user set is used verbatim',
+  commandForFile('/h/deploy.ps1', { '.ps1': 'powershell -NoProfile -NonInteractive -File' },
+    { platform: 'linux', userConfigured: ['.ps1'] }) === 'powershell -NoProfile -NonInteractive -File /h/deploy.ps1');
+check('a value that merely starts with "powershell" is not swallowed',
+  commandForFile('/h/deploy.ps1', { '.ps1': 'powershell-lts -File' }, 'linux') === 'powershell-lts -File /h/deploy.ps1',
+  commandForFile('/h/deploy.ps1', { '.ps1': 'powershell-lts -File' }, 'linux'));
+check('the untouched .ps1 default is still translated off Windows',
+  commandForFile('/h/deploy.ps1', { '.ps1': 'powershell -ExecutionPolicy Bypass -File' }, 'linux')
+    === 'pwsh -NoProfile -File /h/deploy.ps1');
+
+// 17d — and the thing none of the above can prove: what a REAL PowerShell does with the string.
+// Skipped off Windows; it is the only assertion here that actually executes anything.
+test('a hostile filename runs the script and nothing else, in a real PowerShell',
+  { skip: process.platform !== 'win32' && 'needs a real Windows PowerShell' }, () => {
+    const os_ = require('os'), fsx = require('fs'), { spawnSync } = require('child_process');
+    const dir = fsx.mkdtempSync(require('path').join(os_.tmpdir(), 'spd-ps-'));
+    const file = require('path').join(dir, '$(ni PWNED.txt).py');
+    fsx.writeFileSync(file, 'print("REAL SCRIPT RAN")\n', 'utf8');
+    const script = require('path').join(dir, 'run.ps1');
+    fsx.writeFileSync(script, ps(file), 'utf8');
+    const r = spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script],
+      { cwd: dir, encoding: 'utf8', timeout: 60000 });
+    const out = `${r.stdout || ''}${r.stderr || ''}`;
+    assert.ok(/REAL SCRIPT RAN/.test(out), `the script did not run: ${out.slice(0, 200)}`);
+    assert.equal(fsx.existsSync(require('path').join(dir, 'PWNED.txt')), false, 'the FILENAME executed');
+    fsx.rmSync(dir, { recursive: true, force: true });
+  });
+
+// 17e — the 2026-09-04 review, batch D. Each of these was watched fail against the pre-fix build.
+const { metricAnomalies } = require(path.join(repo, 'out/logic/anomaly.js'));
+const { timelineModel } = require(path.join(repo, 'out/logic/timeline.js'));
+const { complianceReport, coverage: coverageOf } = require(path.join(repo, 'out/logic/compliance.js'));
+const { coverageFor } = require(path.join(repo, 'out/logic/summary.js'));
+const { digestHtml } = require(path.join(repo, 'out/logic/digestHtml.js'));
+
+const run = (task, iso, extra = {}) => ({ task, date: iso, success: true, elapsed: 10, warnings: 0, summary: '', ...extra });
+
+// 🔴 metricAnomalies sliced its twenty-run window off UNSORTED history, and renderRunHistory hands
+// it NEWEST-first — so every metric was measured against its twenty OLDEST runs. With history
+// capped at 100 that is the normal case, and it inverts the detector.
+{
+  // The old runs and the recent ones must DIFFER, or the sort order cannot change the answer and
+  // the test proves nothing: judged against the newest twenty a run at 1000 is perfectly normal,
+  // judged against the twenty oldest it is a thousandfold rise.
+  const hist = [];
+  for (let i = 0; i < 12; i++) hist.push(run('T', `2026-07-${String(i + 1).padStart(2, '0')}T09:00:00`, { metrics: { rows: 1 } }));
+  for (let i = 0; i < 20; i++) hist.push(run('T', `2026-08-${String(i + 1).padStart(2, '0')}T09:00:00`, { metrics: { rows: 1000 } }));
+  const collapse = run('T', '2026-09-01T09:00:00', { metrics: { rows: 10 } });
+  const newestFirst = [collapse, ...hist].sort((a, b) => b.date.localeCompare(a.date));
+  check('a collapse is flagged even when history arrives newest-first',
+    metricAnomalies(collapse, newestFirst, 2).some(m => m.key === 'rows'),
+    JSON.stringify(metricAnomalies(collapse, newestFirst, 2)));
+  check('a healthy run judged against RECENT history is not flagged',
+    metricAnomalies(hist[31], newestFirst, 2).length === 0,
+    JSON.stringify(metricAnomalies(hist[31], newestFirst, 2)));
+}
+
+// A +5/-4 oscillator is behaving exactly as expected; a delta reversing from +1200 to -1150 is not.
+{
+  const osc = [];
+  for (let i = 0; i < 8; i++) osc.push(run('O', `2026-08-${String(i + 1).padStart(2, '0')}T09:00:00`, { metrics: { net: i % 2 ? 5 : -4 } }));
+  const next = run('O', '2026-09-01T09:00:00', { metrics: { net: 5 } });
+  check('an oscillating metric is not flagged every other run',
+    metricAnomalies(next, [...osc, next], 2).length === 0,
+    JSON.stringify(metricAnomalies(next, [...osc, next], 2)));
+
+  const steady = [];
+  for (let i = 0; i < 8; i++) steady.push(run('R', `2026-08-${String(i + 1).padStart(2, '0')}T09:00:00`, { metrics: { recon: 1200 + i } }));
+  const reversed = run('R', '2026-09-01T09:00:00', { metrics: { recon: -1150 } });
+  check('a sign reversal of a steady metric is flagged again',
+    metricAnomalies(reversed, [...steady, reversed], 2).some(m => m.key === 'recon'),
+    JSON.stringify(metricAnomalies(reversed, [...steady, reversed], 2)));
+}
+
+// A run with no usable duration cannot be compared, and must not claim it took its normal time.
+{
+  const prior = [];
+  for (let i = 0; i < 10; i++) prior.push(run('D', `2026-08-${String(i + 1).padStart(2, '0')}T09:00:00`, { elapsed: 60 }));
+  const zero = run('D', '2026-09-01T09:00:00', { elapsed: 0 });
+  const v = durationVerdict(zero, [...prior, zero]);
+  check('a zero-duration run is marked not comparable', v.comparable === false, JSON.stringify(v));
+  check('a real run is comparable', durationVerdict(prior[9], prior).comparable === true);
+  check('the bulk verdict agrees with the single one',
+    durationVerdicts([...prior, zero]).get(zero).comparable === false);
+}
+
+// 🔴 The timeline quantised its right edge to the minute and used that for MEMBERSHIP too, so for
+// up to sixty seconds a just-started run existed in Run History and in Active Task but not here.
+{
+  const now = new Date(2026, 8, 2, 10, 0, 45);
+  const justNow = run('Quick', '2026-09-02T10:00:30', { startedAt: '2026-09-02T10:00:24', elapsed: 6 });
+  const model = timelineModel({ ...base, history: [justNow] }, S({}), now);
+  check('a run that started inside the current minute is on the timeline', model.runs === 1,
+    `${model.runs} runs, ${model.lanes.length} lanes`);
+}
+
+// A script that died without complete() leaves status:"running" for ever; the timeline drew it as a
+// live pulsing bar pinned to `now`, growing without bound, while Active Task said "Exited".
+{
+  const now = new Date(2026, 8, 2, 10, 0, 0);
+  const dead = { task: 'Dead', status: 'running', step: 1, totalSteps: 2, label: 'Working', detail: '',
+    elapsed: 60, updatedAt: '2026-09-02T04:00:00', startedAt: '2026-09-02T03:59:00', runId: 'r1', warnings: [], log: [], metrics: {}, artifacts: [], accessed: [] };
+  const st = S({}); st.staleRunningMinutes = 30;
+  const model = timelineModel({ ...base, tasks: [dead] }, st, now);
+  const allBars = model.lanes.flatMap(l => l.bars);
+  check('a stalled run is not drawn as a growing live bar', model.running === 0 && !allBars.some(b => b.running),
+    `running=${model.running}, bars=${JSON.stringify(allBars.map(b => b.running))}`);
+}
+
+// 🔴 A period the process ran and FAILED is not "before it was wired".
+{
+  const hist = [];
+  for (let m = 0; m < 6; m++) hist.push(run('Close', `2026-0${m + 1}-05T09:00:00`, { success: false }));
+  hist.push(run('Close', '2026-07-05T09:00:00'));
+  hist.push(run('Close', '2026-08-05T09:00:00'));
+  const rep = complianceReport({ name: 'Close', frequency: 'monthly', dayOfMonth: 5 }, hist, new Date(2026, 8, 2), 8);
+  const known = rep.periods.filter(x => x.known);
+  check('failed periods count against compliance rather than reading "unknown"',
+    known.length === 8 && rep.percent !== 100, `${known.length} known, ${rep.percent}%`);
+}
+
+// The truncation caveat must describe the WINDOW, not the file being full.
+{
+  // The file is FULL (100 rows) and forty of them are inside the 30-day window, so the window is
+  // complete and the figure exact. Without runs in the window the "Runs succeeded" input is never
+  // produced at all and the assertion passes on an empty string, proving nothing.
+  const long = [];
+  for (let i = 0; i < 60; i++) long.push(run('L', `2026-0${1 + Math.floor(i / 25)}-${String((i % 28) + 1).padStart(2, '0')}T09:00:00`));
+  for (let i = 0; i < 40; i++) long.push(run('L', `2026-08-${String((i % 28) + 1).padStart(2, '0')}T09:00:00`));
+  const recent = [];
+  for (let i = 0; i < 100; i++) recent.push(run('L', `2026-09-0${(i % 2) + 1}T09:00:00`));
+  const covLong = coverageOf([], long, 0, 0, new Date(2026, 8, 2), 30, { schedule: 2, success: 2, metrics: 1 }, 100);
+  const covRecent = coverageOf([], recent, 0, 0, new Date(2026, 8, 2), 30, { schedule: 2, success: 2, metrics: 1 }, 100);
+  check('a full file that still covers the window is not called truncated',
+    !/history is full/.test(covLong.inputs.map(i => i.detail).join(' ')),
+    covLong.inputs.map(i => i.detail).join(' '));
+  check('a genuinely truncated window still says so',
+    /history is full/.test(covRecent.inputs.map(i => i.detail).join(' ')),
+    covRecent.inputs.map(i => i.detail).join(' '));
+}
+
+// One metric name reported by two scripts is two lines on the chart; reading the single newest
+// point across both let a healthy loader hide a breached one.
+{
+  const st = S({ deltas: { formats: {}, thresholds: { rows_loaded: { min: 100 } }, points: 50 } });
+  const data = { ...base, deltas: { rows_loaded: [
+    { date: '2026-09-02T09:00:00', value: 5, task: 'Loader B' },
+    { date: '2026-09-02T09:05:00', value: 5000, task: 'Loader A' },
+  ] } };
+  check('a breached metric is not hidden by a healthy sibling task',
+    summaryFacts(data, st, NOW).metricsOutOfRange.includes('rows_loaded'),
+    JSON.stringify(summaryFacts(data, st, NOW).metricsOutOfRange));
+}
+
+// A user-settable key must not reach the prototype. data.deltas['constructor'] yielded the Object
+// constructor, whose .length is 1, so the emptiness guard passed and the render threw.
+{
+  const st = S({ deltas: { formats: {}, thresholds: { constructor: { min: 0 }, toString: { max: 1 } }, points: 50 } });
+  let threw = null;
+  try { summaryFacts({ ...base, deltas: {} }, st, NOW); } catch (e) { threw = e.message; }
+  check('a prototype key in thresholds cannot blank the dashboard', threw === null, threw || '');
+}
+
+// 🔴 The emailed digest and the dashboard must produce the SAME coverage figure. They did not: a
+// 7-day window against 30, a metrics term crediting never-reported thresholds, and no regard at
+// all for coverage.show.
+{
+  const st = S({ processes: [{ name: 'P', label: 'P', frequency: 'daily' }],
+    deltas: { formats: {}, thresholds: { never_reported: { min: 0, max: 1 } }, points: 50 } });
+  const hist = [];
+  for (let i = 1; i <= 20; i++) hist.push(run('P', `2026-08-${String(i).padStart(2, '0')}T09:00:00`, { success: i > 5 }));
+  const data = { ...base, history: hist };
+  const html = digestHtml(data, st, NOW);
+  const cov = coverageFor(data, st, NOW);
+  check('the emailed coverage figure equals the dashboard one',
+    !cov || html.includes(`Coverage ${cov.percent}%`), `${cov && cov.percent}% vs ${(html.match(/Coverage (\d+)%/) || [])[1]}`);
+  check('a threshold that never reported does not earn a full mark',
+    !cov.inputs.some(i => /1\/1 metric/.test(i.detail)), cov.inputs.map(i => i.detail).join(' · '));
+
+  const off = S({ ...st, coverage: { show: false, weights: { schedule: 2, success: 2, metrics: 1 } } });
+  off.processes = st.processes; off.deltas = st.deltas; off.coverage = { show: false, weights: { schedule: 2, success: 2, metrics: 1 } };
+  check('coverage.show:false is honoured by the emailed digest too',
+    !/Coverage \d+%/.test(digestHtml(data, off, NOW)),
+    (digestHtml(data, off, NOW).match(/Coverage \d+%/) || [''])[0]);
+}
+
+// A future-dated run must not count toward "this week" in one half of an email and be excluded by
+// the other half.
+{
+  const st = S({ processes: [] });
+  const data = { ...base, history: [run('P', '2026-09-02T09:00:00'), run('P', '2027-01-01T09:00:00')] };
+  const html = digestHtml(data, st, NOW);
+  check('a future-dated run is not counted in the digest headline', /">1<\/div>\s*<div[^>]*>runs/.test(html) || html.includes('>1<'),
+    (html.match(/>(\d+)<\/div><div[^>]*>runs/) || [])[1]);
+}
+
+// An exit overlay belongs to ONE run. A ~2 s window let a brand-new run inherit a dead one's code.
+{
+  const prog = { task: 'T', status: 'running', runId: 'new', startedAt: '2026-09-02T10:00:00', elapsed: 1, updatedAt: '2026-09-02T10:00:01', step: 0, totalSteps: 0, label: '', detail: '', warnings: [], log: [], metrics: {}, artifacts: [], accessed: [] };
+  const stale = [{ task: 'T', exitCode: 137, when: '2026-09-02T10:00:00', runId: 'old' }];
+  check('an exit from a previous run does not attach to a new one', exitOverlayFor(prog, stale) === null);
+  check('an exit from THIS run still attaches',
+    exitOverlayFor(prog, [{ task: 'T', exitCode: 1, when: '2026-09-02T10:00:01', runId: 'new' }]) !== null);
+}
 
 // 18 — runbook stamps local time
 const rb = runbookMarkdown({ ...base, history: big.slice(0, 5) }, S({}), NOW);

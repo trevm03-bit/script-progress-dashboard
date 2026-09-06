@@ -1,8 +1,7 @@
 // The summary strip: the numbers worth seeing before anything else.
 import { DashboardData, Settings } from '../types';
-import { summaryFacts } from '../logic/summary';
+import { coverageFor, summaryFacts } from '../logic/summary';
 import { failurePatterns } from '../logic/failures';
-import { coverage } from '../logic/compliance';
 /** run_history.json keeps this many runs; past it, a "last 30 days" count is really "last N runs". */
 const HISTORY_CAP = 100;
 import { calendarRows } from '../logic/calendar';
@@ -24,15 +23,9 @@ export function renderSummary(data: DashboardData, settings: Settings, now: Date
   // honest while the reader can see what went into it.
   let coverageNote = '';
   if (settings.coverage.show && settings.processes.length) {
-    // 🔴 Count only metrics that have actually reported. `metricsOutOfRange` can only ever name a
-    // metric with data, so counting thresholds instead gave a full mark to a metric that has
-    // never been measured — the figure at its most confident about the thing it knows least
-    // about, which is the exact failure the comment inside coverage() warns against.
-    const metricsTracked = Object.keys(settings.deltas.thresholds || {})
-      .filter(name => (data.deltas[name] || []).length > 0).length;
-    const cov = coverage(calendarRows(settings.processes, data.history, now), data.history,
-      f.metricsOutOfRange.length, metricsTracked, now,
-      30, settings.coverage.weights, HISTORY_CAP);
+    // The one shared implementation, so the emailed digest cannot drift away from what is on
+    // screen — which it had, by three separate inputs.
+    const cov = coverageFor(data, settings, now, { historyCap: HISTORY_CAP, facts: f })!;
     if (cov.percent === null && settings.processes.length) {
       // Every weight is 0, so there is nothing left to average. The setting is still switched on,
       // so saying nothing would look like a bug in the tool rather than a choice in the settings.

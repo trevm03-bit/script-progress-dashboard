@@ -122,6 +122,13 @@ export interface RunOverlay {
   startedAt?: string;
   exitCode: number;
   when: string;
+  /**
+   * The run this exit belongs to, stamped by DataReader.addOverlay from whatever was running
+   * at the time. Without it an overlay could only be matched by TIME, and it is dropped only
+   * when its task stops reporting "running" - so after a kill it survives for the life of the
+   * window and a brand-new run of the same name inherited the dead one's exit code.
+   */
+  runId?: string;
 }
 
 /** Everything the dashboard renders from, read in one pass. */
@@ -264,7 +271,11 @@ export interface Settings {
   processes: ProcessConfig[];
   calendar: { view: 'list' | 'grid' | 'both'; upcoming: boolean; compliance: boolean; compliancePeriods: number };
   buttons: QuickActionConfig[];
-  quickActions: { runVia: 'terminal' | 'task'; asTasks: boolean; contextMenu: boolean; disableWhileRunning: boolean; interpreters: Record<string, string> };
+  // `userInterpreters` is provenance, not content: the extensions whose interpreter the user
+  // actually set, in any scope. logic/shell.ts translates the two Windows-shaped defaults for
+  // macOS and Linux and must never touch a value somebody chose deliberately - which a string
+  // comparison cannot tell apart, and got wrong.
+  quickActions: { runVia: 'terminal' | 'task'; asTasks: boolean; contextMenu: boolean; disableWhileRunning: boolean; interpreters: Record<string, string>; userInterpreters?: string[] };
   deltaMetrics: string[];
   deltas: { formats: Record<string, DeltaFormat>; thresholds: Record<string, DeltaThreshold>; points: number };
   pendingActions: { maxAgeDays: number };

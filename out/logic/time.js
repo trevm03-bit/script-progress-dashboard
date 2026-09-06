@@ -144,6 +144,23 @@ function exitOverlayFor(progress, overlays) {
     for (const o of overlays) {
         if (!sameTask(progress.task, o.task))
             continue;
+        // 🔴 Run identity first, and it was already on the overlay - simply unused. An overlay is
+        // dropped only when its task stops reporting "running", so after a kill it lives for the
+        // life of the window; the 1 s grace below, plus the reporter writing startedAt truncated
+        // to the second (another 999 ms), left a ~2 s window in which a BRAND NEW run inherited
+        // the dead one's exit code. It showed "Exited (137)" the moment it started, fired a false
+        // error toast, and stopped the 1 s live-refresh loop because taskState was no longer
+        // 'running'. When both sides know their run id the timestamps do not get a vote.
+        if (o.runId && progress.runId) {
+            if (o.runId !== progress.runId)
+                continue;
+            const exact = parseIso(o.when)?.getTime() ?? 0;
+            if (exact >= bestWhen) {
+                best = o;
+                bestWhen = exact;
+            }
+            continue;
+        }
         const when = parseIso(o.when)?.getTime() ?? 0;
         if (when >= start - 1000 && when >= bestWhen) {
             best = o;

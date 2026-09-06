@@ -22,6 +22,8 @@ export class DataReader {
   private emptySince: { [k: string]: number } = {};
   /** In-memory facts the extension observed (process exit codes). Never written to disk. */
   overlays: RunOverlay[] = [];
+  /** The slots as of the last read, so an incoming exit can be stamped with the run it ended. */
+  private lastTasks: ProgressData[] = [];
 
   constructor(public logsDir: string) {}
 
@@ -35,6 +37,14 @@ export class DataReader {
   }
 
   addOverlay(o: RunOverlay): void {
+    // 🔴 Stamp the exit with the run it actually ended. The terminal hook knows a task name and
+    // an exit code and nothing else, so without this the only way to tell whose exit it was
+    // was the clock - and exitOverlayFor allowed a 1 s grace, while the reporter writes
+    // startedAt truncated to the second (another 999 ms). In that ~2 s window a fresh run
+    // showed "Exited (137)" the moment it started, fired a false error toast, and stopped
+    // ticking because taskState was no longer 'running'.
+    const current = this.lastTasks.find(x => (x.task || '').toLowerCase() === (o.task || '').toLowerCase());
+    o = { ...o, runId: o.runId ?? current?.runId, startedAt: o.startedAt ?? current?.startedAt };
     // Case-INSENSITIVE, to match how overlays are read back. An exact compare here let "Nightly",
     // "nightly" and "Nightly " pile up as three separate exits for one script, and the reader
     // then served whichever happened to be first — measured as a months-old exit code 137 being
@@ -54,9 +64,13 @@ export class DataReader {
     const tasks = this.readSlots(readErrors, main);
     // Drop overlays that no longer apply: the task reported a final state since, or no task
     // matches at all (an overlay with nothing to attach to must not live forever).
+    this.lastTasks = tasks;
     this.overlays = this.overlays.filter(o => {
       const t = tasks.find(x => x.task.toLowerCase() === o.task.toLowerCase());
-      return !!t && t.status === 'running';
+      if (!t || t.status !== 'running') return false;
+      // A different run of the same name is a different run. This is the case the timestamp
+      // window could never separate: the previous run's exit must not survive into it.
+      return !(o.runId && t.runId && o.runId !== t.runId);
     });
     return {
       progress: main,

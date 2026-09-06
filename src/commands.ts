@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { ActionRunner, commandForFile } from './actions';
+import { shellHazard, shellKindFor } from './logic/shell';
 import { DashboardPanel } from './dashboardPanel';
 import { FILES } from './dataReader';
 import { dailySummaryText, historyCsv, weeklyDigestText } from './logic/summary';
@@ -89,7 +90,14 @@ export function registerCommands(context: vscode.ExtensionContext, cx: CommandCo
     const uri = arg instanceof vscode.Uri ? arg : undefined;
     const file = uri?.fsPath ?? vscode.window.activeTextEditor?.document.uri.fsPath;
     if (!file) { void vscode.window.showInformationMessage('Open or select a script file first.'); return; }
-    const cmd = commandForFile(file, cx.getSettings().quickActions.interpreters);
+    // The command is built for the shell that will actually receive it, not for "Windows":
+    // PowerShell and cmd.exe have incompatible quoting rules, and one string cannot be safe
+    // for both. vscode.env.shell is the only reliable answer.
+    const qa = cx.getSettings().quickActions;
+    const shell = shellKindFor(vscode.env.shell);
+    const hazard = shellHazard(file, shell);
+    if (hazard) { void vscode.window.showWarningMessage(hazard); return; }
+    const cmd = commandForFile(file, qa.interpreters, { shell, userConfigured: qa.userInterpreters });
     if (!cmd) { void vscode.window.showInformationMessage(`No interpreter configured for ${path.extname(file)} — see scriptProgress.quickActions.interpreters.`); return; }
     await cx.runner.runCommand(cmd, path.basename(file));
   });

@@ -732,6 +732,11 @@ class Progress:
         self.current["detail"] = summary
         self.current["substep"] = None
         self._write(status="complete" if success else "failed")
+        # A failed run's contributions are withdrawn before the row is written, so the file
+        # never holds money a crashed run 'earned'.
+        if not success and self.impacts:
+            self._drop_impacts()
+            self.impacts = {}
         self._append_history(bool(success), elapsed, summary)
         status = "COMPLETE" if success else "FAILED"
         self._say(f"\n=== {status} === ({self._fmt_duration(elapsed)})")
@@ -822,6 +827,32 @@ class Progress:
         # json.dumps went straight into the calling script - and raised from __exit__ it
         # REPLACED the operator's real exception with a serialisation complaint.
         self._safe_write(self.slot_file, data)
+
+    def _drop_impacts(self):
+        """
+        Remove this run's contributions from impact.json, because this run FAILED.
+
+        🔴 impact() writes as the run goes, so a run that crashes afterwards has already put
+        money in the file. The dashboard filters those points out by run id - but it can only
+        do that while the failed run is still in run_history.json, which keeps 100 rows, while
+        impact.json keeps 500 points per metric. Once the failed run scrolls out of history the
+        guard evaporates and the contribution silently rejoins the total: a headline money
+        figure that read 'nothing recorded yet' reappears weeks later, sourced from a run that
+        crashed. Removing it at the source means it is never there to come back.
+        """
+        if not self.run_id:
+            return
+
+        def mutate(data):
+            if not isinstance(data, dict):
+                return {}
+            for metric, series in list(data.items()):
+                if isinstance(series, list):
+                    data[metric] = [p for p in series
+                                    if not (isinstance(p, dict) and p.get("runId") == self.run_id)]
+            return data
+
+        self._update_shared(self.impact_file, mutate, default={})
 
     def _estimate_eta(self, elapsed: float):
         """Seconds left, from the average of the last few successful runs of this task."""

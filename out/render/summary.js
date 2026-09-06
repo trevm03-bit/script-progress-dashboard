@@ -3,10 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.renderSummary = renderSummary;
 const summary_1 = require("../logic/summary");
 const failures_1 = require("../logic/failures");
-const compliance_1 = require("../logic/compliance");
 /** run_history.json keeps this many runs; past it, a "last 30 days" count is really "last N runs". */
 const HISTORY_CAP = 100;
-const calendar_1 = require("../logic/calendar");
 const time_1 = require("../logic/time");
 const html_1 = require("./html");
 /**
@@ -22,13 +20,9 @@ function renderSummary(data, settings, now, narrow = false) {
     // honest while the reader can see what went into it.
     let coverageNote = '';
     if (settings.coverage.show && settings.processes.length) {
-        // 🔴 Count only metrics that have actually reported. `metricsOutOfRange` can only ever name a
-        // metric with data, so counting thresholds instead gave a full mark to a metric that has
-        // never been measured — the figure at its most confident about the thing it knows least
-        // about, which is the exact failure the comment inside coverage() warns against.
-        const metricsTracked = Object.keys(settings.deltas.thresholds || {})
-            .filter(name => (data.deltas[name] || []).length > 0).length;
-        const cov = (0, compliance_1.coverage)((0, calendar_1.calendarRows)(settings.processes, data.history, now), data.history, f.metricsOutOfRange.length, metricsTracked, now, 30, settings.coverage.weights, HISTORY_CAP);
+        // The one shared implementation, so the emailed digest cannot drift away from what is on
+        // screen — which it had, by three separate inputs.
+        const cov = (0, summary_1.coverageFor)(data, settings, now, { historyCap: HISTORY_CAP, facts: f });
         if (cov.percent === null && settings.processes.length) {
             // Every weight is 0, so there is nothing left to average. The setting is still switched on,
             // so saying nothing would look like a bug in the tool rather than a choice in the settings.

@@ -44,12 +44,19 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
  * the year", it simply has no history, and pretending otherwise makes the number useless.
  */
 export function complianceReport(process: ProcessConfig, history: RunRecord[], now: Date, count = 12): ComplianceReport {
-  const runs = history
-    .filter(r => matchesProcess(r.task, process) && r.success)
+  // 🔴 `firstEver` comes from EVERY matching run, not just the successful ones. Filtering to
+  // successes first meant a process that ran and FAILED in Jan-Jun and only succeeded in
+  // Jul-Aug had firstEver = July, so the six failed months were marked "before it was wired"
+  // and left out of the percentage. The row rendered a green 100% with six grey dots whose
+  // tooltip read "Jan 26: before it was wired" for months whose failures were sitting in Run
+  // History on the same screen. `met` still requires success; only the ORIGIN date changes.
+  const attempts = history
+    .filter(r => matchesProcess(r.task, process))
     .map(r => ({ r, d: parseIso(r.date) }))
     .filter((x): x is { r: RunRecord; d: Date } => !!x.d)
     .sort((a, b) => a.d.getTime() - b.d.getTime());
-  const firstEver = runs[0]?.d ?? null;
+  const runs = attempts.filter(x => x.r.success);
+  const firstEver = attempts[0]?.d ?? null;
 
   const periods: PeriodResult[] = [];
   for (let i = count; i >= 1; i--) {
@@ -272,7 +279,13 @@ export function coverage(
     const ok = recent.filter(r => r.success).length;
     // History is capped, so past that cap the denominator is the cap and not the window. Say so
     // rather than claiming a window the data cannot cover.
-    const capped = historyCap > 0 && history.length >= historyCap;
+    // 🔴 Truncated WINDOW, not full file. `history.length >= historyCap` says nothing about
+    // whether the 30-day window is complete: with 100 rows spanning 200 days every run in the
+    // last 30 is present and the figure is exact, yet the note told the reader it was
+    // truncated - permanently, for any long-lived install. The window is only short if the
+    // file is full AND its oldest row is newer than the cutoff.
+    const oldest = history.reduce((min, r) => Math.min(min, parseIso(r.date)?.getTime() ?? Infinity), Infinity);
+    const capped = historyCap > 0 && history.length >= historyCap && oldest > cutoff;
     inputs.push({
       label: 'Runs succeeded', score: ok / recent.length, weight: weights.success,
       // Say what the denominator ACTUALLY is. "5/7 of the last 100 runs" was arithmetic nonsense:
