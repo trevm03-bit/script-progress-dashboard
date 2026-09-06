@@ -3,6 +3,7 @@
 import * as vscode from 'vscode';
 import { ALL_SECTIONS, ProcessConfig, QuickActionConfig, SectionConfig, SectionId, Settings } from './types';
 import { validateSettings } from './logic/validate';
+import { normaliseProcesses } from './logic/calendar';
 
 export function readSettings(): Settings {
   const c = vscode.workspace.getConfiguration('scriptProgress');
@@ -15,6 +16,26 @@ export function readSettings(): Settings {
     return allowed.includes(v) ? v : def;
   };
   const bool = (key: string, def: boolean) => { const v = c.get<unknown>(key, def); return typeof v === 'boolean' ? v : def; };
+  // Only string values survive. A number or an array typed into settings.json reaches the shell
+  // builder as-is - VS Code squiggles it but get() still returns it - and threw an unhandled
+  // TypeError out of "Run with Script Progress", leaving a toast that named no setting.
+  const strMap = (key: string): Record<string, string> => {
+    const raw = c.get<Record<string, unknown>>(key, {}) || {};
+    const out: Record<string, string> = {};
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      for (const [k, v] of Object.entries(raw)) if (typeof v === 'string') out[k] = v;
+    }
+    return out;
+  };
+  // Which keys the USER set, in any scope, as opposed to what package.json ships.
+  const userKeys = (key: string): string[] => {
+    const i = c.inspect<Record<string, unknown>>(key);
+    const out = new Set<string>();
+    for (const scope of [i?.globalValue, i?.workspaceValue, i?.workspaceFolderValue]) {
+      if (scope && typeof scope === 'object' && !Array.isArray(scope)) Object.keys(scope).forEach(k => out.add(k));
+    }
+    return [...out];
+  };
   // De-duplicated. A repeated id rendered the section twice, and every click handler in
   // dashboard.js addresses a section with querySelector - so the search box and the status chips
   // only ever drove the FIRST copy, while the second sat unfiltered and looked like it had been.
@@ -91,7 +112,10 @@ export function readSettings(): Settings {
       days: num('warningTrends.days', 14, 1, 365),
       top: num('warningTrends.top', 8, 1, 50),
     },
-    processes: (c.get<ProcessConfig[]>('processCalendar.processes', []) || []).filter(p => p && p.name),
+    // Normalised once, here. validate() trims every field before judging it, so an entry with
+    // stray whitespace or a non-string name used to pass validation and then behave as if it
+    // did not exist -- or, for a non-string name, throw out of the render entirely.
+    processes: normaliseProcesses(c.get('processCalendar.processes', [])),
     calendar: {
       view: str('processCalendar.view', 'both', ['list', 'grid', 'both'] as const),
       upcoming: bool('processCalendar.upcoming', true),
@@ -104,7 +128,8 @@ export function readSettings(): Settings {
       asTasks: bool('quickActions.asTasks', true),
       contextMenu: bool('quickActions.contextMenu', true),
       disableWhileRunning: bool('quickActions.disableWhileRunning', true),
-      interpreters: c.get<Record<string, string>>('quickActions.interpreters', {}) || {},
+      interpreters: strMap('quickActions.interpreters'),
+      userInterpreters: userKeys('quickActions.interpreters'),
     },
     deltaMetrics: (c.get<string[]>('deltaTracker.metrics', []) || []).filter(m => typeof m === 'string' && m),
     deltas: {

@@ -1,10 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.coverageFor = coverageFor;
 exports.summaryFacts = summaryFacts;
 exports.dailySummaryText = dailySummaryText;
 exports.weeklyDigestText = weeklyDigestText;
 exports.historyCsv = historyCsv;
 const calendar_1 = require("./calendar");
+const compliance_1 = require("./compliance");
 const health_1 = require("./health");
 const sparkline_1 = require("./sparkline");
 const time_1 = require("./time");
@@ -12,6 +14,29 @@ const failures_1 = require("./failures");
 function isToday(iso, now) {
     const d = (0, time_1.parseIso)(iso);
     return !!d && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
+/**
+ * The coverage figure, computed ONE way for every surface that shows it.
+ *
+ * 🔴 There were two implementations, and a comment in the second one saying they had to agree.
+ * They did not. The emailed digest used a 7-day window against the dashboard's 30 (63% in the
+ * email, 86% on screen, from the same data at the same instant), gave a full mark to metrics
+ * that had never reported a value, and ignored `coverage.show` entirely - so "Copy Digest for
+ * Email" pasted a coverage line the dashboard was deliberately not displaying. A comment
+ * cannot keep two implementations in step; one implementation can.
+ *
+ * Returns null when coverage is switched off or there is no calendar to judge, which is
+ * exactly the dashboard's own gate.
+ */
+function coverageFor(data, settings, now, opts = {}) {
+    if (!settings.coverage.show || !settings.processes.length)
+        return null;
+    // Only metrics that have actually reported. `metricsOutOfRange` can never name a metric
+    // with no data, so counting thresholds instead gave a full mark to a metric that has never
+    // been measured - the figure at its most confident about the thing it knows least about.
+    const metricsTracked = Object.keys(settings.deltas.thresholds || {}).filter(name => (Object.prototype.hasOwnProperty.call(data.deltas || {}, name) ? data.deltas[name] : [])?.length).length;
+    const facts = opts.facts ?? summaryFacts(data, settings, now);
+    return (0, compliance_1.coverage)((0, calendar_1.calendarRows)(settings.processes, data.history, now), data.history, facts.metricsOutOfRange.length, metricsTracked, now, 30, settings.coverage.weights, opts.historyCap ?? 100);
 }
 function summaryFacts(data, settings, now) {
     const states = data.tasks.map(t => (0, time_1.taskState)(t, settings.staleRunningMinutes, now, data.overlays));
@@ -27,12 +52,29 @@ function summaryFacts(data, settings, now) {
         .filter(r => r.status !== 'overdue' && r.status !== 'unseen' && r.nextDue.getTime() >= now.getTime())
         .sort((a, b) => a.nextDue.getTime() - b.nextDue.getTime())[0];
     const health = settings.sections.scriptHealth ? (0, health_1.healthRows)(data.history, settings.staleHours, now, 0) : [];
+    // 🔴 Per TASK, and via an own-property lookup.
+    //
+    // One metric name reported by two scripts is one series file and two lines on the chart.
+    // Reading the single newest point across both let `Loader A` at 5000 hide `Loader B` at 5
+    // against a min of 100: the strip showed a green "out of range: 0" tile and "1/1 metric(s)
+    // in range" while the Delta Tracker card directly below it painted Loader B red and its
+    // header read "1 out of range".
+    //
+    // And the key comes from user settings, so a plain [] index reaches the prototype:
+    // data.deltas['constructor'] yields the Object constructor, whose .length is 1, so the
+    // emptiness guard passed and the next line dereferenced a function - throwing out of the
+    // render, which blanks the whole dashboard. processCalendar was hardened against exactly
+    // this and its sibling here was left alone.
     const metricsOutOfRange = [];
     for (const [name, t] of Object.entries(settings.deltas.thresholds || {})) {
-        const pts = data.deltas[name];
-        if (!pts || !pts.length)
+        const pts = Object.prototype.hasOwnProperty.call(data.deltas || {}, name) ? data.deltas[name] : undefined;
+        if (!Array.isArray(pts) || !pts.length)
             continue;
-        if ((0, sparkline_1.outOfRange)(pts[pts.length - 1].value, t))
+        const latestPerTask = new Map();
+        for (const p of pts)
+            if (p && typeof p.value === 'number')
+                latestPerTask.set(p.task || '', p.value);
+        if ([...latestPerTask.values()].some(v => (0, sparkline_1.outOfRange)(v, t)))
             metricsOutOfRange.push(name);
     }
     // Not-in-the-future, so this agrees with "runs today" / "failed today", which use isToday().

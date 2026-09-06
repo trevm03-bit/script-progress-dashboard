@@ -60,52 +60,70 @@ function renderSections(data, settings, ctx) {
         if (!enabled(id) || drawn.has(id))
             continue;
         drawn.add(id);
-        switch (id) {
-            case 'summary':
-                parts.push((0, summary_1.renderSummary)(data, settings, ctx.now, narrow));
-                break;
-            case 'activeTask':
-                parts.push((0, activeTask_1.renderActiveTask)(data, settings, ctx.now, o(id)));
-                break;
-            case 'warnings':
-                parts.push((0, warnings_1.renderWarnings)(data, o(id)));
-                break;
-            case 'lastCompleted':
-                parts.push((0, lastCompleted_1.renderLastCompleted)(data, settings, ctx.now, o(id)));
-                break;
-            case 'quickActions':
-                parts.push((0, quickActions_1.renderQuickActions)(data, settings, ctx.now, ctx.trusted, o(id)));
-                break;
-            case 'processCalendar':
-                parts.push((0, processCalendar_1.renderProcessCalendar)(data, settings, ctx.now, o(id), narrow));
-                break;
-            case 'timeline':
-                parts.push((0, timeline_1.renderTimeline)(data, settings, ctx.now, o(id), narrow));
-                break;
-            case 'deltaTracker':
-                parts.push((0, deltaTracker_1.renderDeltaTracker)(data, settings, ctx.now, o(id)));
-                break;
-            case 'metrics':
-                parts.push((0, metricsExplorer_1.renderMetricsExplorer)(data, settings, ctx.now, o(id), narrow));
-                break;
-            case 'runHistory':
-                parts.push((0, runHistory_1.renderRunHistory)(data, settings, o(id)));
-                break;
-            case 'warningTrends':
-                parts.push((0, warningTrends_1.renderWarningTrends)(data, settings, ctx.now, o(id), narrow));
-                break;
-            case 'scriptHealth':
-                parts.push((0, scriptHealth_1.renderScriptHealth)(data, settings, ctx.now, o(id)));
-                break;
-            case 'accessMap':
-                parts.push((0, accessMapSummary_1.renderAccessMap)(data, settings, ctx.now, ctx.surface, o(id), ctx.graph));
-                break;
-            case 'pendingActions':
-                parts.push((0, pendingActions_1.renderPendingActions)(data, settings, ctx.now, o(id)));
-                break;
-            case 'impact':
-                parts.push((0, impact_1.renderImpact)(data, settings, ctx.now, o(id)));
-                break;
+        // 🔴 A section that throws must not take the dashboard with it.
+        //
+        // Nothing on the path from here to the webview catches anything - not dashboardHost's
+        // refresh, not extension.ts's - so one malformed entry in one array raised a TypeError
+        // that stopped the post entirely, and the webview went on displaying its last-good HTML
+        // for ever with no error anywhere. The user sees a dashboard that has simply stopped
+        // moving and has nothing to report. The entries themselves are normalised at the read
+        // boundary now; this is the net under that, because these files are an open contract and
+        // the next unexpected shape is not one we have thought of yet.
+        try {
+            switch (id) {
+                case 'summary':
+                    parts.push((0, summary_1.renderSummary)(data, settings, ctx.now, narrow));
+                    break;
+                case 'activeTask':
+                    parts.push((0, activeTask_1.renderActiveTask)(data, settings, ctx.now, o(id)));
+                    break;
+                case 'warnings':
+                    parts.push((0, warnings_1.renderWarnings)(data, o(id)));
+                    break;
+                case 'lastCompleted':
+                    parts.push((0, lastCompleted_1.renderLastCompleted)(data, settings, ctx.now, o(id)));
+                    break;
+                case 'quickActions':
+                    parts.push((0, quickActions_1.renderQuickActions)(data, settings, ctx.now, ctx.trusted, o(id)));
+                    break;
+                case 'processCalendar':
+                    parts.push((0, processCalendar_1.renderProcessCalendar)(data, settings, ctx.now, o(id), narrow));
+                    break;
+                case 'timeline':
+                    parts.push((0, timeline_1.renderTimeline)(data, settings, ctx.now, o(id), narrow));
+                    break;
+                case 'deltaTracker':
+                    parts.push((0, deltaTracker_1.renderDeltaTracker)(data, settings, ctx.now, o(id)));
+                    break;
+                case 'metrics':
+                    parts.push((0, metricsExplorer_1.renderMetricsExplorer)(data, settings, ctx.now, o(id), narrow));
+                    break;
+                case 'runHistory':
+                    parts.push((0, runHistory_1.renderRunHistory)(data, settings, o(id)));
+                    break;
+                case 'warningTrends':
+                    parts.push((0, warningTrends_1.renderWarningTrends)(data, settings, ctx.now, o(id), narrow));
+                    break;
+                case 'scriptHealth':
+                    parts.push((0, scriptHealth_1.renderScriptHealth)(data, settings, ctx.now, o(id)));
+                    break;
+                case 'accessMap':
+                    parts.push((0, accessMapSummary_1.renderAccessMap)(data, settings, ctx.now, ctx.surface, o(id), ctx.graph));
+                    break;
+                case 'pendingActions':
+                    parts.push((0, pendingActions_1.renderPendingActions)(data, settings, ctx.now, o(id)));
+                    break;
+                case 'impact':
+                    parts.push((0, impact_1.renderImpact)(data, settings, ctx.now, o(id)));
+                    break;
+            }
+        }
+        catch (e) {
+            const why = (e instanceof Error ? e.message : String(e)).slice(0, 200);
+            parts.push(`<section class="section" data-section="${(0, html_1.esc)(id)}"><div class="section-title">`
+                + `<span class="section-name">${(0, html_1.esc)(types_1.SECTION_TITLES[id] ?? id)}</span></div>`
+                + `<div class="section-body"><div class="read-errors">${(0, html_1.icon)('warning')} This section could not be drawn `
+                + `(${(0, html_1.esc)(why)}). Everything else on this page is unaffected.</div></div></section>`);
         }
     }
     const attempted = settings.sectionOrder.some(enabled);

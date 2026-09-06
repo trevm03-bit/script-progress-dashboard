@@ -35,7 +35,15 @@ function taskCard(p: ProgressData, data: DashboardData, settings: Settings, now:
   const sub = typeof p.substep === 'number' && p.substep > 0 && p.substep < 1 && state === 'running' ? ` <span class="muted">(${Math.round(p.substep * 100)}%)</span>` : '';
 
   let stateNote = '';
-  if (state === 'stalled') stateNote = `<div class="state-note status-warn">${icon('warning')} No update for ${Math.round(minutesSinceUpdate(p, now))} min — the script may have stopped without reporting.</div>`;
+  // minutesSinceUpdate returns Infinity as a SENTINEL when there is no usable updatedAt - which
+  // a hand-written or third-party progress.json may well omit, the JSON being an open contract
+  // - and printing it raw put "No update for Infinity min" on the card. Say what is actually
+  // known instead.
+  const quietFor = minutesSinceUpdate(p, now);
+  const quietText = Number.isFinite(quietFor)
+    ? `No update for ${Math.round(quietFor)} min`
+    : 'No update time reported';
+  if (state === 'stalled') stateNote = `<div class="state-note status-warn">${icon('warning')} ${quietText} — the script may have stopped without reporting.</div>`;
   if (state === 'exited') {
     const o = exitOverlayFor(p, data.overlays);
     stateNote = `<div class="state-note status-fail">${icon('debug-disconnect')} The process exited with code ${o?.exitCode ?? '?'} while the script still reported "running".</div>`;
@@ -47,7 +55,8 @@ function taskCard(p: ProgressData, data: DashboardData, settings: Settings, now:
   const meta: string[] = [];
   meta.push(`<span title="Elapsed${typeof sla === 'number' ? ` (limit ${formatDuration(sla * 60)})` : ''}" class="${pastSla ? 'status-fail' : ''}">${icon('watch')} ${esc(formatDuration(elapsed))}${typeof sla === 'number' ? `<span class="muted"> / ${esc(formatDuration(sla * 60))}</span>` : ''}</span>`);
   if (state === 'running' && eta !== null) meta.push(`<span title="Estimated remaining, from prior runs">${icon('history')} ~${esc(formatDuration(eta))} left</span>`);
-  if (p.warnings && p.warnings.length) meta.push(`<span class="status-warn" title="Warnings this run">${icon('warning')} ${p.warnings.length}</span>`);
+  const warnCount = Math.max(p.warningsTotal ?? 0, p.warnings?.length ?? 0);
+  if (warnCount) meta.push(`<span class="status-warn" title="Warnings this run">${icon('warning')} ${warnCount}</span>`);
   if (p.startedAt) meta.push(`<span class="muted" title="Started">${icon('play')} ${esc(clockTime(p.startedAt))}</span>`);
   if (p.runId) meta.push(`<span class="muted mono" title="Run id">${esc(p.runId)}</span>`);
 

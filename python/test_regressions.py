@@ -21,6 +21,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "python"))
+import progress as progress_module                  # noqa: E402
 from progress import Progress, _slug, _cli_number   # noqa: E402
 
 
@@ -246,6 +247,412 @@ class ConcurrentCompletions(unittest.TestCase):
                          f"rows lost to the completion race: got {names}")
         # And the lock file must not be left behind for the next run to trip over.
         self.assertEqual(list(d.glob("*.lock")), [])
+
+
+class SharedFileConcurrency(unittest.TestCase):
+    """
+    run_history.json was not the only file every script appends to.
+
+    The 1.6 lock was introduced for run_history.json and applied only there, which read as "the
+    concurrency bug is fixed". impact.json, deltas.json and access.json are the same
+    read-modify-write across the same processes and kept losing data at the same rate. Measured
+    over 16 concurrent runs each reporting the same impact: history kept 16 of 16 rows and summed
+    to the true $1,600 while impact.json kept ONE - the Impact Summary card read $100 across 1
+    run, 94% of the headline figure gone, with the locked file next to it proving the data had
+    existed. The Delta Tracker lost 15 of 16 series outright.
+
+    Eight is enough to catch a regression without making the suite slow: unlocked, this shape lost
+    contributions in every trial at N=6.
+    """
+
+    N = 8
+    WORKER = textwrap.dedent("""
+        import sys, time
+        sys.path.insert(0, r"{py}")
+        from progress import Progress
+        release, i, logs = float(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
+        p = Progress("Task%d" % i, logs_dir=logs, quiet=True)
+        while time.time() < release:      # spin to the shared barrier so they really collide
+            pass
+        p.impact("corrections_found", 100.0)
+        p.track_delta("series_%d" % i, float(i))
+        p.access("table", "resource_%d" % i, "read")
+        p.complete(summary="done")
+    """)
+
+    def test_every_shared_file_survives_concurrent_writers(self):
+        d = tmp()
+        worker = d / "w.py"
+        worker.write_text(self.WORKER.format(py=str(REPO / "python")), encoding="utf-8")
+        release = time.time() + 2.0
+        procs = [subprocess.Popen([sys.executable, str(worker), str(release), str(i), str(d)],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                 for i in range(self.N)]
+        for proc in procs:
+            proc.wait(timeout=180)
+
+        history = json.loads((d / "run_history.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(history), self.N, "run_history lost rows")
+
+        impact = json.loads((d / "impact.json").read_text(encoding="utf-8"))
+        total = sum(e["value"] for e in impact.get("corrections_found", []))
+        self.assertEqual(total, 100.0 * self.N,
+                         f"impact.json lost contributions: ${total} of ${100.0 * self.N}")
+
+        deltas = json.loads((d / "deltas.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(deltas), self.N, f"deltas.json kept {len(deltas)} of {self.N} series")
+
+        access = json.loads((d / "access.json").read_text(encoding="utf-8"))
+        resources = [n for n in access["nodes"] if n.get("type") != "task"]
+        self.assertEqual(len(resources), self.N,
+                         f"access.json kept {len(resources)} of {self.N} resources")
+
+        # No lock file may outlive the run that took it, or the next run trips over it.
+        self.assertEqual(list(d.glob("*.lock")), [])
+
+
+class ReviewFindings20260904(unittest.TestCase):
+    """
+    The 2026-09-04 review, batch B: 21 findings in the reporter, 7 of them critical.
+
+    Each check below was watched FAIL against the pre-fix copy before it was written here. Five
+    further assertions in the same batch already held and are kept as guards, so a fix does not
+    quietly undo something that was already right.
+    """
+
+    def _slot_of(self, d):
+        return sorted((d / "progress").glob("*.json"))[0]
+
+    def _flaky_replace(self, fail_times):
+        """os.replace that refuses the first N calls - Windows with a reader holding the file."""
+        real = progress_module.os.replace
+        state = {"n": 0}
+
+        def fake(src, dst):
+            state["n"] += 1
+            if state["n"] <= fail_times:
+                raise PermissionError(13, "held by another process")
+            return real(src, dst)
+        return real, fake
+
+    # -------------------------------------------------------------------- F001
+    def test_a_bom_does_not_wipe_the_file(self):
+        """
+        deltas.json and run_history.json written by PowerShell's `Set-Content -Encoding utf8` or
+        by Notepad carry a BOM. The extension's reader was taught to strip one, so they rendered
+        perfectly - while the reporter raised JSONDecodeError, fell back to the empty default and
+        wrote that straight over the file. 80 delta points and 60 history rows deleted by one
+        ordinary run, silently. Fixing the reader without the writers removed the alarm.
+        """
+        d = tmp()
+        deltas = {"reconciliation_delta": [{"date": "2026-09-01T00:00:00", "value": i} for i in range(40)],
+                  "rows_loaded": [{"date": "2026-09-01T00:00:00", "value": i} for i in range(40)]}
+        history = [{"task": "T", "date": "2026-09-01T00:00:00", "success": True, "elapsed": 1}
+                   for _ in range(60)]
+        for name, obj in (("deltas.json", deltas), ("run_history.json", history)):
+            (d / name).write_bytes(b"\xef\xbb\xbf" + json.dumps(obj).encode("utf-8"))
+
+        p = Progress("Nightly Load", logs_dir=str(d), quiet=True)
+        p.track_delta("rows_loaded", 50040)
+        p.complete(success=True, summary="ok")
+
+        after = json.loads((d / "deltas.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(sorted(after), ["reconciliation_delta", "rows_loaded"])
+        self.assertEqual(sum(len(v) for v in after.values()), 81)
+        self.assertEqual(len(json.loads((d / "run_history.json").read_text(encoding="utf-8-sig"))), 61)
+
+    def test_an_unreadable_file_is_kept_rather_than_overwritten(self):
+        """Genuinely corrupt is not the same as BOM'd: it still cannot be parsed, but the data
+        must not evaporate. Move it aside so the loss is recoverable and announced."""
+        d = tmp()
+        (d / "deltas.json").write_text("{not json at all", encoding="utf-8")
+        Progress("T", logs_dir=str(d), quiet=True).track_delta("m", 1.0)
+        self.assertTrue((d / "deltas.json.corrupt").exists(), "the unreadable file was destroyed")
+
+    # -------------------------------------------------------------------- F003 / F007 / F020
+    def test_the_slot_and_the_final_write_get_the_patient_ladder(self):
+        """
+        The short retry ladder was applied to both files _write() touches. But the slot is not a
+        cache - resume() rebuilds the entire run from it on every CLI subcommand - and the
+        terminal write is what takes a run out of "running". With the short ladder a
+        `warn --actionable` exited 0, printed the warning, recorded nothing, and Pending Actions
+        showed a false all-clear; a dropped completion left the run "running" for ever.
+        """
+        d = tmp()
+        Progress("Recon", logs_dir=str(d), quiet=True)
+        # Four refusals: progress.json spends the first two, so the slot takes refusals 3 and 4 -
+        # fatal at the shortened attempts=2, survivable at the restored attempts=5.
+        real, fake = self._flaky_replace(4)
+        progress_module.os.replace = fake
+        try:
+            Progress.resume("Recon", logs_dir=str(d), quiet=True).warn("SOX control 4 failed",
+                                                                       actionable=True)
+        finally:
+            progress_module.os.replace = real
+        resumed = Progress.resume("Recon", logs_dir=str(d), quiet=True)
+        self.assertEqual(len(resumed.warnings), 1, "the actionable finding was lost")
+        self.assertEqual(resumed.warnings_total, 1)
+
+        d2 = tmp()
+        p = Progress("Nightly", logs_dir=str(d2), quiet=True)
+        p.step(1, 1, "Go")
+        real, fake = self._flaky_replace(3)
+        progress_module.os.replace = fake
+        try:
+            p.complete(success=True, summary="finished")
+        finally:
+            progress_module.os.replace = real
+        self.assertEqual(json.loads((d2 / "progress.json").read_text(encoding="utf-8"))["status"],
+                         "complete", "the run was left 'running' for ever")
+
+    # -------------------------------------------------------------------- F004 / F064
+    def test_a_non_finite_value_in_the_slot_never_reaches_the_callers_script(self):
+        """
+        json.loads accepts NaN; _write_json forbids it. A slot written by a hand edit or another
+        producer therefore put a non-finite float into state and the next write raised ValueError
+        into the operator's script - and raised from __exit__ it REPLACED their real exception, so
+        a missing input file surfaced as a serialisation complaint and the run went unrecorded.
+        """
+        d = tmp()
+        Progress("Recon", logs_dir=str(d), quiet=True)
+        slot = self._slot_of(d)
+        raw = json.loads(slot.read_text(encoding="utf-8"))
+        raw["metrics"] = {"variance_pct": float("nan")}
+        slot.write_text(json.dumps(raw), encoding="utf-8")        # plain dumps: emits NaN
+        Progress.resume("Recon", logs_dir=str(d), quiet=True).warn("12 rows had no customer id")
+
+        d2 = tmp()
+        Progress("Recon", logs_dir=str(d2), quiet=True)
+        slot2 = self._slot_of(d2)
+        raw = json.loads(slot2.read_text(encoding="utf-8"))
+        raw["metrics"] = {"variance_pct": float("nan")}
+        slot2.write_text(json.dumps(raw), encoding="utf-8")
+        with self.assertRaises(FileNotFoundError):
+            with Progress.resume("Recon", logs_dir=str(d2), quiet=True):
+                raise FileNotFoundError("input/orders.csv is missing")
+        self.assertEqual(len(json.loads((d2 / "run_history.json").read_text(encoding="utf-8"))), 1)
+
+    # -------------------------------------------------------------------- F013 / F016
+    def test_the_documented_shell_idioms_behave_as_documented(self):
+        """
+        `complete "$TASK" --fail` from a trap recorded the literal string "--fail" as the run's
+        summary, because --summary's fallback read argv before --fail had been taken out of it.
+        And `complete --run "$RUN"` on an already-finished run - the README's other instruction,
+        for when task names collide - exited 2, so a successful job reported failure to its
+        scheduler. A DISPLACED run must still be loud: completing it would close someone else's.
+        """
+        d = tmp()
+        env = dict(os.environ, PROGRESS_LOGS_DIR=str(d))
+        mod = str(REPO / "python" / "progress.py")
+
+        run_id = subprocess.run([sys.executable, mod, "start", "Nightly", "--print-id"], env=env,
+                                capture_output=True, text=True).stdout.strip().splitlines()[-1]
+        subprocess.run([sys.executable, mod, "complete", "Nightly", "--fail", "--quiet"], env=env,
+                       check=True, stdout=subprocess.DEVNULL)
+        row = json.loads((d / "run_history.json").read_text(encoding="utf-8"))[-1]
+        self.assertNotEqual(row.get("summary"), "--fail", "the flag was recorded as the summary")
+        self.assertIs(row.get("success"), False)
+
+        again = subprocess.run([sys.executable, mod, "complete", "Nightly", "--run", run_id,
+                                "--quiet"], env=env, capture_output=True, text=True)
+        self.assertEqual(again.returncode, 0, f"finished run: {again.stderr.strip()[:120]}")
+
+        subprocess.run([sys.executable, mod, "start", "Nightly", "--quiet"], env=env,
+                       check=True, stdout=subprocess.DEVNULL)
+        displaced = subprocess.run([sys.executable, mod, "complete", "Nightly", "--run", run_id,
+                                    "--quiet"], env=env, capture_output=True, text=True)
+        self.assertEqual(displaced.returncode, 2, "a displaced run was closed silently")
+
+    # -------------------------------------------------------------------- F014
+    def test_log_lines_are_clipped_like_every_other_free_text_field(self):
+        """warn(), detail(), step() labels and summaries were all capped by the 1.6 sweep because
+        megabyte payloads got rewritten into progress.json AND the slot on every later call, and
+        pushed to the webview on every refresh. log() was missed: 20 lines made a 19 MB file."""
+        d = tmp()
+        p = Progress("Big", logs_dir=str(d), quiet=True)
+        for _ in range(20):
+            p.log("x" * 1000000)
+        self.assertLess((d / "progress.json").stat().st_size, 200000)
+
+    # -------------------------------------------------------------------- F015
+    def test_the_sweep_only_deletes_files_this_tool_created(self):
+        """logsPath defaults to `logs`, an ordinary shared folder. The sweep used to unlink ANY
+        *.tmp or *.lock older than two days - another tool's scheduler lock, a half-written
+        staging file - silently and permanently."""
+        d = tmp()
+        Progress("Seed", logs_dir=str(d), quiet=True).complete(success=True, summary="s")
+        old = time.time() - 5 * 86400
+        foreign = [d / "scheduler.lock", d / "staging.tmp", d / "other-tool.12.tmp"]
+        ours = [d / "run_history.json.lock", d / "deltas.json.999.tmp"]
+        for f in foreign + ours:
+            f.write_text("x", encoding="utf-8")
+            os.utime(f, (old, old))
+        Progress("Sweeper", logs_dir=str(d), quiet=True)
+        self.assertEqual([f.name for f in foreign if not f.exists()], [],
+                         "another tool's files were deleted")
+        self.assertEqual([f.name for f in ours if f.exists()], [],
+                         "our own abandoned files were not swept")
+
+    # -------------------------------------------------------------------- F021
+    def test_resources_survive_past_150_distinct_task_names(self):
+        """The cap kept EVERY task node and gave resources the remainder, and task nodes were
+        never pruned - so resource coverage decayed with each new task name and hit zero at 150,
+        at which point the edge filter dropped every edge too and the map rendered permanently
+        empty, no matter how many resources the scripts reported."""
+        d = tmp()
+        for i in range(200):
+            Progress("Task %03d" % i, logs_dir=str(d), quiet=True).access(
+                "table", "resource_%03d" % i, "read")
+        graph = json.loads((d / "access.json").read_text(encoding="utf-8"))
+        resources = [n for n in graph["nodes"] if n.get("type") != "task"]
+        self.assertGreaterEqual(len(resources), 100, "resources were crowded out by task nodes")
+        self.assertTrue(graph["edges"], "the Access Map has nothing left to draw")
+
+    # -------------------------------------------------------------------- F063
+    def test_an_id_beyond_2_53_travels_as_text(self):
+        """Writing the int exactly made the FILE right and left the DASHBOARD wrong: the extension
+        parses it with JSON.parse into a double, so a 19-digit account id still rendered rounded -
+        the same wrong id as before the exactness fix. Beyond 2^53 a number is an identifier."""
+        d = tmp()
+        p = Progress("Ledger", logs_dir=str(d), quiet=True)
+        p.metric("id", 9007199254740993)
+        p.metric("key", 123456789012345678901234567890)
+        p.metric("small", 42)
+        m = json.loads((d / "progress.json").read_text(encoding="utf-8"))["metrics"]
+        self.assertEqual(m["id"], "9007199254740993")
+        self.assertEqual(m["key"], "123456789012345678901234567890")
+        self.assertEqual(m["small"], 42, "ordinary numbers must stay numbers")
+
+    # -------------------------------------------------------------------- F065
+    def test_status_tolerates_a_valid_file_with_odd_field_types(self):
+        """The earlier fix caught unreadable JSON and stopped there, so a structurally VALID file
+        with null or wrong-typed fields still dumped a traceback and exited 1 - from the one
+        command whose whole job is to report on the state of these files. `"warnings":
+        ["some text"]` is exactly what a hand-rolled producer emits."""
+        d = tmp()
+        (d / "progress.json").write_text(json.dumps({
+            "task": "T", "status": "running", "updatedAt": None,
+            "warnings": ["some text", {"time": "t", "msg": "m"}], "metrics": ["not", "a", "dict"],
+        }), encoding="utf-8")
+        r = subprocess.run([sys.executable, str(REPO / "python" / "progress.py"), str(d)],
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, (r.stdout + r.stderr)[-200:])
+        self.assertNotIn("Traceback", r.stdout + r.stderr)
+
+    # -------------------------------------------------------------------- F103
+    def test_the_cli_banner_prints_the_real_version(self):
+        """The docstring said "v1.3" for three releases after __version__ moved on, and that line
+        is what a user diagnosing a reporter problem reads. It now comes from __version__."""
+        r = subprocess.run([sys.executable, str(REPO / "python" / "progress.py"), "no-such-command"],
+                           capture_output=True, text=True)
+        out = r.stdout + r.stderr
+        self.assertIn(progress_module.__version__, out)
+        self.assertNotIn("v1.3.", out)
+
+    # -------------------------------------------------------------------- F104
+    def test_a_non_string_delta_series_name_accumulates(self):
+        """JSON has only string keys. track_delta wrote the name as a string and looked it up with
+        the raw object, so the next run missed, fell back to [] and overwrote the accumulated
+        series with a single point - for ever, with no error anywhere."""
+        d = tmp()
+        for i in range(3):
+            p = Progress("T", logs_dir=str(d), quiet=True)
+            p.track_delta(2026, float(i))
+            p.complete(success=True, summary="s")
+        series = json.loads((d / "deltas.json").read_text(encoding="utf-8"))["2026"]
+        self.assertEqual(len(series), 3, "the series reset on every run")
+
+
+class SchemasMatchWhatIsWritten(unittest.TestCase):
+    """
+    The schemas are bound to these exact filenames by contributes.jsonValidation, so they are not
+    documentation - they are what a user sees underlined in red when they open their own log file.
+
+    🔴 `impacts` was declared as an object of {value, label} while every reporter writes a plain
+    number, so calling the documented p.impact() and then opening progress.json put a red squiggle
+    on data the extension had written and reads correctly. And `detail` was declared on the access
+    NODE while the reporter writes it on the EDGE, so the editor offered a dead field and offered
+    nothing for the real one. Nothing compared the two, so both drifted.
+    """
+
+    def schema(self, name):
+        path = REPO / "schemas" / name
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_the_reporter_version_matches_the_extension(self):
+        """
+        The reporter is shipped inside the extension and its CLI banner prints __version__, so the
+        two must move together.
+
+        🔴 They did not: the docstring said "v1.3" for three releases after __version__ had
+        moved on, and that line was what a user diagnosing a reporter problem read. Fixing the
+        banner without a check just moves where the next drift shows up.
+        """
+        import progress as reporter
+        pkg = json.loads((REPO / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual(reporter.__version__, pkg["version"],
+                         "python/progress.py and package.json disagree about the version")
+        changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+        self.assertIn(f"## {pkg['version']} ", changelog,
+                      f"CHANGELOG.md has no heading for {pkg['version']}")
+
+    def test_the_files_the_reporter_writes_match_their_schemas(self):
+        d = tmp()
+        with Progress("Nightly Load", logs_dir=str(d), quiet=True) as p:
+            p.step(1, 2, "Extract")
+            p.warn("12 rows had no customer id", count=12, category="missing-id",
+                   severity="error", actionable=True)
+            p.impact("corrections_found", 1204.50, label="Corrections identified")
+            p.access("table", "sales.orders", "read", detail="5 records updated")
+            p.complete(summary="done")
+
+        progress = json.loads((d / "progress.json").read_text(encoding="utf-8"))
+        history = json.loads((d / "run_history.json").read_text(encoding="utf-8"))
+        access = json.loads((d / "access.json").read_text(encoding="utf-8"))
+
+        # impacts: a number map on both sides.
+        self.assertTrue(all(isinstance(v, (int, float)) for v in progress["impacts"].values()),
+                        f"the reporter wrote {progress['impacts']!r}")
+        for name, node in (("progress.schema.json", self.schema("progress.schema.json")["properties"]["impacts"]),
+                           ("run_history.schema.json", self.schema("run_history.schema.json")
+                            ["definitions"]["runRecord"]["properties"]["impacts"])):
+            self.assertEqual(node["additionalProperties"].get("type"), "number",
+                             f"{name} still describes impacts as something the reporter never writes")
+        self.assertTrue(all(isinstance(v, (int, float)) for v in history[0].get("impacts", {}).values()))
+
+        # access detail: written on the edge, so declared on the edge.
+        edges = [e for e in access["edges"] if e.get("detail")]
+        self.assertTrue(edges, "the reporter no longer writes detail on the edge")
+        acc = self.schema("access.schema.json")["definitions"]
+        self.assertIn("detail", acc["accessEdge"]["properties"], "the edge schema omits detail")
+        self.assertNotIn("detail", acc["accessNode"]["properties"], "the node schema still offers a dead field")
+
+        # 🔴 draft-07 ignores every keyword beside $ref, so a $ref with siblings validates nothing.
+        for name in ("progress.schema.json", "run_history.schema.json", "access.schema.json",
+                     "deltas.schema.json", "impact.schema.json"):
+            doc = self.schema(name)
+            for path, node in self._walk(doc):
+                if isinstance(node, dict) and "$ref" in node and len(node) > 1:
+                    self.fail(f"{name} at {path}: keywords beside $ref are ignored, so "
+                              f"{sorted(k for k in node if k != '$ref')} validate nothing")
+
+        # And the fields the reporter actually writes are the ones the warning definition declares.
+        warn_props = self.schema("progress.schema.json")["definitions"]["warning"]["properties"]
+        for field in ("count", "category", "severity", "actionable"):
+            self.assertIn(field, warn_props, f"the schema cannot validate or complete {field}")
+        self.assertEqual(warn_props["severity"]["enum"], ["info", "warn", "error"])
+        written = progress["warnings"][0]
+        for field in ("count", "category", "severity", "actionable"):
+            self.assertIn(field, written, f"the reporter stopped writing {field}")
+
+    def _walk(self, node, path="$"):
+        if isinstance(node, dict):
+            yield path, node
+            for k, v in node.items():
+                yield from self._walk(v, f"{path}.{k}")
+        elif isinstance(node, list):
+            for i, v in enumerate(node):
+                yield from self._walk(v, f"{path}[{i}]")
 
 
 if __name__ == "__main__":

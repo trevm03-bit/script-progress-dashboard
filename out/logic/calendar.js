@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.normaliseProcesses = normaliseProcesses;
 exports.matchesProcess = matchesProcess;
 exports.runsFor = runsFor;
 exports.startOfIsoWeek = startOfIsoWeek;
@@ -8,17 +9,73 @@ exports.nextPeriodDue = nextPeriodDue;
 exports.periodStart = periodStart;
 exports.phaseStates = phaseStates;
 exports.unmetDependencies = unmetDependencies;
+exports.unresolvableDependencies = unresolvableDependencies;
 exports.processStatus = processStatus;
 exports.calendarRows = calendarRows;
 exports.monthGrid = monthGrid;
 exports.dueText = dueText;
 exports.dueReminders = dueReminders;
 const time_1 = require("./time");
-/** A run belongs to a process when its task name STARTS WITH the process name (case-insensitive). */
+/** Trimmed text, or '' for anything that is not a string. */
+const asText = (v) => (typeof v === 'string' ? v.trim() : '');
+/**
+ * ONE normalisation point for process config, because having two is how this went wrong.
+ *
+ * 🔴 validate() coerces and TRIMS every field before judging it, and every consumer then used
+ * the raw value. Three defects, one cause:
+ *
+ *   * `name: " Revenue Load"` validated clean and matched no task ever. The row reads
+ *     "no run recorded yet" every day for a script that ran an hour ago - and 'unseen' is
+ *     excluded from both the overdue count and the coverage denominator, so the row is
+ *     silently invisible in every figure. Copy-pasting a name out of a log is how you get
+ *     that space.
+ *   * `frequency: " daily "` validated clean and then fell through processStatus's switch to
+ *     the monthly default, filing a daily job under Monthly where it cannot be reported
+ *     overdue for thirty days.
+ *   * `name: 5` - a JSON-schema mismatch is a squiggle in VS Code, not a rejected value -
+ *     reached `process.name.toLowerCase()` and THREW out of renderSections, which nothing
+ *     above catches. The dashboard went permanently blank, including the settings-problems
+ *     panel that would have explained why.
+ */
+function normaliseProcesses(raw) {
+    if (!Array.isArray(raw))
+        return [];
+    const out = [];
+    for (const entry of raw) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+            continue;
+        const r = entry;
+        const name = asText(r.name);
+        // An entry with no usable name can match nothing. Dropping it beats rendering a row that
+        // says "no run recorded yet" for ever; validateSettings still reports it to the user.
+        if (!name)
+            continue;
+        const p = { ...entry, name };
+        const label = asText(r.label);
+        if (label)
+            p.label = label;
+        else
+            delete p.label;
+        p.frequency = asText(r.frequency).toLowerCase();
+        if (Array.isArray(r.dependsOn))
+            p.dependsOn = r.dependsOn.map(asText).filter(Boolean);
+        if (Array.isArray(r.subtasks))
+            p.subtasks = r.subtasks.map(asText).filter(Boolean);
+        out.push(p);
+    }
+    return out;
+}
+/**
+ * A run belongs to a process when its task name STARTS WITH the process name
+ * (case-insensitive). Coerces defensively: normaliseProcesses is the boundary, but this is
+ * pure logic that test fixtures and third-party callers reach directly, and throwing from
+ * here takes the whole dashboard down with it.
+ */
 function matchesProcess(taskName, process) {
-    if (!process.name)
+    const name = asText(process && process.name).toLowerCase();
+    if (!name)
         return false;
-    return (taskName || '').toLowerCase().startsWith(process.name.toLowerCase());
+    return asText(taskName).toLowerCase().startsWith(name) || String(taskName ?? '').toLowerCase().startsWith(name);
 }
 /** Newest-first list of runs for a process. */
 function runsFor(process, history) {
@@ -104,7 +161,12 @@ function phaseStates(process, history, now) {
 }
 /** Declared dependencies with no successful run in the current period. */
 function unmetDependencies(process, history, now) {
-    const names = (process.dependsOn ?? []).filter(n => typeof n === 'string' && n.trim());
+    // 🔴 TRIMMED before matching. validate compares dep.trim().toLowerCase(), so `[" Extract "]`
+    // passed clean - and then startsWith("  extract  ") was false against every run that will
+    // ever exist. The process reads "waiting on  Extract " every day though Extract succeeded
+    // an hour ago, and blocked is excluded from the overdue count AND the coverage denominator,
+    // so it inflates the very figure the dependsOn check exists to protect.
+    const names = (process.dependsOn ?? []).map(n => asText(n)).filter(Boolean);
     if (!names.length)
         return [];
     const start = periodStart(process, now);
@@ -118,10 +180,39 @@ function unmetDependencies(process, history, now) {
         });
     });
 }
+/**
+ * Dependencies that match no task in the WHOLE history, not merely none in this period.
+ *
+ * 🔴 This is the typo guard, and it has to live here rather than in validateSettings, because
+ * only here is the evidence. dependsOn lists TASK-name prefixes resolved against run history
+ * (README and types.ts both say so, and unmetDependencies implements it); validate was
+ * checking them against configured PROCESS names, so depending on any real reported task the
+ * user did not also want a calendar row for was reported as broken - the shipped demo config
+ * is itself an instance. The genuine hazard is the opposite one and is invisible to settings
+ * alone: a name nothing will ever match leaves the process permanently blocked, and blocked
+ * counts as neither overdue nor missing, so one typo turned "1 overdue, 42% coverage" into
+ * "83% coverage" with no warning anywhere.
+ */
+function unresolvableDependencies(process, history) {
+    const names = (process.dependsOn ?? []).map(n => asText(n)).filter(Boolean);
+    if (!names.length || !history.length)
+        return []; // nothing reported yet judges nothing
+    return names.filter(name => {
+        const lower = name.toLowerCase();
+        return !history.some(r => asText(r.task).toLowerCase().startsWith(lower));
+    });
+}
 function processStatus(process, history, now) {
     const runs = runsFor(process, history);
     const phases = phaseStates(process, history, now);
     const blockedBy = unmetDependencies(process, history, now);
+    // A dependency nothing has EVER matched is a typo, and it fails upwards: blocked counts as
+    // neither overdue nor missing, so it quietly removes the row from both the overdue count and
+    // the coverage denominator. Say so in the note rather than letting "waiting on X" look like
+    // an ordinary wait that will clear on its own.
+    const neverRan = unresolvableDependencies(process, history);
+    const waiting = (list) => `waiting on ${list.join(', ')}`
+        + (neverRan.length ? ` — no task starting with "${neverRan[0]}" has ever run, so this stays blocked` : '');
     const lastRun = runs[0] ?? null;
     const lastSuccess = runs.find(r => r.success) ?? null;
     const lastSuccessDate = lastSuccess ? (0, time_1.parseIso)(lastSuccess.date) : null;
@@ -130,7 +221,7 @@ function processStatus(process, history, now) {
         return {
             process, status: 'unseen', lastRun: null, lastSuccess: null, phases, blockedBy,
             note: blockedBy.length
-                ? `no run recorded yet · waiting on ${blockedBy.join(', ')}`
+                ? `no run recorded yet · ${waiting(blockedBy)}`
                 : 'no run recorded yet',
             nextDue: dueDate(process, now),
         };
@@ -226,7 +317,7 @@ function processStatus(process, history, now) {
     // the reader at the wrong process and at something they cannot act on.
     if (blockedBy.length && status !== 'done') {
         status = 'blocked';
-        note = `waiting on ${blockedBy.join(', ')}`;
+        note = waiting(blockedBy);
     }
     // A failed run after the last success is worth surfacing even when the status is fine.
     if (lastRun && !lastRun.success && lastRun !== lastSuccess) {

@@ -5,8 +5,12 @@ const time_1 = require("../logic/time");
 const html_1 = require("./html");
 const anomaly_1 = require("../logic/anomaly");
 function renderLastCompleted(data, settings, now, opts) {
+    // 🔴 Not-in-the-future, exactly as summaryFacts.lastRun does. Fixing that one and not this
+    // one put the two surfaces on DIFFERENT runs: for a single clock-skewed row the strip showed
+    // a green "last run · 1h ago" tile while the card directly beneath it read "FAILED · just
+    // now" about something else. Half a fix turned one wrong number into a contradiction.
     const sorted = data.history
-        .slice()
+        .filter(r => ((0, time_1.parseIso)(r.date)?.getTime() ?? 0) <= now.getTime())
         .sort((a, b) => ((0, time_1.parseIso)(b.date)?.getTime() ?? 0) - ((0, time_1.parseIso)(a.date)?.getTime() ?? 0));
     const last = sorted[0];
     if (!last)

@@ -9,8 +9,8 @@
 // window is expressed in the drawing coordinates x0/x1 (fractions 0..1) plus the clipped* flags.
 // Runs that fall entirely outside the window are dropped.
 import { DashboardData, ProgressData, RunRecord, Settings } from '../types';
-import { durationVerdict, overSla } from './anomaly';
-import { deriveStart, liveElapsed, parseIso } from './time';
+import { durationVerdicts, overSla } from './anomaly';
+import { deriveStart, liveElapsed, parseIso, taskState } from './time';
 
 export interface TimelineBar {
   /** True start of the run (may be before the window). */
@@ -187,6 +187,14 @@ export function timelineModel(data: DashboardData, settings: Settings, now: Date
   // Task, which does tick every second.
   const w1 = Math.floor(now.getTime() / 60000) * 60000;
   const w0 = w1 - windowHours * 3600 * 1000;
+  // 🔴 The quantised edge is for DRAWING only. Using it to decide membership too meant that for
+  // up to sixty seconds after a script started it did not exist on the timeline: inWindow
+  // requires start < w1, and a run beginning after the last minute boundary fails that. Click
+  // "Simulate a demo run" (about six seconds, so it starts and ends inside one minute) and the
+  // dashboard showed the run in Run History, "Complete" in Active Task, and "No runs in the
+  // last 24 hours" in Run Timeline, all at once. Membership uses the real clock; geometry
+  // keeps the stable edge, and makeBar already clamps anything past it.
+  const wIn = Math.max(w1, now.getTime());
   const start = new Date(w0);
   const end = new Date(w1);
   const showFailed = settings.timeline?.showFailed !== false;
@@ -197,6 +205,11 @@ export function timelineModel(data: DashboardData, settings: Settings, now: Date
 
   const bars: TimelineBar[] = [];
   const seenRunIds = new Set<string>();
+  // 🔴 One pass for the whole history, like Run History already does. durationVerdicts exists
+  // precisely because judging n runs one at a time costs n² date parses, and that fix reached
+  // only the table - while this loop judges every run in the WINDOW rather than the fifteen
+  // rows maxRows caps the table at, on a 1 Hz render, making it the dominant cost of a refresh.
+  const verdicts = anomalies ? durationVerdicts(history, factor) : null;
 
   for (const run of history) {
     if (!run || (!run.success && !showFailed)) continue;
@@ -207,28 +220,42 @@ export function timelineModel(data: DashboardData, settings: Settings, now: Date
     const startAt = startedAt && startedAt.getTime() <= endAt.getTime()
       ? startedAt
       : new Date(endAt.getTime() - elapsed * 1000);
-    if (!inWindow(startAt.getTime(), endAt.getTime(), w0, w1)) continue;
+    if (!inWindow(startAt.getTime(), endAt.getTime(), w0, wIn)) continue;
     if (run.runId) seenRunIds.add(run.runId);
     bars.push(makeBar(run.task || '', startAt, endAt, {
       success: !!run.success,
       running: false,
-      slow: anomalies ? durationVerdict(run, history, factor).slow : false,
+      slow: verdicts?.get(run)?.slow ?? false,
       overSla: overSla(run.task || '', run.elapsed || 0, processes),
       run,
     }, w0, w1));
   }
 
   for (const task of data.tasks || []) {
-    if (!task || task.status !== 'running') continue;
+    if (!task) continue;
+    // 🔴 taskState(), not the raw status field. Reading `status` straight out of the file made
+    // staleness and process-exit overlays invisible here: a script that died without calling
+    // complete() leaves status:"running" on disk for ever, and the timeline drew it as a blue
+    // pulsing bar whose end was pinned to `now` and grew without bound - "1 run · 4h" becoming
+    // "1 run · 28h" - while the Active Task card beside it, from the same data, said "Exited".
+    const state = taskState(task, settings.staleRunningMinutes, now, data.overlays);
+    if (state === 'idle' || state === 'complete' || state === 'failed') continue;
     if (task.runId && seenRunIds.has(task.runId)) continue; // history already has this run finished
+    const live = state === 'running';
     const elapsed = liveElapsed(task, now);
-    const startAt = deriveStart(task) ?? new Date(w1 - elapsed * 1000);
-    if (!inWindow(startAt.getTime(), w1, w0, w1)) continue;
-    // The TRUE end is `now`, so the tooltip reports the real live elapsed. Drawing past the
-    // quantised right edge is already handled: makeBar clamps x1 to 1 and sets clippedEnd.
-    bars.push(makeBar(task.task || '', startAt, now, {
-      success: true,
-      running: true,
+    // 🔴 The real clock, not the quantised edge: deriving the start from a task that reports
+    // only `elapsed` overstated its duration by up to 59 s and made the bar sawtooth once a
+    // minute as w1 caught up.
+    const startAt = deriveStart(task) ?? new Date(now.getTime() - elapsed * 1000);
+    // A stalled or exited run stops where it last reported. Pinning it to `now` is what made it
+    // grow for ever.
+    const endAt = live ? now : (parseIso(task.updatedAt) ?? now);
+    if (!inWindow(startAt.getTime(), endAt.getTime(), w0, wIn)) continue;
+    // For a live run the TRUE end is `now`, so the tooltip reports the real elapsed. Drawing
+    // past the quantised right edge is already handled: makeBar clamps x1 and sets clippedEnd.
+    bars.push(makeBar(task.task || '', startAt, endAt, {
+      success: live,
+      running: live,
       slow: false,
       overSla: overSla(task.task || '', elapsed, processes),
       task,

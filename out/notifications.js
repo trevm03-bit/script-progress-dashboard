@@ -65,7 +65,20 @@ class Notifier {
             const key = keyOf(t);
             const state = (0, time_1.taskState)(t, settings.staleRunningMinutes, now, data.overlays);
             const prev = this.seen.get(key);
-            const cur = { state, warnings: t.warnings?.length ?? 0, updatedAt: t.updatedAt, slaWarned: prev?.slaWarned };
+            // 🔴 The TRUE total, not the length of the trimmed array. The reporter caps the slot's
+            // ordinary warnings at 20 and carries the real count in warningsTotal, so comparing
+            // lengths meant `cur.warnings > prev.warnings` could never be true again after the
+            // twentieth - onWarning went quiet on precisely the runs worth watching.
+            const warnings = Math.max(t.warningsTotal ?? 0, t.warnings?.length ?? 0);
+            // 🔴 And the SLA flag must not outlive its run. The `seen` key falls back to
+            // `task:<name>|<startedAt>` and both runId and startedAt are documented Optional, so a
+            // producer that writes neither gives every run of that script the identical key
+            // `task:<name>|` - the first run to blow its limit silenced onSlow for ever after.
+            // Elapsed going BACKWARDS is the one signal every producer emits when a run restarts.
+            const restarted = !!prev && typeof t.elapsed === 'number' && typeof prev.elapsed === 'number'
+                && t.elapsed < prev.elapsed;
+            const cur = { state, warnings, updatedAt: t.updatedAt, elapsed: t.elapsed,
+                slaWarned: restarted ? false : prev?.slaWarned };
             this.seen.set(key, cur);
             if (!wasPrimed || !prev)
                 continue; // first sight: no notification, just remember it
@@ -129,7 +142,7 @@ class Notifier {
             pending.sort((a, b) => rank(a.event) - rank(b.event));
             (0, eventFile_1.writeEvent)(this.logsDir, pending[0], vscode.workspace.isTrusted);
         }
-        this.remind(data, settings, now, wasPrimed);
+        this.remind(data, settings, now);
         this.updateMirror(data, settings, now);
     }
     /**
@@ -137,7 +150,7 @@ class Notifier {
      * about something that has NOT happened, so they must not repeat: a nag every refresh would
      * be worse than no reminder at all.
      */
-    remind(data, settings, now, wasPrimed) {
+    remind(data, settings, now) {
         if (!settings.processes.length)
             return;
         // Bounded: one entry per process per due date would otherwise accumulate for the life of the
@@ -148,9 +161,17 @@ class Notifier {
             const key = `${row.process.name}|${row.nextDue.toDateString()}`;
             if (this.reminded.has(key))
                 continue;
+            // 🔴 Marked as reminded only when it actually fires. The key used to be added BEFORE the
+            // wasPrimed guard, so anything already inside its reminder window when the window opened
+            // was marked "already reminded" without ever producing a toast - and since a fresh
+            // window is opened every day while reminder windows are days long, that is the normal
+            // case. The whole reminderDays feature never fired.
+            //
+            // And wasPrimed does not apply here. It exists to stop a burst of TRANSITION
+            // notifications for state that already existed at activation; a due-date reminder is not
+            // a transition, and telling someone what is due is the point of opening the window. The
+            // `reminded` set already bounds it to one toast per process per due date per window.
             this.reminded.add(key);
-            if (!wasPrimed)
-                continue; // do not fire a burst on activation
             const label = row.process.label || row.process.name;
             const when = daysLeft < 1 ? 'today' : daysLeft < 2 ? 'tomorrow' : `in ${Math.round(daysLeft)} days`;
             const phases = row.phases.length ? ` (${row.note})` : '';
@@ -159,10 +180,18 @@ class Notifier {
     }
     /** A native VS Code progress toast that follows the (first) running task. */
     updateMirror(data, settings, now) {
-        const running = settings.notifications.mirrorProgress
-            ? data.tasks.find(t => (0, time_1.taskState)(t, settings.staleRunningMinutes, now, data.overlays) === 'running')
-            : undefined;
-        const key = running ? (running.runId ? `run:${running.runId}` : `task:${running.task}|${running.startedAt ?? ''}`) : '';
+        // 🔴 Stay with the run already being mirrored for as long as it is still running. This used
+        // to take whichever running task DataReader happened to put first - and DataReader sorts by
+        // updatedAt, so with two scripts running the leader flipped to whichever wrote its slot most
+        // recently. Every flip failed the key comparison below, resolving the native progress toast
+        // and opening a new one, once a second, for as long as both were running.
+        const keyFor = (t) => (t.runId ? `run:${t.runId}` : `task:${t.task}|${t.startedAt ?? ''}`);
+        const runningTasks = settings.notifications.mirrorProgress
+            ? data.tasks.filter(t => (0, time_1.taskState)(t, settings.staleRunningMinutes, now, data.overlays) === 'running')
+            : [];
+        const mirrored = this.mirror ? runningTasks.find(t => keyFor(t) === this.mirror?.key) : undefined;
+        const running = mirrored ?? runningTasks[0];
+        const key = running ? keyFor(running) : '';
         if (this.mirror && this.mirror.key !== key) {
             this.mirror.resolve();
             this.mirror = undefined;

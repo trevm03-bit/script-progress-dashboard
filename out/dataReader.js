@@ -57,6 +57,8 @@ class DataReader {
         this.emptySince = {};
         /** In-memory facts the extension observed (process exit codes). Never written to disk. */
         this.overlays = [];
+        /** The slots as of the last read, so an incoming exit can be stamped with the run it ended. */
+        this.lastTasks = [];
     }
     setLogsDir(dir) {
         if (dir !== this.logsDir) {
@@ -67,6 +69,14 @@ class DataReader {
         }
     }
     addOverlay(o) {
+        // 🔴 Stamp the exit with the run it actually ended. The terminal hook knows a task name and
+        // an exit code and nothing else, so without this the only way to tell whose exit it was
+        // was the clock - and exitOverlayFor allowed a 1 s grace, while the reporter writes
+        // startedAt truncated to the second (another 999 ms). In that ~2 s window a fresh run
+        // showed "Exited (137)" the moment it started, fired a false error toast, and stopped
+        // ticking because taskState was no longer 'running'.
+        const current = this.lastTasks.find(x => (x.task || '').toLowerCase() === (o.task || '').toLowerCase());
+        o = { ...o, runId: o.runId ?? current?.runId, startedAt: o.startedAt ?? current?.startedAt };
         // Case-INSENSITIVE, to match how overlays are read back. An exact compare here let "Nightly",
         // "nightly" and "Nightly " pile up as three separate exits for one script, and the reader
         // then served whichever happened to be first — measured as a months-old exit code 137 being
@@ -81,18 +91,23 @@ class DataReader {
         const deltas = this.readJson(exports.FILES.deltas, readErrors);
         const impact = this.readJson(exports.FILES.impact, readErrors);
         const access = this.readJson(exports.FILES.access, readErrors);
-        const main = isProgress(progress) ? progress : null;
+        const main = isProgress(progress) ? normaliseProgress(progress) : null;
         const tasks = this.readSlots(readErrors, main);
         // Drop overlays that no longer apply: the task reported a final state since, or no task
         // matches at all (an overlay with nothing to attach to must not live forever).
+        this.lastTasks = tasks;
         this.overlays = this.overlays.filter(o => {
             const t = tasks.find(x => x.task.toLowerCase() === o.task.toLowerCase());
-            return !!t && t.status === 'running';
+            if (!t || t.status !== 'running')
+                return false;
+            // A different run of the same name is a different run. This is the case the timestamp
+            // window could never separate: the previous run's exit must not survive into it.
+            return !(o.runId && t.runId && o.runId !== t.runId);
         });
         return {
             progress: main,
             tasks,
-            history: Array.isArray(history) ? history.filter(isRun) : [],
+            history: Array.isArray(history) ? history.filter(isRun).map(normaliseRun) : [],
             // Series files are normalised POINT BY POINT, not just at the top level. A single null or
             // malformed entry — a hand edit, a half-written file, an import from elsewhere — used to
             // throw inside a renderer, and a renderer that throws blanks the whole dashboard. The one
@@ -146,7 +161,7 @@ class DataReader {
         for (const f of names) {
             const p = this.readJson(`${exports.SLOTS_DIR}/${f}`, errors);
             if (isProgress(p))
-                put(p);
+                put(normaliseProgress(p));
         }
         if (main)
             put(main);
@@ -199,6 +214,37 @@ class DataReader {
     }
 }
 exports.DataReader = DataReader;
+/**
+ * Members of an array that are usable objects, and nothing else.
+ *
+ * 🔴 isRun() checks that `task` and `date` are strings; isProgress() checks `task` and
+ * `status`. Every ARRAY inside them - warningItems, accessed, artifacts, and a slot's warnings
+ * and log - reached the renderers unexamined, and these files are an explicitly open contract
+ * that other producers write. One null member raised a TypeError inside renderSections, which
+ * nothing on the path catches, so the webview kept showing its last-good HTML for ever with no
+ * error anywhere: a dashboard that has silently stopped moving.
+ */
+const objectsIn = (v) => (Array.isArray(v) ? v.filter((x) => !!x && typeof x === 'object' && !Array.isArray(x)) : []);
+const stringsIn = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+/** A history row whose arrays are safe to iterate. */
+function normaliseRun(r) {
+    return {
+        ...r,
+        warningItems: objectsIn(r.warningItems),
+        accessed: stringsIn(r.accessed),
+        artifacts: stringsIn(r.artifacts),
+    };
+}
+/** A slot whose arrays are safe to iterate. */
+function normaliseProgress(p) {
+    return {
+        ...p,
+        warnings: objectsIn(p.warnings),
+        log: objectsIn(p.log),
+        accessed: stringsIn(p.accessed),
+        artifacts: stringsIn(p.artifacts),
+    };
+}
 function isProgress(p) {
     return !!p && typeof p === 'object' && typeof p.task === 'string' && typeof p.status === 'string';
 }

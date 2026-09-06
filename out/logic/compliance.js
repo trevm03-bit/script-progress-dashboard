@@ -17,12 +17,19 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
  * the year", it simply has no history, and pretending otherwise makes the number useless.
  */
 function complianceReport(process, history, now, count = 12) {
-    const runs = history
-        .filter(r => (0, calendar_1.matchesProcess)(r.task, process) && r.success)
+    // 🔴 `firstEver` comes from EVERY matching run, not just the successful ones. Filtering to
+    // successes first meant a process that ran and FAILED in Jan-Jun and only succeeded in
+    // Jul-Aug had firstEver = July, so the six failed months were marked "before it was wired"
+    // and left out of the percentage. The row rendered a green 100% with six grey dots whose
+    // tooltip read "Jan 26: before it was wired" for months whose failures were sitting in Run
+    // History on the same screen. `met` still requires success; only the ORIGIN date changes.
+    const attempts = history
+        .filter(r => (0, calendar_1.matchesProcess)(r.task, process))
         .map(r => ({ r, d: (0, time_1.parseIso)(r.date) }))
         .filter((x) => !!x.d)
         .sort((a, b) => a.d.getTime() - b.d.getTime());
-    const firstEver = runs[0]?.d ?? null;
+    const runs = attempts.filter(x => x.r.success);
+    const firstEver = attempts[0]?.d ?? null;
     const periods = [];
     for (let i = count; i >= 1; i--) {
         const { start, end, label } = periodBounds(process, now, i);
@@ -184,7 +191,13 @@ function coverage(calendar, history, metricsOutOfRange, metricsTracked, now, day
         const ok = recent.filter(r => r.success).length;
         // History is capped, so past that cap the denominator is the cap and not the window. Say so
         // rather than claiming a window the data cannot cover.
-        const capped = historyCap > 0 && history.length >= historyCap;
+        // 🔴 Truncated WINDOW, not full file. `history.length >= historyCap` says nothing about
+        // whether the 30-day window is complete: with 100 rows spanning 200 days every run in the
+        // last 30 is present and the figure is exact, yet the note told the reader it was
+        // truncated - permanently, for any long-lived install. The window is only short if the
+        // file is full AND its oldest row is newer than the cutoff.
+        const oldest = history.reduce((min, r) => Math.min(min, (0, time_1.parseIso)(r.date)?.getTime() ?? Infinity), Infinity);
+        const capped = historyCap > 0 && history.length >= historyCap && oldest > cutoff;
         inputs.push({
             label: 'Runs succeeded', score: ok / recent.length, weight: weights.success,
             // Say what the denominator ACTUALLY is. "5/7 of the last 100 runs" was arithmetic nonsense:
@@ -206,15 +219,22 @@ function coverage(calendar, history, metricsOutOfRange, metricsTracked, now, day
     // is "metrics in range", and a lone threshold would put a green 100% at the top of the page for
     // a routine that has never run — the figure at its most confident when it knows nothing.
     const observed = inputs.some(i => i.label === 'On schedule' || i.label === 'Runs succeeded');
+    // 🔴 Say WHICH of the three reasons this is. The dashboard branched on `percent === null`
+    // alone and printed a message that named only the last of them, so a brand-new user who had
+    // configured a calendar entry and not yet had a run - exactly where the walkthrough leaves
+    // them - was told "every weight is 0, raise scriptProgress.coverage.weights", opened the
+    // settings, and found 2/2/1.
     if (!inputs.length || !observed)
-        return { percent: null, inputs };
+        return { percent: null, inputs, reason: 'nothing-measured' };
     // Weights are user-settable and may all be zero. Dividing by that produced NaN, which passed
     // the caller's `!== null` guard and rendered as "NaN%".
     const total = inputs.reduce((n, i) => n + i.weight, 0);
     if (!(total > 0))
-        return { percent: null, inputs };
+        return { percent: null, inputs, reason: 'no-weight' };
     const score = inputs.reduce((n, i) => n + clamp01(i.score) * i.weight, 0) / total;
-    return { percent: Number.isFinite(score) ? Math.round(score * 100) : null, inputs };
+    if (!Number.isFinite(score))
+        return { percent: null, inputs, reason: 'not-a-number' };
+    return { percent: Math.round(score * 100), inputs };
 }
 function clamp01(n) { return Math.max(0, Math.min(1, isFinite(n) ? n : 0)); }
 function round1(n) { return Math.round(n * 10) / 10; }

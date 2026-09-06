@@ -75,7 +75,7 @@ function historyRow(r, settings, all, verdict, identity) {
             return `<span class="chip"><span class="chip-k">${(0, html_1.esc)(c.key)}</span><span class="chip-v">${(0, html_1.esc)((0, html_1.metricText)(c.value))}</span>${d}</span>`;
         }).join('')}</div></div>`);
     }
-    if (verdict && verdict.sample >= 3)
+    if (verdict && verdict.comparable && verdict.sample >= 3)
         parts.push(`<div class="detail-block"><div class="detail-h">Duration</div><div class="small ${verdict.slow ? 'status-warn' : 'muted'}">${verdict.slow ? (0, html_1.icon)('dashboard') + ' ' : ''}${(0, html_1.esc)(`${verdict.factor.toFixed(2)}× the usual ${(0, time_1.formatDuration)(verdict.baseline)} (median of the previous ${verdict.sample} successful runs)`)}${sla && limit ? ` · <span class="status-fail">over the ${(0, html_1.esc)((0, time_1.formatDuration)(limit * 60))} limit</span>` : ''}</div></div>`);
     else if (sla && limit)
         parts.push(`<div class="detail-block"><div class="detail-h">Duration</div><div class="small status-fail">${(0, html_1.icon)('alert')} Over the ${(0, html_1.esc)((0, time_1.formatDuration)(limit * 60))} limit set for this process.</div></div>`);

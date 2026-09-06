@@ -57,10 +57,6 @@
         "lastSeen": {
           "type": "string",
           "description": "ISO timestamp of the last time this node was touched. Used by scriptProgress.accessMap.timeWindowDays and to decide which resources to drop when over the node cap."
-        },
-        "detail": {
-          "type": "string",
-          "description": "Free text about the access - a row count, a query name, a file size. Shown when the node is selected."
         }
       }
     },
@@ -98,6 +94,10 @@
         "lastSeen": {
           "type": "string",
           "description": "ISO timestamp of the most recent time this link was recorded."
+        },
+        "detail": {
+          "type": "string",
+          "description": "Free text about what was actually done - '5 records updated', 'full reload'. Written onto the EDGE by the reporter and shown on the link in the Access Map. The newest detail wins."
         }
       }
     }

@@ -5,7 +5,8 @@
 // nothing here may depend on a stylesheet surviving the journey.
 import { DashboardData, RunRecord, Settings } from '../types';
 import { calendarRows } from './calendar';
-import { coverage, impactTotals, pendingActions } from './compliance';
+import { impactTotals, pendingActions } from './compliance';
+import { coverageFor } from './summary';
 import { failurePatterns, patternText } from './failures';
 import { formatMetric, outOfRange as outOfRangeValue } from './sparkline';
 import { formatDuration, parseIso } from './time';
@@ -19,8 +20,13 @@ const OK = '#1a7f37', BAD = '#cf222e', WARN = '#9a6700';
 
 export function digestHtml(data: DashboardData, settings: Settings, now: Date, days = 7): string {
   const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1));
+  // 🔴 Upper bound as well as lower, matching weeklyDigestText and coverage(). Without it a
+  // future-dated run - a clock-skewed container is the ordinary cause - counted toward "this
+  // week" in the headline stats while coverage(), called from this same function, excluded
+  // it. One email then carried two mutually exclusive claims about the same week, and the two
+  // shipped digest commands disagreed with each other from identical data.
   const runs = data.history
-    .filter(r => { const d = parseIso(r.date); return !!d && d >= from; })
+    .filter(r => { const d = parseIso(r.date); return !!d && d >= from && d.getTime() <= now.getTime(); })
     .sort((a, b) => (parseIso(a.date)?.getTime() ?? 0) - (parseIso(b.date)?.getTime() ?? 0));
   const failed = runs.filter(r => !r.success);
   const warnings = runs.reduce((n, r) => n + (r.warnings || 0), 0);
@@ -33,15 +39,15 @@ export function digestHtml(data: DashboardData, settings: Settings, now: Date, d
   P.push(`<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:${INK};max-width:760px">`);
   P.push(`<h2 style="margin:0 0 4px;font-size:18px">Script activity — ${esc(day(from))} to ${esc(day(now))}</h2>`);
 
-  // Same inputs as the dashboard computes, or the emailed number would disagree with the one on
-  // screen — which is the contradiction this project already fixed once and must not ship again.
-  const thresholds = Object.keys(settings.deltas.thresholds || {});
-  const outOfRange = thresholds.filter(name => {
-    const pts = data.deltas[name];
-    return !!pts?.length && outOfRangeValue(pts[pts.length - 1].value, settings.deltas.thresholds[name]);
-  }).length;
-  const cov = coverage(rows, data.history, outOfRange, thresholds.length, now, days, settings.coverage.weights, 100);
-  if (cov.percent !== null) {
+  // 🔴 The SAME function the dashboard calls, not a second implementation of the same idea.
+  // The comment that used to sit here said the inputs had to match or the email would
+  // contradict the screen - and then computed three of them differently: a 7-day window
+  // against the dashboard's 30 (63% in the email, 86% on screen, same data, same instant), a
+  // metrics term that credited thresholds which had never reported a value, and no regard for
+  // coverage.show, so an email carried a figure the dashboard was deliberately hiding. A
+  // comment cannot keep two implementations in step; one implementation can.
+  const cov = coverageFor(data, settings, now);
+  if (cov && cov.percent !== null) {
     P.push(`<p style="margin:0 0 14px;color:${MUTED};font-size:13px">Coverage ${cov.percent}% — ${esc(cov.inputs.map(i => i.detail).join(' · '))}</p>`);
   }
 
@@ -63,10 +69,16 @@ export function digestHtml(data: DashboardData, settings: Settings, now: Date, d
   if (actions.length) {
     P.push(h3('Needs attention'));
     P.push(`<ul style="margin:0 0 12px;padding-left:20px">`);
-    for (const a of actions.slice(0, 12)) {
+    const SHOWN = 12;
+    for (const a of actions.slice(0, SHOWN)) {
       P.push(`<li style="margin:2px 0">${a.count !== undefined ? `<b>${esc(a.count)}</b> ` : ''}${esc(a.msg)} <span style="color:${MUTED}">— ${esc(a.task)}</span></li>`);
     }
     P.push(`</ul>`);
+    // Every capped list on the dashboard says when it was cut; this is the artefact that gets
+    // pasted into an email to other people, and it silently under-reported outstanding work.
+    if (actions.length > SHOWN) {
+      P.push(`<p style="margin:-8px 0 12px;color:${MUTED};font-size:13px">…and ${actions.length - SHOWN} more — see the dashboard for the full list.</p>`);
+    }
   }
 
   P.push(h3('By script'));

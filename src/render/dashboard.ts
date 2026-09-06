@@ -1,7 +1,7 @@
 // Assembles every enabled section into the HTML that goes inside the webview's #sections div,
 // in the configured order, honouring the sidebar subset and collapsed state.
 // Pure: no vscode import, so the whole page can be rendered in a test from fixture data.
-import { DashboardData, SECTION_ICONS, SectionId, Settings, Surface } from '../types';
+import { DashboardData, SECTION_ICONS, SECTION_TITLES, SectionId, Settings, Surface } from '../types';
 import { DrawGraph } from '../logic/graph';
 import { renderSummary } from './summary';
 import { renderActiveTask } from './activeTask';
@@ -77,22 +77,39 @@ export function renderSections(data: DashboardData, settings: Settings, ctx: Ren
   for (const id of settings.sectionOrder) {
     if (!enabled(id) || drawn.has(id)) continue;
     drawn.add(id);
-    switch (id) {
-      case 'summary': parts.push(renderSummary(data, settings, ctx.now, narrow)); break;
-      case 'activeTask': parts.push(renderActiveTask(data, settings, ctx.now, o(id))); break;
-      case 'warnings': parts.push(renderWarnings(data, o(id))); break;
-      case 'lastCompleted': parts.push(renderLastCompleted(data, settings, ctx.now, o(id))); break;
-      case 'quickActions': parts.push(renderQuickActions(data, settings, ctx.now, ctx.trusted, o(id))); break;
-      case 'processCalendar': parts.push(renderProcessCalendar(data, settings, ctx.now, o(id), narrow)); break;
-      case 'timeline': parts.push(renderTimeline(data, settings, ctx.now, o(id), narrow)); break;
-      case 'deltaTracker': parts.push(renderDeltaTracker(data, settings, ctx.now, o(id))); break;
-      case 'metrics': parts.push(renderMetricsExplorer(data, settings, ctx.now, o(id), narrow)); break;
-      case 'runHistory': parts.push(renderRunHistory(data, settings, o(id))); break;
-      case 'warningTrends': parts.push(renderWarningTrends(data, settings, ctx.now, o(id), narrow)); break;
-      case 'scriptHealth': parts.push(renderScriptHealth(data, settings, ctx.now, o(id))); break;
-      case 'accessMap': parts.push(renderAccessMap(data, settings, ctx.now, ctx.surface, o(id), ctx.graph)); break;
-      case 'pendingActions': parts.push(renderPendingActions(data, settings, ctx.now, o(id))); break;
-      case 'impact': parts.push(renderImpact(data, settings, ctx.now, o(id))); break;
+    // 🔴 A section that throws must not take the dashboard with it.
+    //
+    // Nothing on the path from here to the webview catches anything - not dashboardHost's
+    // refresh, not extension.ts's - so one malformed entry in one array raised a TypeError
+    // that stopped the post entirely, and the webview went on displaying its last-good HTML
+    // for ever with no error anywhere. The user sees a dashboard that has simply stopped
+    // moving and has nothing to report. The entries themselves are normalised at the read
+    // boundary now; this is the net under that, because these files are an open contract and
+    // the next unexpected shape is not one we have thought of yet.
+    try {
+      switch (id) {
+        case 'summary': parts.push(renderSummary(data, settings, ctx.now, narrow)); break;
+        case 'activeTask': parts.push(renderActiveTask(data, settings, ctx.now, o(id))); break;
+        case 'warnings': parts.push(renderWarnings(data, o(id))); break;
+        case 'lastCompleted': parts.push(renderLastCompleted(data, settings, ctx.now, o(id))); break;
+        case 'quickActions': parts.push(renderQuickActions(data, settings, ctx.now, ctx.trusted, o(id))); break;
+        case 'processCalendar': parts.push(renderProcessCalendar(data, settings, ctx.now, o(id), narrow)); break;
+        case 'timeline': parts.push(renderTimeline(data, settings, ctx.now, o(id), narrow)); break;
+        case 'deltaTracker': parts.push(renderDeltaTracker(data, settings, ctx.now, o(id))); break;
+        case 'metrics': parts.push(renderMetricsExplorer(data, settings, ctx.now, o(id), narrow)); break;
+        case 'runHistory': parts.push(renderRunHistory(data, settings, o(id))); break;
+        case 'warningTrends': parts.push(renderWarningTrends(data, settings, ctx.now, o(id), narrow)); break;
+        case 'scriptHealth': parts.push(renderScriptHealth(data, settings, ctx.now, o(id))); break;
+        case 'accessMap': parts.push(renderAccessMap(data, settings, ctx.now, ctx.surface, o(id), ctx.graph)); break;
+        case 'pendingActions': parts.push(renderPendingActions(data, settings, ctx.now, o(id))); break;
+        case 'impact': parts.push(renderImpact(data, settings, ctx.now, o(id))); break;
+      }
+    } catch (e) {
+      const why = (e instanceof Error ? e.message : String(e)).slice(0, 200);
+      parts.push(`<section class="section" data-section="${esc(id)}"><div class="section-title">`
+        + `<span class="section-name">${esc(SECTION_TITLES[id] ?? id)}</span></div>`
+        + `<div class="section-body"><div class="read-errors">${icon('warning')} This section could not be drawn `
+        + `(${esc(why)}). Everything else on this page is unaffected.</div></div></section>`);
     }
   }
 
