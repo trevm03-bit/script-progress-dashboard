@@ -1,5 +1,105 @@
 # Changelog
 
+## Unreleased — the 2026-09-04 review
+
+> **Nothing between 1.5.0 and this has ever been published.** 1.6.0 and 1.6.1 were tagged and
+> stopped; the Marketplace still serves 1.5.0. This entry describes one pass of fixes over both.
+
+A two-round adversarial review put 576 agents across sixteen lenses at the 1.6.1 build. It reported
+181 findings; three independent skeptics refuted 69 of them and confirmed **112**, and all 112 are
+fixed here. Roughly half were damage done by the previous hardening pass — a fix applied to one of
+four files, a cap applied to the wrong list, a guard that fired in the wrong direction.
+
+Every fix was checked by reproducing the defect first and watching the check fail, then watching it
+pass. Where that needed a real environment it got one: the shell quoting was verified against a
+real PowerShell, bash and cmd.exe; the clipboard format by reading the raw bytes back through
+Win32; the PowerShell snippet by running the expanded template three ways.
+
+**Data the reporter was losing**
+
+- The concurrency lock introduced in 1.6.1 was written for `run_history.json` and applied only
+  there. `deltas.json`, `impact.json` and `access.json` are the same read-modify-write across the
+  same processes and were still losing data at the same rate: measured over 16 concurrent runs
+  each reporting the same impact, history kept 16 of 16 rows and summed correctly while
+  `impact.json` kept **one** — the Impact Summary card read $100 across 1 run instead of $1,600
+  across 16. All four files now share one locked helper.
+- A UTF-8 BOM — what PowerShell's `Set-Content -Encoding utf8` and Notepad write — made the
+  reporter read a file as empty and then write that emptiness back over it. 80 delta points and 60
+  history rows destroyed by one ordinary run, with nothing printed, on a file the dashboard was
+  rendering perfectly. The same shape is fixed in the Node reporter, in Import Delta History, and
+  in **Simulate a Demo Run**, where it turned 40 real runs into 1.
+- The short retry ladder was justified by "a lost write is superseded by the next one" and then
+  applied to two files where that is false. A `warn --actionable` printed the warning, exited 0,
+  recorded nothing, and Pending Actions showed a false all-clear; a dropped final write left a
+  finished run displayed as running for ever.
+- A failed run's `impact()` contributions are now withdrawn by the reporter, so they cannot
+  silently rejoin the total weeks later when the failed run ages out of history.
+
+**Correctness on screen**
+
+- The emailed digest and the dashboard each computed coverage under a comment saying they had to
+  agree. They did not: 63% in the email and 86% on screen, from the same data at the same instant.
+  There is now one implementation.
+- Run History's drift detector measured every metric against its twenty **oldest** runs, because it
+  sliced an unsorted window. A metric is now flagged only when the move exceeds the series' own
+  volatility, which stops flagging a `+5/-4` oscillator and starts flagging a delta that reverses
+  from +1,200 to −1,150.
+- A process that ran and **failed** in six periods and succeeded in two rendered a green 100% with
+  six grey dots reading "before it was wired".
+- `validate` reported the shipped demo configuration as broken, told users that `dayOfWeek: 7` —
+  the documented value for Sunday — was an error, and reported every delta threshold as "never
+  charted or checked" under the default settings.
+- One malformed entry in one array could stop the dashboard entirely: nothing between the renderer
+  and the webview caught anything, so the page kept showing its last-good HTML for ever with no
+  error. Entries are normalised at the read boundary now, and a section that throws renders a card
+  naming the failure instead of taking the page with it.
+
+**Safety**
+
+- 🔴 **"Run with Script Progress" could execute a filename.** The Windows branch wrapped the path
+  in double quotes, which PowerShell — VS Code's default Windows shell — treats as expandable, so a
+  file named `$(…)` ran the subexpression instead of the script. The shell is now derived from
+  `vscode.env.shell` and quoted for its actual rules; a `.cmd` under a path with a space now runs
+  rather than printing its own name and exiting 0.
+- The packaged `.vsix` was carrying the developer's own `logs/` folder — the OS username and an
+  internal commit SHA — because `.vscodeignore` excluded `demo/logs/**` and not `logs/**`. Nothing
+  was published with it.
+- An exit code could be attributed to a healthy script that merely shared a name prefix, and was
+  discarded entirely once a task had gone stale — exactly the long jobs the feature exists for.
+- The status bar rendered `$(icon)` from `progress.json`, so a task name could put a green tick
+  beside the word FAILED.
+
+**The gates themselves**
+
+- The release gate reported "28/28 checks passed — Smoke test clean" on packages that could not
+  run at all: it checked five filenames and then ran every render assertion against the source
+  tree. It now derives what must ship from the manifest's own contributions, audits all 54 packaged
+  modules, renders from the **installed** copy, scans the artefact for what should not be there,
+  and reports a SKIP list rather than a green when it could not check.
+- CI ran neither the Python suites nor the smoke gate. Both now run on a tag push.
+- CI had been red since 1.6.1 for a reason that was never a product defect: a wall-clock budget in
+  a correctness suite, failing on a slower machine. It asserts complexity now, which is
+  machine-independent.
+- The extension-coupled files had no tests and, for the same reason, no findings — they cannot be
+  loaded outside the extension host, so the review skipped them and read the silence as
+  cleanliness. There is a `vscode` stub and a suite for them now.
+
+**Documentation that described something else**
+
+- README §Privacy claimed the username reaches the CSV export (it has no user column) and stated
+  the HTML report unconditionally without mentioning that `report.includeIdentity` is off by
+  default — the paragraph a security reviewer reads.
+- The Get Started walkthrough said "thirteen sections, six on by default" against a manifest of
+  fifteen with nine. A test derives those claims from `package.json` now.
+- The JSON schemas described an `impacts` shape no reporter writes, put `detail` on the wrong
+  object, and hung four field definitions off a `$ref`, where draft-07 ignores them entirely — so
+  the editor accepted `severity: "banana"` while the reporter rejects it.
+- The PowerShell snippet recorded a failed job as a successful run, because native commands do not
+  throw on a non-zero exit, and left an aborted job running for ever, because `catch` is not
+  `finally`.
+
+Test count over the pass: 207 → **363** (317 JavaScript, 30 + 16 Python).
+
 ## 1.6.1 — 2026-09-04
 
 > **1.6.0 was tagged and never published.** Five adversarial reviews went at that build before it
