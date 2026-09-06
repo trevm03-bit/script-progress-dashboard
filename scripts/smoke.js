@@ -467,7 +467,18 @@ except KeyError: pass
   const { settings: S } = require(path.join(repo, 'test/fixtures/settings.js'));
   const cfg = JSON.parse(fs.readFileSync(path.join(ws, '.vscode', 'settings.json'), 'utf-8'));
   const data = new DataReader(logs).readAll();
+  // 🔴 The sections come from the SAME settings.json this gate just wrote, not from a fixture
+  // that happened to turn everything on. The fixture used to enable all fifteen regardless, so
+  // this gate asserted on sections the workspace had not asked for -- and the moment the fixture
+  // started telling the truth (nine on by default), Quick Actions was not on the page and the two
+  // button checks had nothing to judge. A gate must render what its own configuration describes.
+  const enabledSections = {};
+  for (const [key, value] of Object.entries(cfg)) {
+    const m = /^scriptProgress\.sections\.(.+)$/.exec(key);
+    if (m) enabledSections[m[1]] = value === true;
+  }
   const settings = S({
+    sections: enabledSections,
     processes: cfg['scriptProgress.processCalendar.processes'],
     buttons: cfg['scriptProgress.quickActions.buttons'],
     deltaMetrics: ['drift'],

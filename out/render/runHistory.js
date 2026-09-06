@@ -5,6 +5,19 @@ const time_1 = require("../logic/time");
 const html_1 = require("./html");
 const anomaly_1 = require("../logic/anomaly");
 const compare_1 = require("../logic/compare");
+/**
+ * A sortable column header that a keyboard can actually reach.
+ *
+ * 🔴 dashboard.js has handled Enter and Space on these since they were built, and they carried
+ * no `tabindex` — so nothing could ever be focused to press Enter on, and the handler was dead
+ * code. Run History could not be sorted or expanded without a mouse at all. `aria-sort` is what
+ * makes the current order audible rather than only visible (the CSS class alone says nothing).
+ */
+function sortableTh(col, label, sorted) {
+    return `<th data-col="${col}" role="button" tabindex="0" title="Sort"`
+        + `${sorted ? ` class="sorted-desc" aria-sort="${sorted}"` : ' aria-sort="none"'}`
+        + `>${(0, html_1.esc)(label)}</th>`;
+}
 function renderRunHistory(data, settings, opts) {
     const all = data.history
         .slice()
@@ -31,11 +44,11 @@ function renderRunHistory(data, settings, opts) {
     const tr = rows.map(r => historyRow(r, settings, all, verdicts.get(r), opts.identity)).join('');
     const body = `${filters}<div class="table-wrap"><table class="sortable history" data-table="history">
   <thead><tr>
-    <th data-col="0" title="Sort">St</th>
-    <th data-col="1" title="Sort">Task</th>
-    <th data-col="2" title="Sort" class="sorted-desc">Date</th>
-    <th data-col="3" title="Sort">Duration</th>
-    <th data-col="4" title="Sort">Warn</th>
+    ${sortableTh(0, 'St')}
+    ${sortableTh(1, 'Task')}
+    ${sortableTh(2, 'Date', 'descending')}
+    ${sortableTh(3, 'Duration')}
+    ${sortableTh(4, 'Warn')}
     <th>Summary</th>
   </tr></thead>
   <tbody>${tr}</tbody>
@@ -56,7 +69,10 @@ function historyRow(r, settings, all, verdict, identity) {
     const hay = `${r.task} ${r.summary ?? ''} ${Object.entries(r.metrics || {}).map(([k, v]) => `${k} ${v}`).join(' ')}`.toLowerCase();
     const kinds = [r.success ? 'ok' : 'fail', r.warnings ? 'warn' : '', verdict?.slow || sla ? 'slow' : ''].filter(Boolean).join(' ');
     const expandable = settings.runHistory.detail;
-    const main = `<tr class="${r.success ? '' : 'row-failed'}${expandable ? ' expandable' : ''}" data-hay="${(0, html_1.esc)(hay)}" data-kinds="${kinds}">
+    // An expandable row IS a control, so it says so and can be focused. Without tabindex the
+    // Enter/Space handler in dashboard.js could never fire.
+    const rowAttrs = expandable ? ' role="button" tabindex="0" aria-expanded="false"' : '';
+    const main = `<tr class="${r.success ? '' : 'row-failed'}${expandable ? ' expandable' : ''}"${rowAttrs} data-hay="${(0, html_1.esc)(hay)}" data-kinds="${kinds}">
   <td class="col-status ${r.success ? 'status-pass' : 'status-fail'}" data-sort="${r.success ? 1 : 0}">${(0, html_1.icon)(r.success ? 'check' : 'error')}</td>
   <td class="col-task" data-sort="${(0, html_1.esc)(r.task.toLowerCase())}" title="${(0, html_1.esc)(r.task)}">${expandable ? (0, html_1.icon)('chevron-right', 'row-chev') : ''}${(0, html_1.esc)(r.task)}</td>
   <td class="col-date" data-sort="${t}">${(0, html_1.esc)((0, time_1.dateTime)(r.date))}</td>

@@ -147,6 +147,8 @@
       const open = detail.hidden;
       detail.hidden = !open;
       t.classList.toggle('open', open);
+      // The class is visual; this is what a screen reader reads.
+      t.setAttribute('aria-expanded', open ? 'true' : 'false');
       if (open) openDetails.add(key); else openDetails.delete(key);
     } else if (t.matches('.fchip')) {
       filterState.kind = t.dataset.filter || 'all';
@@ -155,7 +157,13 @@
   });
   document.addEventListener('keydown', (e) => {
     const t = e.target;
-    if ((e.key === 'Enter' || e.key === ' ') && t.matches && (t.matches('.section-title.toggle') || t.matches('tr.expandable'))) { e.preventDefault(); t.click(); }
+    // th[data-col] belongs here as much as the other two: it is a role=button with a tabindex,
+    // so a keyboard lands on it and must be able to act on it.
+    if ((e.key === 'Enter' || e.key === ' ') && t.matches
+      && (t.matches('.section-title.toggle') || t.matches('tr.expandable') || t.matches('th[data-col]'))) {
+      e.preventDefault();
+      t.click();
+    }
   });
   document.addEventListener('input', (e) => {
     if (e.target.matches && e.target.matches('.filter-text')) {
@@ -201,9 +209,15 @@
       return dir === 'asc' ? c : -c;
     });
     tbody.replaceChildren(...pairs.flat());
-    for (const th of table.tHead.rows[0].cells) th.classList.remove('sorted-asc', 'sorted-desc');
+    for (const th of table.tHead.rows[0].cells) {
+      th.classList.remove('sorted-asc', 'sorted-desc');
+      if (th.hasAttribute('aria-sort')) th.setAttribute('aria-sort', 'none');
+    }
     const th = table.tHead.rows[0].cells[col];
-    if (th) th.classList.add(dir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+    if (th) {
+      th.classList.add(dir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+      th.setAttribute('aria-sort', dir === 'asc' ? 'ascending' : 'descending');
+    }
   }
   function restoreSort() {
     for (const table of main.querySelectorAll('table.sortable')) {

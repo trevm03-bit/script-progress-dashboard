@@ -687,6 +687,60 @@ const slot = (name, warnings, over = {}) => ({
     'the HTML-report claim is stated without its opt-in');
 }
 
+// 17g — anything you can click, you can reach with a keyboard.
+//
+// 🔴 dashboard.js had handled Enter and Space on `tr.expandable` since the day it was written, and
+// runHistory.ts emitted no tabindex — so nothing could ever be focused to press Enter on, and the
+// handler was unreachable code. Run History could not be sorted or expanded without a mouse at
+// all, and neither half looked wrong on its own: the handler was there, the rows were there.
+//
+// This derives the list from dashboard.js itself, so a NEW clickable thing fails here until it is
+// either natively focusable or given a tabindex and a keydown path. Verified against a real
+// browser: Enter on a focused header sorts the table and moves aria-sort none → descending →
+// ascending; Enter on a focused row opens its detail and flips aria-expanded.
+{
+  const js = fs.readFileSync(path.join(repo, 'media/dashboard.js'), 'utf8');
+  const clickList = (js.match(/e\.target\.closest\('([^']+)'\)/) || [, ''])[1].split(',').map(x => x.trim()).filter(Boolean);
+  const keydown = (js.match(/keydown[\s\S]{0,600}/) || [''])[0];
+  check('the click handler declares what it responds to', clickList.length >= 6, clickList.join(' | '));
+
+  // Selectors whose elements are buttons, and therefore focusable with no help from us.
+  const NATIVE = ['[data-action]', '[data-msg]', '[data-open]', '.fchip', '[data-filter-task]'];
+  const needsHelp = clickList.filter(sel => !NATIVE.includes(sel));
+  check('every non-button control is in the keydown handler too',
+    needsHelp.every(sel => keydown.includes(sel)),
+    `missing from keydown: ${needsHelp.filter(sel => !keydown.includes(sel)).join(', ')}`);
+
+  // …and is actually focusable in the markup, which is the half that was missing.
+  const page = render({ ...base, history: big.slice(0, 8) }, S.demo());
+  const TAG = { 'th[data-col]': /<th[^>]*data-col="[^"]*"[^>]*>/g,
+    'tr.expandable': /<tr[^>]*class="[^"]*expandable[^"]*"[^>]*>/g,
+    '.section-title.toggle': /<div class="section-title toggle"[^>]*>/g };
+  for (const sel of needsHelp) {
+    const re = TAG[sel];
+    check(`the guard knows how to find ${sel} in the markup`, !!re,
+      'a new keyboard-reachable control needs its tag pattern adding here');
+    if (!re) continue;
+    const tags = page.match(re) || [];
+    check(`${sel} is rendered at all`, tags.length > 0);
+    check(`every ${sel} carries a tabindex`, tags.length > 0 && tags.every(t => /tabindex="0"/.test(t)),
+      (tags.find(t => !/tabindex="0"/.test(t)) || '').slice(0, 110));
+    check(`every ${sel} says what it is`, tags.every(t => /role="button"/.test(t)),
+      (tags.find(t => !/role="button"/.test(t)) || '').slice(0, 110));
+  }
+
+  // The state a screen reader reads has to exist before anything can update it.
+  const heads = page.match(/<th[^>]*data-col="[^"]*"[^>]*>/g) || [];
+  check('sortable headers declare their sort state', heads.every(t => /aria-sort="/.test(t)),
+    (heads.find(t => !/aria-sort="/.test(t)) || '').slice(0, 110));
+  check('exactly one header starts sorted', heads.filter(t => /aria-sort="(as|des)cending"/.test(t)).length === 1);
+  const rows = page.match(/<tr[^>]*class="[^"]*expandable[^"]*"[^>]*>/g) || [];
+  check('expandable rows declare their expanded state', rows.every(t => /aria-expanded="false"/.test(t)),
+    (rows.find(t => !/aria-expanded="/.test(t)) || '').slice(0, 110));
+  check('and dashboard.js updates both once the user acts',
+    /setAttribute\('aria-expanded'/.test(js) && /setAttribute\('aria-sort'/.test(js));
+}
+
 // 18 — runbook stamps local time
 const rb = runbookMarkdown({ ...base, history: big.slice(0, 5) }, S({}), NOW);
 check('runbook is stamped in local time', rb.includes('2026-09-02 10:00'), (rb.match(/_Generated [^_]+_/) || [])[0]);
