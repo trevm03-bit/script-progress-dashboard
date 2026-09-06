@@ -194,9 +194,28 @@ export function registerCommands(context: vscode.ExtensionContext, cx: CommandCo
       series[name] = incoming;
     }
     const file = path.join(cx.logsDir(), FILES.deltas);
+    // 🔴 "Unreadable" is not "empty". This treated any parse failure as an empty file and then
+    // wrote that back, so a deltas.json the extension's own reader tolerates but JSON.parse
+    // rejects — a UTF-8 BOM, a file caught mid-write by a running script, a hand-edit typo —
+    // was silently replaced by only the newly imported points, under a toast reporting success
+    // and three lines above a comment promising "never replace what is already there".
     let existing: Record<string, DeltaPoint[]> = {};
-    try { existing = JSON.parse(fs.readFileSync(file, 'utf-8')); } catch { existing = {}; }
-    if (!existing || typeof existing !== 'object' || Array.isArray(existing)) existing = {};
+    if (fs.existsSync(file)) {
+      try {
+        // Strip a BOM first, exactly as dataReader does: a PowerShell-written file is not corrupt.
+        existing = JSON.parse(fs.readFileSync(file, 'utf-8').replace(/^\uFEFF/, ''));
+      } catch (e) {
+        void vscode.window.showErrorMessage(
+          `Import cancelled: ${FILES.deltas} exists but could not be read (${(e as Error).message}). `
+          + 'Nothing was changed — fix or move that file and try again.');
+        return;
+      }
+      if (!existing || typeof existing !== 'object' || Array.isArray(existing)) {
+        void vscode.window.showErrorMessage(
+          `Import cancelled: ${FILES.deltas} is not an object of metric series. Nothing was changed.`);
+        return;
+      }
+    }
 
     let added = 0, skipped = 0, rejected = 0;
     for (const [name, pts] of Object.entries(series)) {
@@ -441,7 +460,9 @@ export function registerCommands(context: vscode.ExtensionContext, cx: CommandCo
     try {
       await simulateRun(dir, cx.getData(), cx.getSettings().staleRunningMinutes, mode === 'fail' ? 'fail' : 'ok');
     } catch (e) {
-      void vscode.window.showErrorMessage(`Simulation could not write to ${dir}: ${(e as Error).message}`);
+      // simulate.ts now THROWS rather than silently replacing a log file it could not parse, so
+      // this message has to cover reading as well as writing.
+      void vscode.window.showErrorMessage(`Simulation stopped: ${(e as Error).message} (logs folder: ${dir})`);
     }
   });
 

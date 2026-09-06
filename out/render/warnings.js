@@ -17,7 +17,10 @@ function renderWarnings(data, opts) {
     let total = 0;
     for (const t of sources) {
         const w = t.warnings ?? [];
-        total += w.length;
+        // The reporter trims this array to 20 and carries the real figure in warningsTotal. Using
+        // the array length here made the header disagree with the summary tile and the Run History
+        // column, which already used the total - one page, one run, two numbers.
+        total += Math.max(t.warningsTotal ?? 0, w.length);
         for (const x of w.slice().reverse()) {
             items.push(`<div class="warning-card"><span class="warning-time">${(0, html_1.esc)((0, time_1.clockTime)(x.time))}</span>${sources.length > 1 ? `<span class="warning-task">${(0, html_1.esc)(t.task)}</span>` : ''} ${(0, html_1.esc)(x.msg)}</div>`);
         }

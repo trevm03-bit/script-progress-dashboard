@@ -15,6 +15,18 @@ export interface ProgressData {
   /** Estimated seconds remaining, or null when there is no prior run to estimate from. */
   eta: number | null;
   warnings: Warning[];
+  /**
+   * How many warnings this run has raised IN TOTAL.
+   *
+   * 🔴 `warnings` above is trimmed by the reporter (20 ordinary ones), and this is not.
+   * schemas/progress.schema.json has carried the field and that explanation for two releases;
+   * it was simply missing from this interface, so nothing read it. Two consequences: the
+   * Warnings header and the Active Task chip counted the surviving array while the summary
+   * tile and Run History used the true total, so one page showed two numbers for one run; and
+   * the notifier compared array lengths, which saturate at 20, so onWarning went silent after
+   * the twentieth warning of a run - exactly when a run is worth watching.
+   */
+  warningsTotal?: number;
   /** ISO timestamp of the last write. Used for live elapsed and stall detection. */
   updatedAt: string;
   /** Optional, from newer reporters. */
@@ -129,6 +141,16 @@ export interface RunOverlay {
    * window and a brand-new run of the same name inherited the dead one's exit code.
    */
   runId?: string;
+  /**
+   * When the Quick Action that produced this exit was LAUNCHED (not when the run started).
+   *
+   * 🔴 A task-name prefix is not an identity. "Nightly" is a prefix of both "Nightly Load" and
+   * "Nightly Refresh", and matching on the name alone flipped a healthy, actively-reporting
+   * script to "Exited" whenever one sibling happened to be running - blaming it by name in a
+   * toast and writing a bogus `exited` event to last_event.json for watchers to act on. Only
+   * a run that started after we launched the command can be the run we launched.
+   */
+  launchedAt?: string;
 }
 
 /** Everything the dashboard renders from, read in one pass. */

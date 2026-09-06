@@ -45,8 +45,9 @@ function taskCard(p, data, settings, now) {
     meta.push(`<span title="Elapsed${typeof sla === 'number' ? ` (limit ${(0, time_1.formatDuration)(sla * 60)})` : ''}" class="${pastSla ? 'status-fail' : ''}">${(0, html_1.icon)('watch')} ${(0, html_1.esc)((0, time_1.formatDuration)(elapsed))}${typeof sla === 'number' ? `<span class="muted"> / ${(0, html_1.esc)((0, time_1.formatDuration)(sla * 60))}</span>` : ''}</span>`);
     if (state === 'running' && eta !== null)
         meta.push(`<span title="Estimated remaining, from prior runs">${(0, html_1.icon)('history')} ~${(0, html_1.esc)((0, time_1.formatDuration)(eta))} left</span>`);
-    if (p.warnings && p.warnings.length)
-        meta.push(`<span class="status-warn" title="Warnings this run">${(0, html_1.icon)('warning')} ${p.warnings.length}</span>`);
+    const warnCount = Math.max(p.warningsTotal ?? 0, p.warnings?.length ?? 0);
+    if (warnCount)
+        meta.push(`<span class="status-warn" title="Warnings this run">${(0, html_1.icon)('warning')} ${warnCount}</span>`);
     if (p.startedAt)
         meta.push(`<span class="muted" title="Started">${(0, html_1.icon)('play')} ${(0, html_1.esc)((0, time_1.clockTime)(p.startedAt))}</span>`);
     if (p.runId)

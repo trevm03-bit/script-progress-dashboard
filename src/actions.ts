@@ -41,7 +41,12 @@ export class ActionRunner implements vscode.Disposable {
       const info = this.started.get(`task:${label}`);
       this.started.delete(`task:${label}`);
       if (typeof e.exitCode === 'number' && e.exitCode !== 0) {
-        this.sink.onExit({ task: info?.task ?? label, exitCode: e.exitCode, when: new Date().toISOString() }, label);
+        // 🔴 No task name when the button did not configure one. This used to fall back to the
+        // LABEL, so `overlay.task ? … : []` in extension.ts was dead code and the documented
+        // promise - "an unnamed button's exit is reported against its label alone, never
+        // pinned to whatever happens to be running" - was false. `task` is opt-in in the
+        // README, so a user who never set it has no reason to expect any card to change.
+        this.sink.onExit({ task: info?.task ?? '', exitCode: e.exitCode, when: new Date().toISOString(), launchedAt: info?.at }, label);
       }
     }));
     // Terminal shell-integration exit codes (VS Code 1.93+); feature-detected, harmless on 1.80.
@@ -53,7 +58,7 @@ export class ActionRunner implements vscode.Disposable {
         const info = this.started.get(`term:${cmd}`);
         this.started.delete(`term:${cmd}`);
         if (typeof e.exitCode === 'number' && e.exitCode !== 0) {
-          this.sink.onExit({ task: info?.task ?? info?.label ?? cmd.slice(0, 40), exitCode: e.exitCode, when: new Date().toISOString() }, info?.label ?? cmd);
+          this.sink.onExit({ task: info?.task ?? '', exitCode: e.exitCode, when: new Date().toISOString(), launchedAt: info?.at }, info?.label ?? cmd.slice(0, 40));
         }
       }));
     }

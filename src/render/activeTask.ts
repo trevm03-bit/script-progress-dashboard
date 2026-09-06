@@ -47,7 +47,8 @@ function taskCard(p: ProgressData, data: DashboardData, settings: Settings, now:
   const meta: string[] = [];
   meta.push(`<span title="Elapsed${typeof sla === 'number' ? ` (limit ${formatDuration(sla * 60)})` : ''}" class="${pastSla ? 'status-fail' : ''}">${icon('watch')} ${esc(formatDuration(elapsed))}${typeof sla === 'number' ? `<span class="muted"> / ${esc(formatDuration(sla * 60))}</span>` : ''}</span>`);
   if (state === 'running' && eta !== null) meta.push(`<span title="Estimated remaining, from prior runs">${icon('history')} ~${esc(formatDuration(eta))} left</span>`);
-  if (p.warnings && p.warnings.length) meta.push(`<span class="status-warn" title="Warnings this run">${icon('warning')} ${p.warnings.length}</span>`);
+  const warnCount = Math.max(p.warningsTotal ?? 0, p.warnings?.length ?? 0);
+  if (warnCount) meta.push(`<span class="status-warn" title="Warnings this run">${icon('warning')} ${warnCount}</span>`);
   if (p.startedAt) meta.push(`<span class="muted" title="Started">${icon('play')} ${esc(clockTime(p.startedAt))}</span>`);
   if (p.runId) meta.push(`<span class="muted mono" title="Run id">${esc(p.runId)}</span>`);
 

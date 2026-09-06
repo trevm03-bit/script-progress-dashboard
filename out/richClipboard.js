@@ -185,11 +185,18 @@ function runTool(exe, args, stdin, fallbackReason) {
         child.stderr?.on('data', d => { stderr += String(d); });
         child.stdin?.on('error', () => { });
         child.on('error', e => { clearTimeout(timer); done({ ok: false, reason: `${path.basename(exe)} could not start: ${e.message}` }); });
-        child.on('close', code => {
+        // 🔴 'exit', not 'close'. xclip FORKS: the parent calls exit(EXIT_SUCCESS) while the forked
+        // child stays alive to serve the X selection and never closes the stderr descriptor it
+        // inherited. 'close' waits for that descriptor, so it never fired - the command froze for
+        // the full ten-second timeout and then reported failure on a copy that had already
+        // succeeded, where the previous code had declined in about two milliseconds and let the
+        // caller fall through to its working fallback.
+        child.on('exit', code => {
             clearTimeout(timer);
             if (code === 0)
                 return done({ ok: true, reason: '' });
-            done({ ok: false, reason: (stderr.trim().split('\n')[0] || fallbackReason).slice(0, 120) });
+            // Only the failure path waits, and only briefly, so the message can name the cause.
+            setTimeout(() => done({ ok: false, reason: (stderr.trim().split('\n')[0] || fallbackReason).slice(0, 120) }), 100);
         });
         if (stdin !== undefined) {
             try {
@@ -233,10 +240,31 @@ $startFragment = $headerLen + $b.GetByteCount($head + $startMark)
 $endFragment = $startFragment + $b.GetByteCount($fragment)
 $endHtml = $headerLen + $b.GetByteCount($body)
 $cf = ($pre -f $startHtml, $endHtml, $startFragment, $endFragment) + $body
-$plain = [System.Text.RegularExpressions.Regex]::Replace($fragment, '<[^>]+>', '')
+# The plain-text flavour, for an app that asks for text rather than HTML. Block-level tags
+# become newlines and the rest become a SPACE: stripping every tag with nothing in its place
+# glued each number to the caption of the next cell, so counts read as different numbers.
+$plain = [System.Text.RegularExpressions.Regex]::Replace($fragment, '<(br|/p|/div|/tr|/li|/h[1-6]|/table)[^>]*>', "\`n")
+$plain = [System.Text.RegularExpressions.Regex]::Replace($plain, '<[^>]+>', ' ')
 $plain = [System.Net.WebUtility]::HtmlDecode($plain)
+$plain = [System.Text.RegularExpressions.Regex]::Replace($plain, '[ \t]{2,}', ' ')
+$plain = [System.Text.RegularExpressions.Regex]::Replace($plain, "(\`n\s*){3,}", "\`n\`n").Trim()
 $data = New-Object System.Windows.Forms.DataObject
-$data.SetData([System.Windows.Forms.DataFormats]::Html, $cf)
+# 🔴 As a STREAM of UTF-8 bytes, not as a string.
+#
+# SetData(DataFormats.Html, <string>) under Windows PowerShell 5.1 serialises through the
+# system ANSI code page, one byte per character - while the four offsets above are counted in
+# UTF-8 bytes. Every digest containing a curly quote, an em dash or a pound sign therefore
+# shipped a header that over-counted by (utf8 bytes - chars): EndHTML pointed past the end of
+# the allocation and EndFragment past the EndFragment marker. Worse, any character with no
+# CP1252 mapping was replaced by '?', so script names silently became ????? in a document the
+# user forwards to colleagues, under a toast reporting success.
+#
+# A Stream is written to the clipboard verbatim, so the bytes and the offsets agree.
+$bytes = [System.Text.Encoding]::UTF8.GetBytes($cf)
+$stream = New-Object System.IO.MemoryStream
+$stream.Write($bytes, 0, $bytes.Length)
+$stream.Position = 0
+$data.SetData([System.Windows.Forms.DataFormats]::Html, $false, $stream)
 $data.SetData([System.Windows.Forms.DataFormats]::UnicodeText, $plain)
 [System.Windows.Forms.Clipboard]::SetDataObject($data, $true)
 exit 0

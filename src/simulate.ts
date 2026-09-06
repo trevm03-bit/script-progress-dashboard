@@ -22,8 +22,35 @@ function iso(d = new Date()): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+/**
+ * Read one of the log files, or fall back — and REFUSE to fall back over data we simply could not
+ * parse.
+ *
+ * 🔴 The fourth instance of one bug. `catch { return def; }` reads "unreadable" as "empty", and
+ * every caller here writes the result straight back: a run_history.json carrying a UTF-8 BOM —
+ * which is what PowerShell's `Set-Content -Encoding utf8` and Notepad produce, and which the
+ * dashboard renders perfectly because DataReader strips one — was replaced by the single
+ * simulated run. Forty real runs became one, from a menu command whose whole purpose is to be
+ * safe to click. The same shape was fixed in the Python reporter, the Node reporter and Import
+ * Delta History; this is the copy the review's own reproduction rule could not reach, because it
+ * needs a `vscode` stub to load at all.
+ *
+ * A missing file is genuinely empty. A file that exists and will not parse is not.
+ */
+class UnreadableLogFile extends Error {}
+
 function readJson<T>(file: string, def: T): T {
-  try { return JSON.parse(fs.readFileSync(file, 'utf-8')) as T; } catch { return def; }
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, 'utf-8');
+  } catch {
+    return def;                       // not there yet: an empty default is the truth
+  }
+  try {
+    return JSON.parse(raw.replace(/^\uFEFF/, '')) as T;
+  } catch (e) {
+    throw new UnreadableLogFile(`${path.basename(file)} could not be read (${(e as Error).message})`);
+  }
 }
 
 function writeJson(file: string, data: unknown): void {

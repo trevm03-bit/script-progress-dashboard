@@ -39,11 +39,29 @@ export class StatusBarManager implements vscode.Disposable {
   private static mdEsc(value: unknown): string {
     return String(value ?? '')
       .replace(/[\\`*_{}\[\]()#+\-.!|<>~$]/g, m => '\\' + m)
-      .replace(/\r?\n/g, ' ');
+      // 🔴 A LONE \r counts. markdown-it normalises /\r\n?|\n/ to a newline, so \r\r was still a
+      // paragraph break - and a script piping a subprocess's \r-based progress line into a
+      // detail hits this with no malice at all, while deliberate content could place an
+      // authoritative-looking sentence of its own in the tooltip.
+      .replace(/[\r\n]+/g, ' ');
+  }
+
+  /**
+   * Text for the status bar ITEM, as opposed to its tooltip.
+   *
+   * 🔴 StatusBarItem.text renders `$(icon-name)` as a codicon - this file depends on that for
+   * $(sync~spin), $(error) and $(warning) - and progress.json is an open contract that other
+   * producers write. A task name or step label carrying `$(check)` therefore put a green tick
+   * beside the word FAILED, on the one line of this extension's UI that has to be trustworthy
+   * at a glance. mdEsc guarded the tooltip and nothing guarded this.
+   */
+  private static barText(value: unknown): string {
+    return String(value ?? '').replace(/\$\(/g, '$ (').replace(/[\r\n]+/g, ' ');
   }
 
   private render(): void {
     const E = StatusBarManager.mdEsc;
+    const T = StatusBarManager.barText;
     const data = this.data;
     const settings = this.settings;
     if (!data || !settings || !settings.statusBar.enabled) { this.item.hide(); return; }
@@ -60,7 +78,7 @@ export class StatusBarManager implements vscode.Disposable {
       const step = p.totalSteps > 0 ? `${p.step}/${p.totalSteps} ` : '';
       const more = running.length > 1 ? ` +${running.length - 1}` : '';
       const pct = p.totalSteps > 0 ? ` ${percent(p.step, p.totalSteps, p.substep)}%` : '';
-      this.item.text = `$(sync~spin) ${step}${truncate(p.label, 28)} · ${formatDuration(liveElapsed(p, now))}${pct}${more}`;
+      this.item.text = `$(sync~spin) ${step}${T(truncate(p.label, 28))} · ${formatDuration(liveElapsed(p, now))}${pct}${more}`;
       for (const { t } of running) {
         const eta = liveEta(t, now);
         md.appendMarkdown(`**${E(t.task)}** — ${E(t.label)}${t.detail ? ` — ${E(t.detail)}` : ''}\n\nElapsed ${formatDuration(liveElapsed(t, now))}${eta !== null ? ` · ~${formatDuration(eta)} left` : ''}${t.warnings?.length ? ` · $(warning) ${t.warnings.length}` : ''}\n\n`);
@@ -69,7 +87,7 @@ export class StatusBarManager implements vscode.Disposable {
     } else if (stalled.length) {
       const p = stalled[0].t;
       const label = stalled[0].s === 'exited' ? 'Exited' : 'Stalled';
-      this.item.text = `$(warning) ${label} ${Math.round(minutesSinceUpdate(p, now))}m · ${truncate(p.task, 24)}`;
+      this.item.text = `$(warning) ${label} ${Math.round(minutesSinceUpdate(p, now))}m · ${T(truncate(p.task, 24))}`;
       this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
       md.appendMarkdown(`**${E(p.task)}** still marked running but ${stalled[0].s === 'exited' ? 'its process exited' : `not updated for ${Math.round(minutesSinceUpdate(p, now))} minutes`}.\n\nLast step: ${E(p.label)}\n\n`);
     } else {
@@ -80,7 +98,7 @@ export class StatusBarManager implements vscode.Disposable {
         this.item.text = '$(pulse) Script Progress';
         md.appendMarkdown(`No runs recorded yet.
 
-Watching \`${this.logsHint()}\` for progress files. Run **Script Progress: Simulate a Demo Run** to see it work.
+Watching \`${this.logsHint().replace(/`/g, "'")}\` for progress files. Run **Script Progress: Simulate a Demo Run** to see it work.
 
 `);
         md.appendMarkdown(settings.statusBar.clickAction === 'menu' ? '_Click for actions_' : '_Click to open the dashboard_');
@@ -91,11 +109,11 @@ Watching \`${this.logsHint()}\` for progress files. Run **Script Progress: Simul
       const p = data.progress;
       const state: TaskState = taskState(p, settings.staleRunningMinutes, now, data.overlays);
       if (state === 'failed') {
-        this.item.text = `$(error) FAILED ${truncate(p.task, 22)}`;
+        this.item.text = `$(error) FAILED ${T(truncate(p.task, 22))}`;
         this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
         md.appendMarkdown(`**${E(p.task)}** failed at ${clockTime(p.updatedAt)} after ${formatDuration(p.elapsed)}${p.detail ? `\n\n${E(p.detail)}` : ''}\n\n`);
       } else {
-        this.item.text = `$(check) ${truncate(p.task, 24)} ${clockTime(p.updatedAt)}`;
+        this.item.text = `$(check) ${T(truncate(p.task, 24))} ${clockTime(p.updatedAt)}`;
         md.appendMarkdown(`**${E(p.task)}** completed at ${clockTime(p.updatedAt)} in ${formatDuration(p.elapsed)}${p.detail ? `\n\n${E(p.detail)}` : ''}\n\n`);
       }
     }

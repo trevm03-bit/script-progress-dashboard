@@ -70,8 +70,31 @@ function activate(context) {
             // A button named "Nightly" is a prefix of "Nightly Load" AND "Nightly Refresh"; left
             // unresolved, one process ending reported both as crashed. If the prefix is ambiguous we
             // genuinely do not know which script exited, and saying nothing beats blaming the wrong one.
+            // 🔴 Two rules, and the previous guard got both wrong in opposite directions.
+            //
+            // 'stalled' is not 'gone'. Requiring taskState() === 'running' threw the exit away for
+            // exactly the long jobs an exit overlay exists for: a backfill that does one long step
+            // without calling step() is already stale by the time the terminal exit arrives, so the
+            // dashboard went on saying "Stalled — no update for 45 min" while the extension had been
+            // handed exit code 137 and knew the process was dead, and last_event.json never got the
+            // `exited` event both package.json and the README promise. What disqualifies a task is
+            // having already reported a FINAL state: that run is over and this exit is not its news.
+            //
+            // And a name prefix is not an identity. "Nightly" matches "Nightly Load" AND "Nightly
+            // Refresh"; guarding only the two-or-more case left the one-sibling case, where an
+            // unrelated exit still flipped a healthy, actively-reporting script to "Exited". Only a
+            // run that began after we launched the command can be the run we launched. The two-second
+            // grace covers the reporter writing startedAt truncated to the second.
+            const launchedAt = overlay.launchedAt ? Date.parse(overlay.launchedAt) : 0;
             const matches = overlay.task
-                ? data.tasks.filter(t => (0, time_1.taskMatches)(t.task, overlay.task) && (0, time_1.taskState)(t, settings.staleRunningMinutes, new Date(), data.overlays) === 'running')
+                ? data.tasks.filter(t => {
+                    if (!(0, time_1.taskMatches)(t.task, overlay.task))
+                        return false;
+                    if (t.status === 'complete' || t.status === 'failed')
+                        return false;
+                    const started = t.startedAt ? Date.parse(t.startedAt) : 0;
+                    return !launchedAt || !started || Number.isNaN(started) || started >= launchedAt - 2000;
+                })
                 : [];
             if (matches.length === 1) {
                 reader.addOverlay({ ...overlay, task: matches[0].task });
