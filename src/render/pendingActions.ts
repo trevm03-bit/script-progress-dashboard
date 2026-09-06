@@ -14,7 +14,14 @@ export function renderPendingActions(data: DashboardData, settings: Settings, no
     // Distinguish "nothing outstanding" from "nothing ever marked actionable" — the second is a
     // wiring gap, and telling someone their to-do list is empty when nothing can reach it is a
     // small lie that takes a long time to notice.
-    const everMarked = data.history.some(r => Array.isArray(r.warningItems) && r.warningItems.some(w => w?.actionable));
+    // 🔴 The LIVE tasks too. Looking only at history meant that during the first, still-running
+    // run of a newly wired script this card said "Nothing is marked as needing action yet —
+    // mark a finding with Progress.warn(…, actionable=True)" directly above a Warnings card
+    // listing those exact findings. That is precisely the wiring-gap message this branch exists
+    // to avoid getting wrong.
+    const marked = (list: unknown) => Array.isArray(list) && list.some(w => w && typeof w === 'object' && (w as { actionable?: boolean }).actionable);
+    const everMarked = data.history.some(r => marked(r.warningItems))
+      || (data.tasks || []).some(t => marked(t.warnings));
     const body = everMarked
       ? empty('Nothing outstanding — the last successful run of every script reported no actionable findings.')
       : empty('Nothing is marked as needing action yet. Mark a finding with Progress.warn("…", actionable=True) and it will appear here.',
@@ -31,9 +38,15 @@ export function renderPendingActions(data: DashboardData, settings: Settings, no
   // Capped per script. 500 actionable findings from one run is a real shape - and rendered whole
   // it was an 85 KB card with no scroll container, burying every section under it.
   const PER_TASK = 25;
+  // 🔴 Worst first. The cap used to take the first 25 in report order, so a run that reported
+  // 25 info notes and then 5 errors showed the notes and hid every error - from the section
+  // whose entire job is "the findings a script flagged as something a HUMAN has to do".
+  const RANK: Record<string, number> = { error: 0, warn: 1, info: 2 };
+  const worstFirst = (a: { severity?: string }, b: { severity?: string }) =>
+    (RANK[String(a.severity ?? 'warn')] ?? 1) - (RANK[String(b.severity ?? 'warn')] ?? 1);
   let body = '';
   for (const [task, list] of byTask) {
-    const shown = list.slice(0, PER_TASK);
+    const shown = list.slice().sort(worstFirst).slice(0, PER_TASK);
     body += `<div class="pa-group"><div class="pa-task">${esc(task)} <span class="muted small">${esc(relativeTime(list[0].date, now))}</span></div>`;
     for (const it of shown) {
       const sev = it.severity === 'error' ? 'pa-error' : it.severity === 'info' ? 'pa-info' : 'pa-warn';
@@ -42,7 +55,10 @@ export function renderPendingActions(data: DashboardData, settings: Settings, no
       body += `<div class="pa-item ${sev}" title="${esc(`Reported ${clockTime(it.time)} by ${it.task}`)}">${icon('circle-outline')}${count}<span class="pa-msg">${esc(it.msg)}</span>${cat}</div>`;
     }
     if (list.length > shown.length) {
-      body += `<div class="muted small list-more">${icon('ellipsis')} ${list.length - shown.length} more from ${esc(task)} — open its row in Run History for the full list.</div>`;
+      // Run History draws only the newest `maxRows` runs, so "open its row" was an instruction
+      // that could not be followed for any script whose latest run is not among them. Say which.
+      body += `<div class="muted small list-more">${icon('ellipsis')} ${list.length - shown.length} more from ${esc(task)}`
+        + ` — the lower-severity ones. Expand that run in Run History for the full list; it shows the newest ${settings.runHistory.maxRows} runs.</div>`;
     }
     body += '</div>';
   }

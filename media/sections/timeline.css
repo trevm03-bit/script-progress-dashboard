@@ -68,9 +68,13 @@
 .tl-bars { display: block; width: 100%; height: 22px; }
 .tl-bar { fill: var(--sp-complete); }
 .tl-bar-ok { fill: var(--sp-complete); }
-.tl-bar-fail { fill: var(--sp-failed); }
 .tl-bar-running { fill: var(--sp-running); animation: tl-pulse 1.8s ease-in-out infinite; }
 .tl-bar-slow { fill: var(--sp-stalled); }
+/* 🔴 AFTER .tl-bar-slow, and it must stay there. A bar can carry both classes, they had equal
+   specificity, and the later rule wins — so a run that failed AND was slow was painted amber
+   like a slow success, and the failure disappeared from the timeline. Those are the worst runs
+   on the page, so they are the last ones that should be hard to see. */
+.tl-bar-fail, .tl-bar-fail.tl-bar-slow { fill: var(--sp-failed); }
 .tl-bar-sla { stroke: var(--sp-failed); stroke-width: 1; vector-effect: non-scaling-stroke; }
 
 @keyframes tl-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }

@@ -219,15 +219,22 @@ function coverage(calendar, history, metricsOutOfRange, metricsTracked, now, day
     // is "metrics in range", and a lone threshold would put a green 100% at the top of the page for
     // a routine that has never run — the figure at its most confident when it knows nothing.
     const observed = inputs.some(i => i.label === 'On schedule' || i.label === 'Runs succeeded');
+    // 🔴 Say WHICH of the three reasons this is. The dashboard branched on `percent === null`
+    // alone and printed a message that named only the last of them, so a brand-new user who had
+    // configured a calendar entry and not yet had a run - exactly where the walkthrough leaves
+    // them - was told "every weight is 0, raise scriptProgress.coverage.weights", opened the
+    // settings, and found 2/2/1.
     if (!inputs.length || !observed)
-        return { percent: null, inputs };
+        return { percent: null, inputs, reason: 'nothing-measured' };
     // Weights are user-settable and may all be zero. Dividing by that produced NaN, which passed
     // the caller's `!== null` guard and rendered as "NaN%".
     const total = inputs.reduce((n, i) => n + i.weight, 0);
     if (!(total > 0))
-        return { percent: null, inputs };
+        return { percent: null, inputs, reason: 'no-weight' };
     const score = inputs.reduce((n, i) => n + clamp01(i.score) * i.weight, 0) / total;
-    return { percent: Number.isFinite(score) ? Math.round(score * 100) : null, inputs };
+    if (!Number.isFinite(score))
+        return { percent: null, inputs, reason: 'not-a-number' };
+    return { percent: Math.round(score * 100), inputs };
 }
 function clamp01(n) { return Math.max(0, Math.min(1, isFinite(n) ? n : 0)); }
 function round1(n) { return Math.round(n * 10) / 10; }

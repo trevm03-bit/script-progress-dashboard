@@ -91,7 +91,7 @@ class DataReader {
         const deltas = this.readJson(exports.FILES.deltas, readErrors);
         const impact = this.readJson(exports.FILES.impact, readErrors);
         const access = this.readJson(exports.FILES.access, readErrors);
-        const main = isProgress(progress) ? progress : null;
+        const main = isProgress(progress) ? normaliseProgress(progress) : null;
         const tasks = this.readSlots(readErrors, main);
         // Drop overlays that no longer apply: the task reported a final state since, or no task
         // matches at all (an overlay with nothing to attach to must not live forever).
@@ -107,7 +107,7 @@ class DataReader {
         return {
             progress: main,
             tasks,
-            history: Array.isArray(history) ? history.filter(isRun) : [],
+            history: Array.isArray(history) ? history.filter(isRun).map(normaliseRun) : [],
             // Series files are normalised POINT BY POINT, not just at the top level. A single null or
             // malformed entry — a hand edit, a half-written file, an import from elsewhere — used to
             // throw inside a renderer, and a renderer that throws blanks the whole dashboard. The one
@@ -161,7 +161,7 @@ class DataReader {
         for (const f of names) {
             const p = this.readJson(`${exports.SLOTS_DIR}/${f}`, errors);
             if (isProgress(p))
-                put(p);
+                put(normaliseProgress(p));
         }
         if (main)
             put(main);
@@ -214,6 +214,37 @@ class DataReader {
     }
 }
 exports.DataReader = DataReader;
+/**
+ * Members of an array that are usable objects, and nothing else.
+ *
+ * 🔴 isRun() checks that `task` and `date` are strings; isProgress() checks `task` and
+ * `status`. Every ARRAY inside them - warningItems, accessed, artifacts, and a slot's warnings
+ * and log - reached the renderers unexamined, and these files are an explicitly open contract
+ * that other producers write. One null member raised a TypeError inside renderSections, which
+ * nothing on the path catches, so the webview kept showing its last-good HTML for ever with no
+ * error anywhere: a dashboard that has silently stopped moving.
+ */
+const objectsIn = (v) => (Array.isArray(v) ? v.filter((x) => !!x && typeof x === 'object' && !Array.isArray(x)) : []);
+const stringsIn = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+/** A history row whose arrays are safe to iterate. */
+function normaliseRun(r) {
+    return {
+        ...r,
+        warningItems: objectsIn(r.warningItems),
+        accessed: stringsIn(r.accessed),
+        artifacts: stringsIn(r.artifacts),
+    };
+}
+/** A slot whose arrays are safe to iterate. */
+function normaliseProgress(p) {
+    return {
+        ...p,
+        warnings: objectsIn(p.warnings),
+        log: objectsIn(p.log),
+        accessed: stringsIn(p.accessed),
+        artifacts: stringsIn(p.artifacts),
+    };
+}
 function isProgress(p) {
     return !!p && typeof p === 'object' && typeof p.task === 'string' && typeof p.status === 'string';
 }

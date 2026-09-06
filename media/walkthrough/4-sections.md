@@ -1,22 +1,23 @@
 ## Every section is a switch
 
-Thirteen sections, each with its own `scriptProgress.sections.*` key. Six are on by default
-(summary, activeTask, warnings, lastCompleted, runHistory, timeline); the heavier seven
-(processCalendar, quickActions, deltaTracker, metrics, warningTrends, scriptHealth, accessMap)
-start off, so you turn on only what you use.
+Fifteen sections, each with its own `scriptProgress.sections.*` key. Nine are on by default
+(summary, activeTask, warnings, lastCompleted, runHistory, processCalendar, timeline,
+scriptHealth, pendingActions) — the ones that are useful with no configuration at all. The other
+six (quickActions, deltaTracker, metrics, warningTrends, impact, accessMap) start off because each
+one needs you to tell it something first, so you turn on only what you use.
 
 [Choose Dashboard Sections](command:scriptProgress.toggleSections) is the fast way — it ticks
 the same settings.
 
 ```json
 {
-  "scriptProgress.sections.processCalendar": true,
   "scriptProgress.sections.quickActions": true,
-  "scriptProgress.sections.scriptHealth": true,
+  "scriptProgress.sections.deltaTracker": true,
+  "scriptProgress.sections.impact": true,
   "scriptProgress.dashboard.sectionOrder": [
-    "summary", "activeTask", "warnings", "quickActions",
+    "summary", "activeTask", "warnings", "pendingActions", "quickActions",
     "processCalendar", "timeline", "runHistory", "lastCompleted",
-    "deltaTracker", "metrics", "warningTrends", "scriptHealth", "accessMap"
+    "deltaTracker", "metrics", "impact", "warningTrends", "scriptHealth", "accessMap"
   ],
   "scriptProgress.dashboard.sidebarSections": ["summary", "activeTask", "warnings"],
   "scriptProgress.dashboard.collapsible": true,

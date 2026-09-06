@@ -6,8 +6,12 @@ import { esc, icon, section, empty, metricText, SectionOpts } from './html';
 import { durationVerdict, overSla } from '../logic/anomaly';
 
 export function renderLastCompleted(data: DashboardData, settings: Settings, now: Date, opts: SectionOpts): string {
+  // 🔴 Not-in-the-future, exactly as summaryFacts.lastRun does. Fixing that one and not this
+  // one put the two surfaces on DIFFERENT runs: for a single clock-skewed row the strip showed
+  // a green "last run · 1h ago" tile while the card directly beneath it read "FAILED · just
+  // now" about something else. Half a fix turned one wrong number into a contradiction.
   const sorted = data.history
-    .slice()
+    .filter(r => (parseIso(r.date)?.getTime() ?? 0) <= now.getTime())
     .sort((a, b) => (parseIso(b.date)?.getTime() ?? 0) - (parseIso(a.date)?.getTime() ?? 0));
   const last = sorted[0];
   if (!last) return section('lastCompleted', 'Last Completed', empty('No completed runs yet.'), opts);

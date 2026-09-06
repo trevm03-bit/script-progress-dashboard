@@ -4,7 +4,7 @@
 // card. No vscode import, so it is testable with plain Node.
 import * as fs from 'fs';
 import * as path from 'path';
-import { AccessGraph, DashboardData, DeltaPoint, DeltaSeries, ImpactPoint, ImpactSeries, ProgressData, RunOverlay, RunRecord } from './types';
+import { AccessGraph, DashboardData, DeltaPoint, DeltaSeries, ImpactPoint, ImpactSeries, ProgressData, RunOverlay, RunRecord, Warning } from './types';
 import { parseIso } from './logic/time';
 
 export const FILES = {
@@ -60,7 +60,7 @@ export class DataReader {
     const deltas = this.readJson<DeltaSeries>(FILES.deltas, readErrors);
     const impact = this.readJson<ImpactSeries>(FILES.impact, readErrors);
     const access = this.readJson<AccessGraph>(FILES.access, readErrors);
-    const main = isProgress(progress) ? progress : null;
+    const main = isProgress(progress) ? normaliseProgress(progress) : null;
     const tasks = this.readSlots(readErrors, main);
     // Drop overlays that no longer apply: the task reported a final state since, or no task
     // matches at all (an overlay with nothing to attach to must not live forever).
@@ -75,7 +75,7 @@ export class DataReader {
     return {
       progress: main,
       tasks,
-      history: Array.isArray(history) ? history.filter(isRun) : [],
+      history: Array.isArray(history) ? history.filter(isRun).map(normaliseRun) : [],
       // Series files are normalised POINT BY POINT, not just at the top level. A single null or
       // malformed entry — a hand edit, a half-written file, an import from elsewhere — used to
       // throw inside a renderer, and a renderer that throws blanks the whole dashboard. The one
@@ -113,7 +113,7 @@ export class DataReader {
     try { names = fs.readdirSync(slots).filter(f => f.endsWith('.json')); } catch { names = []; }
     for (const f of names) {
       const p = this.readJson<ProgressData>(`${SLOTS_DIR}/${f}`, errors);
-      if (isProgress(p)) put(p);
+      if (isProgress(p)) put(normaliseProgress(p));
     }
     if (main) put(main);
     const rank = (p: ProgressData) => (p.status === 'running' ? 0 : 1);
@@ -161,6 +161,42 @@ export class DataReader {
       return (this.lastGood[name] as T) ?? null;
     }
   }
+}
+
+/**
+ * Members of an array that are usable objects, and nothing else.
+ *
+ * 🔴 isRun() checks that `task` and `date` are strings; isProgress() checks `task` and
+ * `status`. Every ARRAY inside them - warningItems, accessed, artifacts, and a slot's warnings
+ * and log - reached the renderers unexamined, and these files are an explicitly open contract
+ * that other producers write. One null member raised a TypeError inside renderSections, which
+ * nothing on the path catches, so the webview kept showing its last-good HTML for ever with no
+ * error anywhere: a dashboard that has silently stopped moving.
+ */
+const objectsIn = <T>(v: unknown): T[] =>
+  (Array.isArray(v) ? v.filter((x): x is T => !!x && typeof x === 'object' && !Array.isArray(x)) : []);
+const stringsIn = (v: unknown): string[] =>
+  (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+
+/** A history row whose arrays are safe to iterate. */
+function normaliseRun(r: RunRecord): RunRecord {
+  return {
+    ...r,
+    warningItems: objectsIn<Warning>(r.warningItems),
+    accessed: stringsIn(r.accessed),
+    artifacts: stringsIn(r.artifacts),
+  };
+}
+
+/** A slot whose arrays are safe to iterate. */
+function normaliseProgress(p: ProgressData): ProgressData {
+  return {
+    ...p,
+    warnings: objectsIn<Warning>(p.warnings),
+    log: objectsIn<{ time: string; msg: string }>(p.log),
+    accessed: stringsIn(p.accessed),
+    artifacts: stringsIn(p.artifacts),
+  };
 }
 
 function isProgress(p: unknown): p is ProgressData {

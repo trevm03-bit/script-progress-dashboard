@@ -5,6 +5,7 @@
 // that comes back. Each block names the symptom a user would have seen.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
 const path = require('path');
 const repo = path.resolve(__dirname, '..');
 
@@ -487,6 +488,173 @@ const run = (task, iso, extra = {}) => ({ task, date: iso, success: true, elapse
   check('an exit from a previous run does not attach to a new one', exitOverlayFor(prog, stale) === null);
   check('an exit from THIS run still attaches',
     exitOverlayFor(prog, [{ task: 'T', exitCode: 1, when: '2026-09-02T10:00:01', runId: 'new' }]) !== null);
+}
+
+// 17f — the 2026-09-04 review, batch F: what the page SHOWS.
+const warn = (msg, at, over = {}) => ({ time: at, msg, ...over });
+const slot = (name, warnings, over = {}) => ({
+  task: name, status: 'running', step: 1, totalSteps: 2, label: 'Working', detail: '',
+  elapsed: 10, eta: null, warnings, log: [], metrics: {}, artifacts: [], accessed: [],
+  updatedAt: '2026-09-02T10:00:00', startedAt: '2026-09-02T09:59:00', runId: name, ...over,
+});
+
+// 🔴 The 40-card cap sliced a list built by concatenating each task in slot order, so it was "the
+// first 40 of task A", not "the 40 newest". With three scripts running, one vanished entirely and
+// the footer called its warnings "older" though they were the newest on the page.
+{
+  const noisy = slot('Noisy', Array.from({ length: 45 }, (_, i) => warn(`noise ${i}`, `2026-09-02T09:${String(i % 60).padStart(2, '0')}:00`)));
+  const quiet = slot('Quiet', [warn('THE ONE THAT MATTERS', '2026-09-02T10:00:30')]);
+  const html = render({ ...base, tasks: [noisy, quiet] }, S({}));
+  check('a quiet script is not pushed off the Warnings card by a noisy one',
+    /THE ONE THAT MATTERS/.test(html), 'the newest warning on the page was hidden');
+  const cards = (html.match(/class="warning-card"/g) || []).length;
+  check('the card is still capped', cards <= 40, `${cards} cards`);
+}
+
+// One malformed entry must not take the whole page down, and the entries are cleaned at the read
+// boundary as well as guarded here.
+{
+  const bad = slot('Bad', [null, warn('real one', '2026-09-02T10:00:00'), 'not an object']);
+  let threw = null;
+  let html = '';
+  try { html = render({ ...base, tasks: [bad] }, S({})); } catch (e) { threw = e.message; }
+  check('a null inside a warnings array does not throw out of the render', threw === null, threw || '');
+  check('the surviving warning is still shown', /real one/.test(html));
+}
+
+// 🔴 And the net under all of it: nothing between renderSections and the webview catches anything,
+// so one throwing section used to stop the post entirely and the webview showed its last-good HTML
+// for ever, with no error anywhere.
+{
+  const poisoned = { task: 'T', date: '2026-09-02T09:00:00', success: true, elapsed: 1, warnings: 0, summary: '' };
+  Object.defineProperty(poisoned, 'metrics', { get() { throw new Error('poisoned metric'); }, enumerable: true });
+  let threw = null;
+  let html = '';
+  try { html = render({ ...base, history: [poisoned] }, S({})); } catch (e) { threw = e.message; }
+  check('a throwing section does not blank the dashboard', threw === null, threw || '');
+  check('the failure is reported on the page rather than swallowed', /could not be drawn/.test(html),
+    html.slice(0, 160));
+  check('the other sections still render', (html.match(/<section /g) || []).length > 1);
+}
+
+// Pending Actions: the section whose job is "what a human has to do" hid the errors.
+{
+  const items = [];
+  // Reported in the order the finding describes: 25 info notes and THEN 5 errors. pendingActions
+  // sorts by run date, which every item of one run shares, so array order is what survives to the
+  // cap — the errors are last and used to be the ones cut.
+  for (let i = 0; i < 25; i++) items.push({ time: '2026-09-02T09:00:00', msg: `note ${i}`, actionable: true, severity: 'info' });
+  for (let i = 0; i < 5; i++) items.push({ time: '2026-09-02T09:30:00', msg: `ERROR ${i}`, actionable: true, severity: 'error' });
+  const row = { task: 'Recon', date: '2026-09-02T09:40:00', success: true, elapsed: 5, warnings: 30, summary: '', warningItems: items };
+  const html = render({ ...base, history: [row] }, S({}));
+  // 🔴 Scoped to the section that owns it. Run History's expanded row prints warningItems too, so
+  // matching the whole page would pass with Pending Actions showing nothing but info notes.
+  const pa = (html.match(/<section[^>]*data-section="pendingActions"[\s\S]*?(?=<section|$)/) || [''])[0];
+  check('an error-level finding survives the per-task cap', /ERROR 0/.test(pa),
+    'the 25 info notes filled the cap and hid every error');
+  check('the "more" line explains what Run History will show', /newest 15 runs/.test(html),
+    (html.match(/more from[^<]*/) || [])[0] || '');
+}
+
+// The wiring-gap message must not appear while the findings are on screen beside it.
+{
+  const live = slot('New Script', [warn('12 rows had no owner', '2026-09-02T10:00:00', { actionable: true })]);
+  const html = render({ ...base, tasks: [live] }, S({}));
+  check('a live run counts as "the reporter is wired up"',
+    !/Nothing is marked as needing action yet/.test(html));
+}
+
+// 🔴 Half a fix is a contradiction: summaryFacts stopped counting future-dated runs and the Last
+// Completed card did not, so the strip and the card described two different runs.
+{
+  const older = { task: 'A', date: '2026-09-02T09:00:00', success: true, elapsed: 42, warnings: 0, summary: 'fine' };
+  const future = { task: 'B', date: '2027-01-01T09:00:00', success: false, elapsed: 3, warnings: 0, summary: 'skewed clock' };
+  const html = render({ ...base, history: [older, future] }, S({}));
+  const card = (html.match(/<section[^>]*data-section="lastCompleted"[\s\S]*?(?=<section|$)/) || [''])[0];
+  check('Last Completed ignores a future-dated run, like the strip does',
+    /fine/.test(card) && !/skewed clock/.test(card), card.replace(/<[^>]+>/g, ' ').slice(0, 120));
+}
+
+// Coverage: three reasons for "no number", three different sentences.
+{
+  // A monthly process not yet due this month, whose only run is outside the 30-day window: no
+  // schedule input (pending is excluded by design) and no success input, so coverage has genuinely
+  // nothing to measure. An empty history would instead hit the "no script has reported yet" page.
+  const st = S({ processes: [{ name: 'P', label: 'P', frequency: 'monthly', dayOfMonth: 25 }] });
+  const html = render({ ...base, history: [{ task: 'P', date: '2026-07-25T09:00:00', success: true, elapsed: 1, warnings: 0, summary: '' }] }, st);
+  check('a day-one user is not told to raise weights that are already 2/2/1',
+    !/every weight is 0/.test(html), 'the zero-weights message fired with the shipped weights');
+  check('and is told what coverage is actually waiting for', /nothing to measure yet/.test(html),
+    (html.match(/tiles-note[^>]*>([^<]*)/) || [])[1] || 'no coverage note at all');
+
+  const zero = S({ processes: [{ name: 'P', label: 'P', frequency: 'daily' }] });
+  zero.coverage = { show: true, weights: { schedule: 0, success: 0, metrics: 0 } };
+  check('genuinely zero weights still say so',
+    /every weight is 0/.test(render({ ...base, history: [{ task: 'P', date: '2026-09-02T09:00:00', success: true, elapsed: 1, warnings: 0, summary: '' }] }, zero)));
+}
+
+// The printed arithmetic must be the arithmetic that was used.
+{
+  const st = S({ processes: [{ name: 'P', label: 'P', frequency: 'daily' }] });
+  const html = render({ ...base, history: [{ task: 'P', date: '2026-09-02T09:00:00', success: true, elapsed: 1, warnings: 0, summary: '' }] }, st);
+  const note = (html.match(/Coverage \d+% = [^<]*(?:<span[^>]*>[^<]*<\/span>)?/) || [''])[0];
+  const inputs = (note.match(/·/g) || []).length;
+  const weights = ((note.match(/weights ([\d/]+)/) || [])[1] || '').split('/').length;
+  check('the note prints one weight per input it lists', weights <= inputs + 1,
+    `note was: ${note}`);
+}
+
+// A sentinel is not a duration.
+{
+  const noStamp = slot('Silent', [], { updatedAt: undefined, elapsed: 60 });
+  const html = render({ ...base, tasks: [noStamp], progress: noStamp }, S({}));
+  check('a missing updatedAt does not print "Infinity min"', !/Infinity/.test(html),
+    (html.match(/[^<>]*Infinity[^<>]*/) || [])[0] || '');
+}
+
+// A failed run that was also slow must still look failed.
+{
+  const css = fs.readFileSync(path.join(repo, 'media/sections/timeline.css'), 'utf8');
+  check('the fail colour is declared after the slow colour, so a failed+slow bar reads as failed',
+    css.indexOf('.tl-bar-fail,') > css.indexOf('.tl-bar-slow {'),
+    'equal specificity means the later rule wins, and both classes can be on one bar');
+}
+
+// 🔴 The shipped Get Started walkthrough said "Thirteen sections… six on by default" while
+// package.json contributed FIFTEEN with NINE on — and named processCalendar and scriptHealth as
+// off when both are on. It is the first thing a new user reads, and nothing checked it, so it
+// drifted for three releases. A doc that restates a manifest needs a test, not a correction.
+{
+  const pkg = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8'));
+  // `contributes.configuration` is an ARRAY of titled groups here, not one object.
+  const groups = pkg.contributes.configuration;
+  const props = Object.assign({}, ...(Array.isArray(groups) ? groups : [groups]).map(g => g.properties || {}));
+  const sections = Object.entries(props)
+    .filter(([k]) => /^scriptProgress\.sections\./.test(k))
+    .map(([k, v]) => [k.split('.').pop(), v.default === true]);
+  const on = sections.filter(([, d]) => d).map(([k]) => k);
+  const off = sections.filter(([, d]) => !d).map(([k]) => k);
+  const words = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen'];
+  const md = fs.readFileSync(path.join(repo, 'media/walkthrough/4-sections.md'), 'utf8');
+
+  check('the walkthrough states the number of sections that actually ship',
+    md.includes(`${words[sections.length]} sections`), `package.json contributes ${sections.length}`);
+  check('and how many are on by default',
+    new RegExp(`${words[on.length]} are on by default`, 'i').test(md), `${on.length} are on`);
+  for (const name of on) {
+    check(`the walkthrough lists ${name} as on by default`,
+      new RegExp(`on by default[\\s\\S]{0,260}\\b${name}\\b`).test(md));
+  }
+  for (const name of off) {
+    check(`the walkthrough lists ${name} as off by default`,
+      new RegExp(`start off|The other[\\s\\S]{0,200}\\b${name}\\b`).test(md), name);
+  }
+  const order = (md.match(/"scriptProgress\.dashboard\.sectionOrder": \[([\s\S]*?)\]/) || [, ''])[1];
+  const listed = (order.match(/"([a-zA-Z]+)"/g) || []).map(x => x.replace(/"/g, ''));
+  check('the sectionOrder example lists every section',
+    sections.every(([k]) => listed.includes(k)),
+    `missing: ${sections.filter(([k]) => !listed.includes(k)).map(([k]) => k).join(', ')}`);
 }
 
 // 18 — runbook stamps local time

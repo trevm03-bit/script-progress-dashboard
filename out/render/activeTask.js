@@ -31,8 +31,16 @@ function taskCard(p, data, settings, now) {
     const stepText = p.totalSteps > 0 ? `Step ${p.step}/${p.totalSteps}` : '';
     const sub = typeof p.substep === 'number' && p.substep > 0 && p.substep < 1 && state === 'running' ? ` <span class="muted">(${Math.round(p.substep * 100)}%)</span>` : '';
     let stateNote = '';
+    // minutesSinceUpdate returns Infinity as a SENTINEL when there is no usable updatedAt - which
+    // a hand-written or third-party progress.json may well omit, the JSON being an open contract
+    // - and printing it raw put "No update for Infinity min" on the card. Say what is actually
+    // known instead.
+    const quietFor = (0, time_1.minutesSinceUpdate)(p, now);
+    const quietText = Number.isFinite(quietFor)
+        ? `No update for ${Math.round(quietFor)} min`
+        : 'No update time reported';
     if (state === 'stalled')
-        stateNote = `<div class="state-note status-warn">${(0, html_1.icon)('warning')} No update for ${Math.round((0, time_1.minutesSinceUpdate)(p, now))} min — the script may have stopped without reporting.</div>`;
+        stateNote = `<div class="state-note status-warn">${(0, html_1.icon)('warning')} ${quietText} — the script may have stopped without reporting.</div>`;
     if (state === 'exited') {
         const o = (0, time_1.exitOverlayFor)(p, data.overlays);
         stateNote = `<div class="state-note status-fail">${(0, html_1.icon)('debug-disconnect')} The process exited with code ${o?.exitCode ?? '?'} while the script still reported "running".</div>`;
