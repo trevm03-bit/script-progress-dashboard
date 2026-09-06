@@ -249,13 +249,23 @@ const VSIX_SCAN = [
   "names = [n for n in z.namelist() if not n.endswith('/')]",
   'needles = [a for a in sys.argv[2:] if a]',
   "TEXT = ('.js', '.json', '.md', '.py', '.css', '.svg', '.txt', '.xml', '.vsixmanifest', '.map', '.ts', '.yml', '.yaml', '.html')",
+  '# A PATH is unambiguous and matches as a substring. A bare account name is a word, and',
+  '# matching it loosely finds English: the CI account is called "runner", which appears in',
+  '# the changelog and in ActionRunner. Word boundaries are the difference between finding an',
+  '# identity and finding a noun.',
+  'import re',
+  'pats = []',
+  'for nd in needles:',
+  "    looks_like_path = ('/' in nd) or ('\\\\' in nd)",
+  '    pats.append((nd, re.compile(re.escape(nd.lower()) if looks_like_path',
+  "                                else r'\\b' + re.escape(nd.lower()) + r'\\b')))",
   'leaks = []',
   'for n in names:',
   '    if not n.lower().endswith(TEXT): continue',
   "    try: t = z.read(n).decode('utf-8', 'replace').lower()",
   '    except Exception: continue',
-  '    for nd in needles:',
-  '        if nd.lower() in t:',
+  '    for nd, pat in pats:',
+  '        if pat.search(t):',
   "            leaks.append(n + ' :: ' + nd)",
   '            break',
   "print(json.dumps({'names': names, 'leaks': leaks}))",
@@ -328,7 +338,13 @@ function main() {
   // --- --no-install still gets the leak gate.
   let me = '';
   try { me = os.userInfo().username || ''; } catch { /* unknown user; skip that needle */ }
-  const needles = [me.length >= 4 ? me : '', os.homedir()].filter(Boolean);
+  // A shared build account tells nobody anything, and its name is usually an ordinary word —
+  // GitHub's is literally `runner`. The home PATH is still checked on those machines, and it is
+  // the half that would actually expose someone.
+  const SHARED = ['runner', 'runneradmin', 'root', 'user', 'build', 'builder', 'vsts', 'admin',
+    'administrator', 'jenkins', 'circleci', 'travis', 'azureuser', 'ubuntu', 'vagrant'];
+  const personal = me.length >= 4 && !SHARED.includes(me.toLowerCase()) ? me : '';
+  const needles = [personal, os.homedir()].filter(Boolean);
   const scan = scanVsix(vsix, needles);
   if (scan.error) {
     check('.vsix contents readable', false, scan.error);

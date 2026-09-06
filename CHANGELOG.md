@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.7.3 — 2026-09-06
+
+The release gate's own identity scan matched a common word. GitHub's build account is called
+`runner`, and a plain substring search for it found the changelog, `ActionRunner` and the word
+"runner" in prose — so the gate failed the build over English. It now matches a bare account name
+on **word boundaries**, treats a path (which is unambiguous) as a substring, and skips the dozen
+well-known shared build accounts entirely, because their names identify nobody. The home path is
+still checked on those machines, and that is the half that would actually expose someone.
+
+Verified both ways: the tamper case that injects a real `logs/` folder still fails the gate.
+
 ## 1.7.2 — 2026-09-06
 
 A real defect CI found on its second run, and the reason `test:python` was added to it in 1.7.0:
