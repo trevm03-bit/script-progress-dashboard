@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.7.1 — 2026-09-06
+
+Two cross-platform failures the first 1.7.0 CI run found, both of them in the tests added by that
+release. Neither could be seen on Windows, and before 1.7.0 nothing in CI would have looked.
+
+- `shellKindFor` used `path.basename`, which is host-specific: on Linux a backslash is not a
+  separator, so a Windows shell path arrived whole and was classified POSIX. It splits on both
+  separators now, so what the string describes no longer depends on where it is read.
+- The complexity guard was still measuring the machine. Swapping a wall-clock budget for a
+  wall-clock ratio across two input sizes fixed the obvious half of that and kept the subtle one: a
+  constrained runner degrades super-linearly at 5,000 rows for reasons of allocation and GC rather
+  than algorithm. It now compares the render **with** the anomaly pass against the same render
+  **without** it — same size, same machine, same process — so machine speed cancels.
+
 ## 1.7.0 — 2026-09-06 — the 2026-09-04 review
 
 > **Nothing between 1.5.0 and this has ever been published.** 1.6.0 and 1.6.1 were tagged and

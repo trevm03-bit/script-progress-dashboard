@@ -24,7 +24,10 @@ export type ShellKind = 'powershell' | 'cmd' | 'posix';
 
 /** Classify a shell executable path (vscode.env.shell) into the family whose rules apply. */
 export function shellKindFor(shellPath: string | undefined, platform: NodeJS.Platform = process.platform): ShellKind {
-  const name = path.basename(String(shellPath || '')).toLowerCase().replace(/\.exe$/, '');
+  // Split on BOTH separators rather than path.basename, which is host-specific: on Linux it
+  // does not treat a backslash as a separator, so a Windows shell path came back whole and was
+  // classified as posix. What the string describes should not depend on where we read it.
+  const name = String(shellPath || '').split(/[\\/]/).pop()!.toLowerCase().replace(/\.exe$/, '');
   if (name === 'pwsh' || name === 'powershell') return 'powershell';
   if (name === 'cmd') return 'cmd';
   if (name) return 'posix';            // bash, zsh, fish, sh, git-bash and wsl on Windows too

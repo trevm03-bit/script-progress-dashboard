@@ -2,7 +2,7 @@
   "name": "script-progress-dashboard",
   "displayName": "Script Progress — Data Ops Dashboard",
   "description": "One dashboard for your recurring jobs: did it run, what did it find, and is the trend improving. Live progress, run history, failure patterns, and a map of what each script reads and writes. Local files only: no server, no telemetry.",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "publisher": "trevor-marshall",
   "license": "MIT",
   "icon": "media/icon.png",

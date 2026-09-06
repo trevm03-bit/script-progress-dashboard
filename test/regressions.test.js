@@ -181,24 +181,33 @@ const historyOfSize = (n) => {
   return out;
 };
 const sBig = S({}); sBig.runHistory = { ...sBig.runHistory, anomalies: true, filters: true };
-const timeRender = (n) => {
-  const h = historyOfSize(n);
+const sPlain = S({}); sPlain.runHistory = { ...sPlain.runHistory, anomalies: false, filters: true };
+const timeRender = (h, s) => {
   const runs = [];
   for (let i = 0; i < 3; i++) {
     const t0 = performance.now();
-    render({ ...base, history: h }, sBig);
+    render({ ...base, history: h }, s);
     runs.push(performance.now() - t0);
   }
   return runs.sort((a, b) => a - b)[1];   // median of 3, so one scheduling hiccup cannot decide it
 };
+const bigHistory = historyOfSize(5000);
 render({ ...base, history: historyOfSize(200) }, sBig);   // warm the JIT before either measurement
-const small = timeRender(1250);
-const large = timeRender(5000);
-const ratio = large / Math.max(small, 0.05);
-check('4x the runs costs ~4x the time, not ~16x (the O(n^2) render stays gone)', ratio < 8,
-  `1250 runs ${small.toFixed(1)}ms -> 5000 runs ${large.toFixed(1)}ms = ${ratio.toFixed(1)}x`);
-check('5,000 runs render without stalling (was 1396ms)', large < 3000, `${large.toFixed(0)}ms`);
-const big = historyOfSize(5000);
+// 🔴 Both measurements are the same size, on the same machine, in the same process, so machine
+// speed cancels. Comparing two input SIZES did not: a constrained CI runner degrades
+// super-linearly at 5,000 rows for reasons that are allocation and GC rather than algorithm, and
+// measured 10.8x where this machine measures 4.5x. That was the original wall-clock mistake one
+// level up -- a budget replaced by a ratio that still asked how fast the hardware is.
+//
+// `anomalies` gates both call sites of the code that went quadratic, so switching it off is the
+// control: the anomaly path used to cost 1396ms against 45ms for the same render without it.
+const withAnomalies = timeRender(bigHistory, sBig);
+const without = timeRender(bigHistory, sPlain);
+const cost = withAnomalies / Math.max(without, 0.05);
+check('the anomaly pass costs about as much as the render it sits in, not 30x (the O(n^2) is gone)',
+  cost < 6, `5,000 runs: ${withAnomalies.toFixed(1)}ms with anomalies vs ${without.toFixed(1)}ms without = ${cost.toFixed(1)}x`);
+check('5,000 runs render without stalling (was 1396ms)', withAnomalies < 3000, `${withAnomalies.toFixed(0)}ms`);
+const big = bigHistory;
 
 // 14 — uncapped lists
 const warns = []; for (let i = 0; i < 500; i++) warns.push({ time: '2026-09-02T09:00:00', msg: `account ${i} unmatched`, actionable: true });
