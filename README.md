@@ -362,7 +362,8 @@ Both are best-effort and never interrupt a run.
 Opt out with `PROGRESS_NO_USER=1` and `PROGRESS_NO_GIT=1`, or set `PROGRESS_USER` to something
 else. ⚠️ The username is a personal identifier. It is stored in `run_history.json` and, unless you
 turn it off below, in the **HTML report** — so it reaches anyone you send that to. It is
-*not* in the CSV export, and *not* in the formatted digest. `scriptProgress.report.includeIdentity`
+*not* in the CSV export, and *not* in the formatted digest. It is also in `progress.json` and
+`progress/<task>.json` while the run is live. `scriptProgress.report.includeIdentity`
 (off by default) controls whether it appears in the exported HTML report; the environment variables
 control whether it is recorded at all.
 
@@ -856,9 +857,12 @@ Two other processes start, both local and both avoidable:
 - Copying a formatted digest starts a short-lived PowerShell process on Windows to set the
   clipboard, from the absolute path in `System32`. It reads nothing and sends nothing anywhere.
 
-It records the OS username and git commit per run so history can say who ran what; both are
-opt-out (`PROGRESS_NO_USER=1`, `PROGRESS_NO_GIT=1`), and the username reaches `run_history.json`,
-the CSV export and the HTML report.
+It records the OS username and git commit per run so history can say who ran what. Both are
+opt-out (`PROGRESS_NO_USER=1`, `PROGRESS_NO_GIT=1`, or set `PROGRESS_USER` to something else).
+They are written to `progress.json`, `progress/<task>.json` and `run_history.json` — all of them
+files in your own logs folder. The only way either leaves your machine is the **HTML report**,
+and only when `scriptProgress.report.includeIdentity` is on; it is **off by default**. The CSV
+export and the formatted digest carry neither.
 
 Formatted-digest copying starts a short-lived PowerShell process on Windows to set the clipboard.
 It reads nothing and sends nothing anywhere.

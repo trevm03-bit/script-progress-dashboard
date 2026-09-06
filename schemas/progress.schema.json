@@ -61,30 +61,7 @@
       "type": "array",
       "description": "Warnings raised so far (the reporter keeps the last 10 here; run history keeps up to 20).",
       "items": {
-        "$ref": "#/definitions/warning",
-        "properties": {
-          "count": {
-            "type": "number",
-            "description": "How many things this warning is about, so a steady 310 reads as steady rather than as a new finding each run."
-          },
-          "category": {
-            "type": "string",
-            "description": "Your own word for the KIND of finding, used to group Warning Trends. Capped at 60 characters."
-          },
-          "severity": {
-            "type": "string",
-            "enum": [
-              "info",
-              "warn",
-              "error"
-            ],
-            "description": "Your judgement of how serious it is. Nothing infers this."
-          },
-          "actionable": {
-            "type": "boolean",
-            "description": "true when a HUMAN must go and do something. Actionable items appear in Pending Actions and are never trimmed to the display limit."
-          }
-        }
+        "$ref": "#/definitions/warning"
       }
     },
     "updatedAt": {
@@ -153,19 +130,9 @@
     },
     "impacts": {
       "type": "object",
-      "description": "Cumulative contributions recorded by impact(), keyed by measure name.",
+      "description": "Cumulative contributions recorded by impact(), keyed by measure name. The value is a PLAIN NUMBER: the running total this run has contributed to that measure. Per-point labels live in impact.json, not here.",
       "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "value": {
-            "type": "number",
-            "description": "What this run contributed."
-          },
-          "label": {
-            "type": "string",
-            "description": "Human-readable name for the measure."
-          }
-        }
+        "type": "number"
       }
     },
     "warningsTotal": {
@@ -189,6 +156,27 @@
         "msg": {
           "type": "string",
           "description": "Warning text, e.g. '12 rows had no customer id'."
+        },
+        "count": {
+          "type": "number",
+          "description": "How many things this warning is about, so a steady 310 reads as steady rather than as a new finding each run."
+        },
+        "category": {
+          "type": "string",
+          "description": "Your own word for the KIND of finding, used to group Warning Trends. Capped at 60 characters."
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "info",
+            "warn",
+            "error"
+          ],
+          "description": "Your judgement of how serious it is. Nothing infers this."
+        },
+        "actionable": {
+          "type": "boolean",
+          "description": "true when a HUMAN must go and do something. Actionable items appear in Pending Actions and are never trimmed to the display limit."
         }
       }
     },

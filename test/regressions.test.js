@@ -657,6 +657,27 @@ const slot = (name, warnings, over = {}) => ({
     `missing: ${sections.filter(([k]) => !listed.includes(k)).map(([k]) => k).join(', ')}`);
 }
 
+// 🔴 The Privacy section is what a security reviewer reads before approving the install, and it
+// claimed the username reaches the CSV export — which has no user column at all — while stating
+// the HTML report unconditionally, with no mention of report.includeIdentity being off by default.
+// It frightened a reader off a clean export and hid the one real path. A claim about where a
+// personal identifier goes is exactly the kind that must be checked rather than written down.
+{
+  const withUser = [{ task: 'T', date: '2026-09-02T09:00:00', success: true, elapsed: 1, warnings: 0,
+    summary: 'x', user: 'SECRETUSER', commit: 'abc1234' }];
+  check('the CSV export carries no username or commit',
+    !/SECRETUSER|abc1234/.test(historyCsv(withUser)), historyCsv(withUser).split(/\r?\n/)[0]);
+  check('the formatted digest carries no username',
+    !/SECRETUSER/.test(digestHtml({ ...base, history: withUser }, S({}), NOW)));
+  const readme = fs.readFileSync(path.join(repo, 'README.md'), 'utf8');
+  check('and the README no longer says otherwise',
+    !/the CSV export and the HTML report/.test(readme),
+    'the Privacy section still claims the username reaches the CSV export');
+  check('the README names includeIdentity where it matters',
+    /report\.includeIdentity`? is on; it is \*\*off by default\*\*/.test(readme),
+    'the HTML-report claim is stated without its opt-in');
+}
+
 // 18 — runbook stamps local time
 const rb = runbookMarkdown({ ...base, history: big.slice(0, 5) }, S({}), NOW);
 check('runbook is stamped in local time', rb.includes('2026-09-02 10:00'), (rb.match(/_Generated [^_]+_/) || [])[0]);

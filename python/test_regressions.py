@@ -563,5 +563,80 @@ class ReviewFindings20260904(unittest.TestCase):
         self.assertEqual(len(series), 3, "the series reset on every run")
 
 
+class SchemasMatchWhatIsWritten(unittest.TestCase):
+    """
+    The schemas are bound to these exact filenames by contributes.jsonValidation, so they are not
+    documentation - they are what a user sees underlined in red when they open their own log file.
+
+    🔴 `impacts` was declared as an object of {value, label} while every reporter writes a plain
+    number, so calling the documented p.impact() and then opening progress.json put a red squiggle
+    on data the extension had written and reads correctly. And `detail` was declared on the access
+    NODE while the reporter writes it on the EDGE, so the editor offered a dead field and offered
+    nothing for the real one. Nothing compared the two, so both drifted.
+    """
+
+    def schema(self, name):
+        path = REPO / "schemas" / name
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_the_files_the_reporter_writes_match_their_schemas(self):
+        d = tmp()
+        with Progress("Nightly Load", logs_dir=str(d), quiet=True) as p:
+            p.step(1, 2, "Extract")
+            p.warn("12 rows had no customer id", count=12, category="missing-id",
+                   severity="error", actionable=True)
+            p.impact("corrections_found", 1204.50, label="Corrections identified")
+            p.access("table", "sales.orders", "read", detail="5 records updated")
+            p.complete(summary="done")
+
+        progress = json.loads((d / "progress.json").read_text(encoding="utf-8"))
+        history = json.loads((d / "run_history.json").read_text(encoding="utf-8"))
+        access = json.loads((d / "access.json").read_text(encoding="utf-8"))
+
+        # impacts: a number map on both sides.
+        self.assertTrue(all(isinstance(v, (int, float)) for v in progress["impacts"].values()),
+                        f"the reporter wrote {progress['impacts']!r}")
+        for name, node in (("progress.schema.json", self.schema("progress.schema.json")["properties"]["impacts"]),
+                           ("run_history.schema.json", self.schema("run_history.schema.json")
+                            ["definitions"]["runRecord"]["properties"]["impacts"])):
+            self.assertEqual(node["additionalProperties"].get("type"), "number",
+                             f"{name} still describes impacts as something the reporter never writes")
+        self.assertTrue(all(isinstance(v, (int, float)) for v in history[0].get("impacts", {}).values()))
+
+        # access detail: written on the edge, so declared on the edge.
+        edges = [e for e in access["edges"] if e.get("detail")]
+        self.assertTrue(edges, "the reporter no longer writes detail on the edge")
+        acc = self.schema("access.schema.json")["definitions"]
+        self.assertIn("detail", acc["accessEdge"]["properties"], "the edge schema omits detail")
+        self.assertNotIn("detail", acc["accessNode"]["properties"], "the node schema still offers a dead field")
+
+        # 🔴 draft-07 ignores every keyword beside $ref, so a $ref with siblings validates nothing.
+        for name in ("progress.schema.json", "run_history.schema.json", "access.schema.json",
+                     "deltas.schema.json", "impact.schema.json"):
+            doc = self.schema(name)
+            for path, node in self._walk(doc):
+                if isinstance(node, dict) and "$ref" in node and len(node) > 1:
+                    self.fail(f"{name} at {path}: keywords beside $ref are ignored, so "
+                              f"{sorted(k for k in node if k != '$ref')} validate nothing")
+
+        # And the fields the reporter actually writes are the ones the warning definition declares.
+        warn_props = self.schema("progress.schema.json")["definitions"]["warning"]["properties"]
+        for field in ("count", "category", "severity", "actionable"):
+            self.assertIn(field, warn_props, f"the schema cannot validate or complete {field}")
+        self.assertEqual(warn_props["severity"]["enum"], ["info", "warn", "error"])
+        written = progress["warnings"][0]
+        for field in ("count", "category", "severity", "actionable"):
+            self.assertIn(field, written, f"the reporter stopped writing {field}")
+
+    def _walk(self, node, path="$"):
+        if isinstance(node, dict):
+            yield path, node
+            for k, v in node.items():
+                yield from self._walk(v, f"{path}.{k}")
+        elif isinstance(node, list):
+            for i, v in enumerate(node):
+                yield from self._walk(v, f"{path}[{i}]")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
