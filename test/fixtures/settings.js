@@ -1,47 +1,134 @@
-// A complete Settings object for tests, mirroring src/settings.ts defaults, with overrides.
+// The Settings object the PRODUCT builds from the defaults the PRODUCT ships, plus overrides.
+//
+// 🔴 This used to be a hand-written copy that claimed to mirror src/settings.ts and did not. It
+// turned on all fifteen sections where the product ships nine, set `staleHours` to 24 where the
+// product ships 168, and carried one interpreter where the product ships nine. So every render
+// test exercised a configuration no installation has — and the DEFAULT configuration, the one
+// almost every user runs, was the least-tested one. Four of the false positives the 2026-09-04
+// review confirmed were only reachable because of it.
+//
+// It is now built by calling the real readSettings() against a `vscode` stub whose
+// getConfiguration serves package.json's own declared defaults. The fixture cannot drift from the
+// product, because it is the product reading its own manifest.
 'use strict';
-const ALL = ['summary', 'activeTask', 'pendingActions', 'warnings', 'lastCompleted', 'quickActions', 'processCalendar', 'timeline', 'deltaTracker', 'metrics', 'runHistory', 'warningTrends', 'scriptHealth', 'impact', 'accessMap'];
+const path = require('path');
+const { install } = require('./vscode-stub.js');
 
-function settings(o = {}) {
-  const sections = Object.fromEntries(ALL.map(id => [id, true]));
-  Object.assign(sections, o.sections || {});
-  return {
-    problems: o.problems || [],
-    logsPath: 'logs',
-    refreshInterval: 2000,
-    staleRunningMinutes: 30,
-    sections,
-    // Same rule as src/settings.ts: listed sections first, everything else after.
-    sectionOrder: o.sectionOrder ? [...o.sectionOrder, ...ALL.filter(s => !o.sectionOrder.includes(s))] : ALL.slice(),
-    sidebarSections: o.sidebarSections || [],
-    dashboard: { collapsible: true, density: 'comfortable', ...(o.dashboard || {}) },
-    activeTask: { showLog: true, logLines: 6, showMetrics: true, showArtifacts: true, ...(o.activeTask || {}) },
-    runHistory: { maxRows: 15, filters: true, detail: true, trend: true, anomalies: true, anomalyFactor: 2, ignoreMetrics: [], ...(o.runHistory || {}) },
-    timeline: { windowHours: 24, showFailed: true, ...(o.timeline || {}) },
-    metricsExplorer: { totals: true, maxRuns: 12, metrics: [], ...(o.metricsExplorer || {}) },
-    warningTrends: { days: 14, top: 8, ...(o.warningTrends || {}) },
-    processes: o.processes || [
-      { name: 'Demo Pipeline', label: 'Demo', frequency: 'daily' },
-      { name: 'Weekly Rollup', label: 'Weekly', frequency: 'weekly' },
-      { name: 'Month-End Close', label: 'Close', frequency: 'monthly', dayOfMonth: 5 },
-    ],
-    calendar: { view: 'both', upcoming: true, compliance: true, compliancePeriods: 12, ...(o.calendar || {}) },
-    buttons: o.buttons || [
-      { label: 'Run <it>', command: 'python x.py --m ${prompt:Month}', icon: 'play', group: 'Ops', task: 'Demo Pipeline' },
-      { label: 'No confirm', command: 'echo hi', confirm: false },
-    ],
-    quickActions: { runVia: 'terminal', asTasks: true, contextMenu: true, disableWhileRunning: true, interpreters: { '.py': 'python' }, ...(o.quickActions || {}) },
-    deltaMetrics: o.deltaMetrics || [],
-    deltas: { formats: {}, thresholds: {}, points: 50, ...(o.deltas || {}) },
-    pendingActions: { maxAgeDays: 90, ...(o.pendingActions || {}) },
-    report: { includeIdentity: false, ...(o.report || {}) },
-    coverage: { show: true, weights: { schedule: 2, success: 2, metrics: 1 }, ...(o.coverage || {}) },
-    staleHours: o.staleHours || 24,
-    health: { resultDots: 5, ...(o.health || {}) },
-    accessMap: { maxNodes: 150, layout: 'force', timeWindowDays: 0, labels: 'auto', sidebarPreview: true, replay: true, ambient: true, halos: true, glyphs: true, minimap: true, starfield: true, ...(o.accessMap || {}) },
-    notifications: { onComplete: false, onFail: true, onStall: true, onWarning: false, onExit: true, onSlow: true, mirrorProgress: false, ...(o.notifications || {}) },
-    statusBar: { enabled: true, idleMode: 'last', clickAction: 'menu' },
-    badge: 'running',
+const repo = path.resolve(__dirname, '..', '..');
+const pkg = require(path.join(repo, 'package.json'));
+
+/** Every `scriptProgress.*` default, flattened out of the manifest's configuration groups. */
+const groups = pkg.contributes.configuration;
+const DECLARED = Object.assign({}, ...(Array.isArray(groups) ? groups : [groups]).map(g => g.properties || {}));
+
+const vscode = install();
+// readSettings() calls getConfiguration() itself, so the overrides for one build are parked here
+// for the duration of that call rather than threaded through a signature we do not control.
+let OVERRIDES = {};
+vscode.workspace.getConfiguration = (section) => {
+  const prefix = section ? `${section}.` : '';
+  const declared = (key) => {
+    const entry = DECLARED[`${prefix}${key}`];
+    return entry ? entry.default : undefined;
   };
+  return {
+    // Deep-copied, because readSettings hands these straight into the Settings object and a test
+    // that mutates one would otherwise poison every later call.
+    get: (key, fallback) => {
+      const v = Object.prototype.hasOwnProperty.call(OVERRIDES, key) ? OVERRIDES[key] : declared(key);
+      return v === undefined ? fallback : JSON.parse(JSON.stringify(v));
+    },
+    // Defaults only: nothing here is user-set, which is exactly what a default fixture means.
+    inspect: (key) => ({ key: `${prefix}${key}`, defaultValue: declared(key) }),
+    update: () => Promise.resolve(),
+  };
+};
+
+const { readSettings: realReadSettings } = require(path.join(repo, 'out/settings.js'));
+
+/** Run the product's own settings reader with these raw `scriptProgress.*` values in place. */
+function readSettings(overrides = {}) {
+  OVERRIDES = overrides;
+  try { return realReadSettings(); } finally { OVERRIDES = {}; }
 }
-module.exports = { settings, ALL };
+
+/** Deep-merge overrides onto the shipped defaults, one level into plain objects. */
+function merge(base, over) {
+  const out = { ...base };
+  for (const [k, v] of Object.entries(over || {})) {
+    const cur = out[k];
+    out[k] = (v && typeof v === 'object' && !Array.isArray(v) && cur && typeof cur === 'object' && !Array.isArray(cur))
+      ? { ...cur, ...v }
+      : v;
+  }
+  return out;
+}
+
+// 🔴 Some overrides are not values the product passes through — they are inputs it TRANSFORMS,
+// and merging them onto the finished object skips the transformation. `sectionOrder` is the one
+// that bit: readSettings appends every unlisted section after the listed ones, so a test setting
+// ['runHistory','summary'] should get seventeen entries and a result-merge gave it two. These go
+// in as CONFIGURATION and come back through the real reader; everything else is pass-through and
+// can be merged.
+const CONFIG_KEYS = {
+  sectionOrder: (v) => [['dashboard.sectionOrder', v]],
+  sidebarSections: (v) => [['dashboard.sidebarSections', v]],
+  sections: (v) => Object.entries(v).map(([id, on]) => [`sections.${id}`, on]),
+  processes: (v) => [['processCalendar.processes', v]],
+  buttons: (v) => [['quickActions.buttons', v]],
+  deltaMetrics: (v) => [['deltaTracker.metrics', v]],
+};
+
+/**
+ * A Settings object as the product would build it, with `o` applied.
+ *
+ * A test that needs a section the product ships OFF must say so: `S({ sections: { impact: true } })`.
+ * That is the point — if a test needs a non-default configuration, the test should be the thing
+ * that says which, rather than every test silently running one.
+ */
+function settings(o = {}) {
+  const overrides = {};
+  const rest = {};
+  for (const [k, v] of Object.entries(o)) {
+    if (CONFIG_KEYS[k] && v !== undefined) for (const [ck, cv] of CONFIG_KEYS[k](v)) overrides[ck] = cv;
+    else rest[k] = v;
+  }
+  const s = merge(readSettings(overrides), rest);
+  // The pure renderers take `problems` from settings; readSettings computes it from the same
+  // inputs, so a test only supplies its own when the problems ARE the subject.
+  if (o.problems) s.problems = o.problems;
+  return s;
+}
+
+/** Every section switched on, for the tests whose subject is the full page. */
+settings.allSections = (o = {}) => {
+  const s = settings(o);
+  s.sections = Object.fromEntries(Object.keys(s.sections).map(id => [id, true]));
+  if (o.sections) Object.assign(s.sections, o.sections);
+  return s;
+};
+
+/**
+ * The demo configuration: every section on, plus the example processes and buttons the old
+ * hand-written fixture supplied to every test whether it wanted them or not.
+ *
+ * Kept for the suites whose subject IS the full page. The difference from before is that a test
+ * now has to ASK for it, so a test that does not ask exercises what users actually run.
+ */
+settings.demo = (o = {}) => settings.allSections({
+  processes: [
+    { name: 'Demo Pipeline', label: 'Demo', frequency: 'daily' },
+    { name: 'Weekly Rollup', label: 'Weekly', frequency: 'weekly' },
+    { name: 'Month-End Close', label: 'Close', frequency: 'monthly', dayOfMonth: 5 },
+  ],
+  buttons: [
+    { label: 'Run <it>', command: 'python x.py --m ${prompt:Month}', icon: 'play', group: 'Ops', task: 'Demo Pipeline' },
+    { label: 'No confirm', command: 'echo hi', confirm: false },
+  ],
+  ...o,
+});
+
+/** Section ids, in the order the manifest declares them. */
+const ALL = Object.keys(settings().sections);
+
+module.exports = { settings, ALL, DECLARED };

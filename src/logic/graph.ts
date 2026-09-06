@@ -39,12 +39,33 @@ export function buildGraph(access: AccessGraph | null, tasks: ProgressData[], ma
   const recent = (iso: string) => !cutoff || (parseIso(iso)?.getTime() ?? 0) >= cutoff;
 
   const inWindow = access.nodes.filter(n => n && n.id && (recent(n.lastSeen) || liveIds.has(n.id)));
-  // Keep task nodes, then the most recently seen resources, up to the cap.
-  const sorted = [...inWindow].sort((a, b) => {
-    if ((a.type === 'task') !== (b.type === 'task')) return a.type === 'task' ? -1 : 1;
-    return (parseIso(b.lastSeen)?.getTime() ?? 0) - (parseIso(a.lastSeen)?.getTime() ?? 0);
-  });
-  const kept = sorted.slice(0, Math.max(1, maxNodes));
+
+  // 🔴 Tasks get a SHARE of the budget, not all of it.
+  //
+  // Sorting every task ahead of every resource and then slicing to the cap means that once there
+  // are `maxNodes` task names, `kept` is all tasks and no resources - and the edge filter below
+  // needs both ends, so it drops every edge. The Access Map renders empty and stays empty, no
+  // matter how many resources the scripts report, which is the opposite of what a cap is for.
+  //
+  // This is the same defect as the one fixed in the reporter's own access() cap (F021) and in the
+  // Node reporter: the fifth place this shape has turned up. Writing it down as a rule did not
+  // stop it, so the rule is now the code in both halves - the writer caps task nodes at 50, and
+  // this reader refuses to spend more than a third of its budget on them however many arrive
+  // (from an older file, or from another producer: these files are an open contract).
+  const byRecent = (a: AccessNode, b: AccessNode) =>
+    (parseIso(b.lastSeen)?.getTime() ?? 0) - (parseIso(a.lastSeen)?.getTime() ?? 0);
+  const cap = Math.max(1, maxNodes);
+  const isTask = (n: AccessNode) => n.type === 'task';
+  // A running task is always drawn - it is the thing the user is watching - so it is taken first
+  // and does not compete for the task share.
+  const live = inWindow.filter(n => liveIds.has(n.id)).sort(byRecent).slice(0, cap);
+  const liveKept = new Set(live.map(n => n.id));
+  const rest = inWindow.filter(n => !liveKept.has(n.id));
+  const taskBudget = Math.max(0, Math.min(Math.ceil(cap / 3), cap - live.length));
+  const tasks_ = rest.filter(isTask).sort(byRecent).slice(0, taskBudget);
+  const resources = rest.filter(n => !isTask(n)).sort(byRecent)
+    .slice(0, Math.max(0, cap - live.length - tasks_.length));
+  const kept = [...live, ...tasks_, ...resources].slice(0, cap);
   const keptIds = new Set(kept.map(n => n.id));
   const dropped = access.nodes.length - kept.length;
 
