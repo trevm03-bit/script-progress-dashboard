@@ -579,6 +579,23 @@ class SchemasMatchWhatIsWritten(unittest.TestCase):
         path = REPO / "schemas" / name
         return json.loads(path.read_text(encoding="utf-8"))
 
+    def test_the_reporter_version_matches_the_extension(self):
+        """
+        The reporter is shipped inside the extension and its CLI banner prints __version__, so the
+        two must move together.
+
+        🔴 They did not: the docstring said "v1.3" for three releases after __version__ had
+        moved on, and that line was what a user diagnosing a reporter problem read. Fixing the
+        banner without a check just moves where the next drift shows up.
+        """
+        import progress as reporter
+        pkg = json.loads((REPO / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual(reporter.__version__, pkg["version"],
+                         "python/progress.py and package.json disagree about the version")
+        changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+        self.assertIn(f"## {pkg['version']} ", changelog,
+                      f"CHANGELOG.md has no heading for {pkg['version']}")
+
     def test_the_files_the_reporter_writes_match_their_schemas(self):
         d = tmp()
         with Progress("Nightly Load", logs_dir=str(d), quiet=True) as p:

@@ -70,7 +70,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 __all__ = ["Progress", "resolve_logs_dir", "RunDisplaced"]
-__version__ = "1.6.1"
+__version__ = "1.7.0"
 
 # Windows consoles default to cp1252; a stray non-ASCII character in a summary must never
 # crash the script that is doing the real work.

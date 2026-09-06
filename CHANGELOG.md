@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — the 2026-09-04 review
+## 1.7.0 — 2026-09-06 — the 2026-09-04 review
 
 > **Nothing between 1.5.0 and this has ever been published.** 1.6.0 and 1.6.1 were tagged and
 > stopped; the Marketplace still serves 1.5.0. This entry describes one pass of fixes over both.
