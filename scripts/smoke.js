@@ -13,13 +13,31 @@
  *   node scripts/smoke.js --keep          leave the profile behind for inspection
  *   node scripts/smoke.js --no-install    skip VS Code (assert on the reporter + renderers only)
  *
- * Exits non-zero on the first failed assertion. Registered in package.json as `npm run smoke`.
+ * Exits non-zero if any assertion failed. Registered in package.json as `npm run smoke`.
+ *
+ * 🔴 THREE THINGS THIS GATE GOT WRONG BEFORE, all of which made it report clean when it was not:
+ *
+ *   1. It only ever asked whether NAMED FILES WERE PRESENT, from a five-name allowlist, and then
+ *      ran every render assertion against the SOURCE tree. A tampered package with 14 runtime
+ *      assets deleted — codicons, the Access Map, the walkthrough, the Node reporter — still
+ *      printed "28/28 checks passed / Smoke test clean". So did one with all 53 compiled modules
+ *      removed and extension.js truncated to zero bytes. The gate carried no evidence at all
+ *      about the artefact it had just installed.
+ *   2. It could not say what should NOT be in the package. 1.6.1 shipped the developer's own
+ *      logs/ folder — the OS username and an internal commit SHA — to a public Marketplace
+ *      listing, and passed 28/28.
+ *   3. Two of its named assertions passed with the feature they name switched off entirely,
+ *      because they matched loose strings against the WHOLE PAGE. See the section-scoping below.
+ *
+ * The rule those add up to: an assertion must be able to FAIL. If you add one, delete the thing
+ * it is meant to catch and watch it go red before you believe it.
  */
 'use strict';
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const vm = require('vm');
 
 const repo = path.resolve(__dirname, '..');
 const args = process.argv.slice(2);
@@ -32,8 +50,55 @@ const check = (name, ok, detail = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  — ${detail}` : ''}`);
 };
 
-/**
- * Where VS Code is, and HOW to drive its command line.
+// 🔴 Three states, not two. `--no-install` used to make the package-integrity checks quietly
+// vanish, and one of them even printed PASS on the strength of the flag alone. A check that did
+// not run is reported as SKIP and counted separately, so a green summary can never stand for
+// "the package was verified" when nothing looked at the package.
+const skipped = [];
+const skip = (name, why) => { skipped.push({ name, why }); console.log(`SKIP  ${name}  — ${why}`); };
+
+const existsSafe = (p) => { try { return fs.existsSync(p); } catch { return false; } };
+
+/* ------------------------------------------------------------------ the throwaway profile
+ *
+ * 🔴 Cleanup hangs off process 'exit', NOT off a `finally`. It used to live in a finally block
+ * while both failure paths called process.exit(1) — and process.exit does not run finally. So on
+ * exactly the runs where the gate FAILED, which are the runs a developer repeats while fixing
+ * things, a 2.2 MB VS Code profile was left in %TEMP% forever and the path was never printed
+ * (the only message naming it was on the success path). An 'exit' handler runs for a normal
+ * return, for process.exit(), and for an uncaught throw.
+ */
+let profile = fs.mkdtempSync(path.join(os.tmpdir(), 'spd-smoke-'));
+process.on('exit', () => {
+  if (!profile) return;
+  const at = profile;
+  profile = null;
+  if (KEEP) { console.log(`profile kept at ${at}`); return; }
+  try { fs.rmSync(at, { recursive: true, force: true }); } catch (e) {
+    console.error(`could not remove ${at}: ${e.message}`);
+  }
+});
+
+/** Sweep profiles leaked by older runs of this gate, back when failure skipped cleanup. */
+function sweepStaleProfiles() {
+  const cutoff = Date.now() - 6 * 3600 * 1000;
+  let swept = 0;
+  try {
+    for (const name of fs.readdirSync(os.tmpdir())) {
+      if (!name.startsWith('spd-smoke-')) continue;
+      const p = path.join(os.tmpdir(), name);
+      if (p === profile) continue;
+      try {
+        if (fs.statSync(p).mtimeMs > cutoff) continue;
+        fs.rmSync(p, { recursive: true, force: true });
+        swept++;
+      } catch { /* someone else's, or in use — leave it */ }
+    }
+  } catch { /* no tmpdir listing; not worth failing the gate over */ }
+  if (swept) console.log(`swept ${swept} stale smoke profile(s) from ${os.tmpdir()}`);
+}
+
+/* ------------------------------------------------------------------ finding VS Code
  *
  * 🔴 `Code.exe --install-extension` does not work. Code.exe is the GUI binary: on Windows it
  * hands the arguments to a detached window and never writes to stdout, so spawnSync sits there
@@ -44,30 +109,61 @@ const check = (name, ok, detail = '') => {
  *     Code.exe <install>\resources\app\out\cli.js %*
  *
  * With that environment variable the same executable runs as plain Node against the CLI entry
- * point, stays attached to the console, and exits with a status. Driving it that way also avoids
- * going through a .cmd, which Node 20+ refuses to spawn without a shell (CVE-2024-27980) — and a
- * shell would mean quoting every path, in a repo whose folder has a space in it.
+ * point, stays attached to the console, and exits with a status.
+ *
+ * 🔴 And on Windows, a `code` on PATH is NOT something to spawn. `where code` returns
+ * `<install>\bin\code` first — an extensionless bash shim Windows cannot execute (measured:
+ * ENOENT) — and `<install>\bin\code.cmd` second, which Node 20+ refuses to spawn without a shell
+ * (measured: EINVAL, CVE-2024-27980). The old fallback took that first line, reported
+ * "PASS VS Code CLI found", and then died with an uncaught ENOENT at check 3 of 28: no FAIL
+ * line, no cleanup, no readable exit — on every machine whose VS Code is not in one of three
+ * hardcoded directories (Insiders, a custom install dir, an enterprise D:\ install, scoop,
+ * chocolatey, a portable unzip). A shim is now used only as a POINTER to the install root.
  */
-function findCode() {
-  const local = process.env.LOCALAPPDATA || '';
-  const roots = [
-    path.join(local, 'Programs', 'Microsoft VS Code'),
-    'C:\\Program Files\\Microsoft VS Code',
-    'C:\\Program Files (x86)\\Microsoft VS Code',
-  ];
-  for (const root of roots) {
-    const exe = path.join(root, 'Code.exe');
-    try { if (!fs.existsSync(exe)) continue; } catch { continue; }
-    const cli = findCliJs(root);
-    if (cli) return { exe, cli };
+function pathShims() {
+  const cmd = process.platform === 'win32' ? 'where' : 'which';
+  const found = [];
+  for (const name of ['code', 'code-insiders']) {
+    let r;
+    try { r = spawnSync(cmd, [name], { encoding: 'utf-8', windowsHide: true }); } catch { continue; }
+    for (const line of ((r && r.stdout) || '').split(/\r?\n/)) {
+      const p = line.trim();
+      if (p && existsSafe(p)) found.push(p);
+    }
   }
-  // POSIX: the `code` shim is a shell script that already runs the CLI and exits.
-  const posix = ['/usr/bin/code', '/usr/local/bin/code', '/snap/bin/code',
+  return found;
+}
+
+function windowsRoots() {
+  const local = process.env.LOCALAPPDATA || '';
+  const pf = process.env.ProgramW6432 || process.env.ProgramFiles || 'C:\\Program Files';
+  const pf86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+  const roots = [];
+  for (const base of [local && path.join(local, 'Programs'), pf, pf86]) {
+    if (!base) continue;
+    for (const n of ['Microsoft VS Code', 'Microsoft VS Code Insiders']) roots.push(path.join(base, n));
+  }
+  // A PATH shim lives at <install>/bin/code, so its grandparent is the install root. Follow it
+  // to the root; never spawn the shim itself.
+  for (const shim of pathShims()) roots.push(path.resolve(path.dirname(shim), '..'));
+  return [...new Set(roots)];
+}
+
+function findCode() {
+  if (process.platform === 'win32') {
+    for (const root of windowsRoots()) {
+      const exe = path.join(root, 'Code.exe');
+      if (!existsSafe(exe)) continue;
+      const cli = findCliJs(root);
+      if (cli) return { exe, cli };
+    }
+    return null;
+  }
+  // POSIX: the `code` shim really is an executable shell script that runs the CLI and exits.
+  const posix = [...pathShims(), '/usr/bin/code', '/usr/local/bin/code', '/snap/bin/code',
     '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code'];
-  for (const c of posix) { try { if (fs.existsSync(c)) return { exe: c, cli: null }; } catch { /* keep looking */ } }
-  const which = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['code'], { encoding: 'utf-8' });
-  const first = (which.stdout || '').split(/\r?\n/).find(Boolean);
-  return first && fs.existsSync(first.trim()) ? { exe: first.trim(), cli: null } : null;
+  for (const c of posix) if (existsSafe(c)) return { exe: c, cli: null };
+  return null;
 }
 
 /**
@@ -77,66 +173,210 @@ function findCode() {
  */
 function findCliJs(root) {
   const direct = path.join(root, 'resources', 'app', 'out', 'cli.js');
-  try { if (fs.existsSync(direct)) return direct; } catch { /* keep looking */ }
+  if (existsSafe(direct)) return direct;
   let names = [];
   try { names = fs.readdirSync(root, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name); } catch { return null; }
   for (const n of names) {
     const p = path.join(root, n, 'resources', 'app', 'out', 'cli.js');
-    try { if (fs.existsSync(p)) return p; } catch { /* keep looking */ }
+    if (existsSafe(p)) return p;
   }
   return null;
 }
 
-/** Run the VS Code CLI and return everything it printed. */
+/**
+ * Run the VS Code CLI and return what it printed.
+ *
+ * 🔴 Never throws. This was `if (r.error) throw r.error`, which took the entire gate down with a
+ * raw stack trace one line under a green PASS. A CLI that will not run is a FAILED gate, not a
+ * crashed one — a crash reports nothing about the other 25 checks.
+ */
 function runCode(code, argv) {
-  const args = code.cli ? [code.cli, ...argv] : argv;
-  const r = spawnSync(code.exe, args, {
-    encoding: 'utf-8',
-    timeout: 240000,
-    windowsHide: true,
-    env: code.cli ? { ...process.env, ELECTRON_RUN_AS_NODE: '1', VSCODE_DEV: '' } : process.env,
-  });
-  if (r.error) throw r.error;
-  return `${r.stdout || ''}${r.stderr || ''}`;
+  const a = code.cli ? [code.cli, ...argv] : argv;
+  let r;
+  try {
+    r = spawnSync(code.exe, a, {
+      encoding: 'utf-8',
+      timeout: 240000,
+      windowsHide: true,
+      env: code.cli ? { ...process.env, ELECTRON_RUN_AS_NODE: '1', VSCODE_DEV: '' } : process.env,
+    });
+  } catch (e) {
+    return { ok: false, out: `spawn threw: ${e.message}` };
+  }
+  if (r.error) return { ok: false, out: `${r.error.code || 'spawn failed'}: ${r.error.message}` };
+  return { ok: true, out: `${r.stdout || ''}${r.stderr || ''}` };
 }
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'spd-smoke-'));
-const ws = path.join(root, 'ws');
-const logs = path.join(ws, 'logs');
-fs.mkdirSync(path.join(ws, '.vscode'), { recursive: true });
-fs.mkdirSync(logs, { recursive: true });
+/* ------------------------------------------------------------------ what the package must hold */
 
-try {
+const strip = (p) => String(p).replace(/^\.\//, '');
+
+/**
+ * The list of files that must be in the package, derived where possible from the extension's OWN
+ * manifest rather than typed out here. A new snippet, schema or walkthrough step is then gated
+ * automatically; a hand-maintained allowlist is how a five-name check came to stand in for a
+ * whole package.
+ */
+function requiredFiles(pkg) {
+  const c = pkg.contributes || {};
+  const need = new Set([
+    'package.json', 'out/extension.js',
+    'media/dashboard.css', 'media/dashboard.js', 'media/accessMap.js',
+    'media/codicons/codicon.css', 'media/codicons/codicon.ttf',
+    'media/sections/metrics.css', 'media/sections/timeline.css', 'media/sections/warningTrends.css',
+    'python/progress.py', 'reporters/progress.js',
+  ]);
+  if (pkg.icon) need.add(strip(pkg.icon));
+  if (pkg.main) need.add(strip(pkg.main));
+  for (const v of (c.viewsContainers && c.viewsContainers.activitybar) || []) if (v.icon) need.add(strip(v.icon));
+  for (const s of c.snippets || []) if (s.path) need.add(strip(s.path));
+  for (const j of c.jsonValidation || []) if (j.url && !/^https?:/i.test(j.url)) need.add(strip(j.url));
+  for (const w of c.walkthroughs || []) {
+    for (const s of w.steps || []) {
+      for (const k of ['markdown', 'image', 'svg']) {
+        const m = s.media && s.media[k];
+        if (typeof m === 'string') need.add(strip(m));
+      }
+    }
+  }
+  return [...need];
+}
+
+/** Read the .vsix itself: every entry, plus any file whose text contains a build-machine needle. */
+const VSIX_SCAN = [
+  'import json, sys, zipfile',
+  'z = zipfile.ZipFile(sys.argv[1])',
+  "names = [n for n in z.namelist() if not n.endswith('/')]",
+  'needles = [a for a in sys.argv[2:] if a]',
+  "TEXT = ('.js', '.json', '.md', '.py', '.css', '.svg', '.txt', '.xml', '.vsixmanifest', '.map', '.ts', '.yml', '.yaml', '.html')",
+  'leaks = []',
+  'for n in names:',
+  '    if not n.lower().endswith(TEXT): continue',
+  "    try: t = z.read(n).decode('utf-8', 'replace').lower()",
+  '    except Exception: continue',
+  '    for nd in needles:',
+  '        if nd.lower() in t:',
+  "            leaks.append(n + ' :: ' + nd)",
+  '            break',
+  "print(json.dumps({'names': names, 'leaks': leaks}))",
+].join('\n');
+
+function scanVsix(vsix, needles) {
+  const r = spawnSync('python', ['-c', VSIX_SCAN, vsix, ...needles], { encoding: 'utf-8', timeout: 120000 });
+  if (r.error || r.status !== 0) return { error: (r.error && r.error.message) || (r.stderr || '').trim().slice(0, 200) };
+  try { return JSON.parse(r.stdout); } catch (e) { return { error: `unreadable scan output: ${e.message}` }; }
+}
+
+function walk(dir) {
+  const out = [];
+  const stack = [dir];
+  while (stack.length) {
+    const d = stack.pop();
+    let entries = [];
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) stack.push(p); else out.push(p);
+    }
+  }
+  return out;
+}
+
+/**
+ * Audit the compiled modules inside the INSTALLED package: non-empty, actually parses, and every
+ * relative require it makes resolves to a file that shipped. This is what catches the two
+ * tampering cases the old gate waved through — 53 modules deleted, and extension.js truncated to
+ * zero bytes. It deliberately does not `require()` them: extension.js imports `vscode`, which
+ * only exists inside the host, and a stub for it would be one more thing to keep true.
+ */
+function auditModules(outDir) {
+  const files = walk(outDir).filter(f => f.endsWith('.js'));
+  const bad = [];
+  for (const f of files) {
+    const rel = path.relative(outDir, f).replace(/\\/g, '/');
+    let src;
+    try { src = fs.readFileSync(f, 'utf-8'); } catch (e) { bad.push(`${rel}: unreadable (${e.message})`); continue; }
+    if (!src.trim()) { bad.push(`${rel}: empty`); continue; }
+    try { new vm.Script(src, { filename: f }); } catch (e) { bad.push(`${rel}: will not parse (${e.message})`); continue; }
+    for (const m of src.matchAll(/require\(\s*["'](\.[^"']+)["']\s*\)/g)) {
+      const target = path.resolve(path.dirname(f), m[1]);
+      if (!existsSafe(target) && !existsSafe(`${target}.js`) && !existsSafe(path.join(target, 'index.js'))) {
+        bad.push(`${rel}: requires missing ${m[1]}`);
+      }
+    }
+  }
+  return { count: files.length, bad };
+}
+
+/* ------------------------------------------------------------------ the gate */
+
+function main() {
+  sweepStaleProfiles();
+  const ws = path.join(profile, 'ws');
+  const logs = path.join(ws, 'logs');
+  fs.mkdirSync(path.join(ws, '.vscode'), { recursive: true });
+  fs.mkdirSync(logs, { recursive: true });
+
   // ---------------------------------------------------------------- package + install
   const pkg = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf-8'));
   const vsix = path.join(repo, 'dist', `${pkg.name}-${pkg.version}.vsix`);
-  check(`packaged ${path.basename(vsix)} exists`, fs.existsSync(vsix),
-    fs.existsSync(vsix) ? '' : 'run `npm run package` first');
-  if (!fs.existsSync(vsix)) process.exit(1);
+  check(`packaged ${path.basename(vsix)} exists`, existsSafe(vsix),
+    existsSafe(vsix) ? '' : 'run `npm run package` first');
+  if (!existsSafe(vsix)) return;
+
+  // --- what the artefact must NOT contain. Runs in both modes: it reads the .vsix directly, so
+  // --- --no-install still gets the leak gate.
+  let me = '';
+  try { me = os.userInfo().username || ''; } catch { /* unknown user; skip that needle */ }
+  const needles = [me.length >= 4 ? me : '', os.homedir()].filter(Boolean);
+  const scan = scanVsix(vsix, needles);
+  if (scan.error) {
+    check('.vsix contents readable', false, scan.error);
+  } else {
+    const stray = scan.names.filter(n => /^extension\/(logs|\.git|\.github|node_modules|src|test|dist|\.backups|\.harness|__pycache__)\//.test(n));
+    check('no developer-only folders in the package', !stray.length,
+      stray.length ? `${stray.length}: ${stray.slice(0, 4).join(', ')}` : `${scan.names.length} entries`);
+    check('package carries no build-machine identity', !scan.leaks.length,
+      scan.leaks.length ? scan.leaks.slice(0, 3).join(' | ') : `checked ${needles.join(', ') || '(none)'}`);
+  }
 
   let reporterInPackage = path.join(repo, 'python', 'progress.py');
-  if (!NO_INSTALL) {
+  let installed = null;
+  if (NO_INSTALL) {
+    for (const n of ['extension installs into a clean profile', 'reporter ships inside the package',
+      'every file the manifest declares is in the package', 'packaged modules are complete and parse',
+      'render assertions run against the PACKAGED code']) skip(n, '--no-install');
+  } else {
     const code = findCode();
-    check('VS Code CLI found', !!code, code ? (code.cli || code.exe) : 'set PATH or install VS Code');
+    check('VS Code CLI found', !!code, code ? (code.cli || code.exe) : 'no Code.exe with a cli.js in %LOCALAPPDATA%\\Programs, %ProgramFiles%, or beside a `code` on PATH');
     if (code) {
-      const out = runCode(code, [
-        '--user-data-dir', path.join(root, 'data'),
-        '--extensions-dir', path.join(root, 'ext'),
+      const r = runCode(code, [
+        '--user-data-dir', path.join(profile, 'data'),
+        '--extensions-dir', path.join(profile, 'ext'),
         '--install-extension', vsix, '--force',
       ]);
-      check('extension installs into a clean profile', /successfully installed/i.test(out), out.trim().split('\n').pop());
-      const installed = path.join(root, 'ext', `${pkg.publisher}.${pkg.name}-${pkg.version}`);
-      check('install folder present', fs.existsSync(installed), installed);
-      // The reporter people are told to copy is the one INSIDE the package, not the source tree.
-      const packed = path.join(installed, 'python', 'progress.py');
-      check('reporter ships inside the package', fs.existsSync(packed));
-      if (fs.existsSync(packed)) {
-        reporterInPackage = packed;
-        const a = fs.readFileSync(packed, 'utf-8'), b = fs.readFileSync(path.join(repo, 'python', 'progress.py'), 'utf-8');
-        check('packaged reporter matches the source', a === b);
-      }
-      for (const need of ['out/extension.js', 'media/dashboard.css', 'media/dashboard.js', 'schemas', 'snippets']) {
-        check(`packaged: ${need}`, fs.existsSync(path.join(installed, need)));
+      check('extension installs into a clean profile', r.ok && /successfully installed/i.test(r.out),
+        r.out.trim().split('\n').pop());
+      const dir = path.join(profile, 'ext', `${pkg.publisher}.${pkg.name}-${pkg.version}`);
+      check('install folder present', existsSafe(dir), dir);
+      if (existsSafe(dir)) {
+        installed = dir;
+        // The reporter people are told to copy is the one INSIDE the package, not the source tree.
+        const packed = path.join(dir, 'python', 'progress.py');
+        check('reporter ships inside the package', existsSafe(packed));
+        if (existsSafe(packed)) {
+          reporterInPackage = packed;
+          const a = fs.readFileSync(packed, 'utf-8'), b = fs.readFileSync(path.join(repo, 'python', 'progress.py'), 'utf-8');
+          check('packaged reporter matches the source', a === b);
+        }
+        const missing = requiredFiles(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf-8')))
+          .filter(f => !existsSafe(path.join(dir, f)));
+        check('every file the manifest declares is in the package', !missing.length,
+          missing.length ? missing.join(', ') : `${requiredFiles(pkg).length} checked`);
+
+        const mods = auditModules(path.join(dir, 'out'));
+        check('packaged modules are complete and parse', mods.count > 40 && !mods.bad.length,
+          mods.bad.length ? `${mods.bad.length} bad: ${mods.bad.slice(0, 3).join(' | ')}` : `${mods.count} modules`);
       }
     }
   }
@@ -188,12 +428,26 @@ except KeyError: pass
   });
   check('scripts ran against the packaged reporter', py.status === 0, (py.stderr || '').trim().slice(0, 160));
   for (const f of ['progress.json', 'run_history.json', 'deltas.json', 'impact.json', 'access.json']) {
-    check(`wrote ${f}`, fs.existsSync(path.join(logs, f)));
+    check(`wrote ${f}`, existsSafe(path.join(logs, f)));
   }
 
   // ---------------------------------------------------------------- render it for real
-  const { DataReader } = require(path.join(repo, 'out/dataReader.js'));
-  const { renderSections } = require(path.join(repo, 'out/render/dashboard.js'));
+  //
+  // 🔴 From the INSTALLED tree, not the source tree. Rendering the repo's own out/ told you
+  // nothing whatsoever about the package this gate had just installed — which is how a package
+  // with every compiled module deleted still passed the eleven assertions below.
+  const outDir = installed ? path.join(installed, 'out') : path.join(repo, 'out');
+  if (installed) check('render assertions run against the PACKAGED code', true, outDir);
+  else if (!NO_INSTALL) check('render assertions run against the PACKAGED code', false,
+    'the package was NOT verified — falling back to the source tree');
+  let DataReader, renderSections;
+  try {
+    ({ DataReader } = require(path.join(outDir, 'dataReader.js')));
+    ({ renderSections } = require(path.join(outDir, 'render/dashboard.js')));
+  } catch (e) {
+    check('the packaged renderers load', false, `${outDir}: ${e.message.split('\n')[0]}`);
+    return;
+  }
   const { settings: S } = require(path.join(repo, 'test/fixtures/settings.js'));
   const cfg = JSON.parse(fs.readFileSync(path.join(ws, '.vscode', 'settings.json'), 'utf-8'));
   const data = new DataReader(logs).readAll();
@@ -206,27 +460,69 @@ except KeyError: pass
   const html = renderSections(data, settings, { now: new Date(), surface: 'panel', trusted: true, collapsed: [] });
   const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
+  /**
+   * 🔴 Scope every assertion to the section that owns it.
+   *
+   * Two checks here used to match loose strings against the whole page, and both passed with the
+   * feature they name switched off entirely: "missing an owner flag" is also printed by the
+   * Warnings card, so the Pending Actions check passed with Pending Actions gone; and "not
+   * needed" only ever appears on a DISABLED button, so asserting its ABSENCE passed when Quick
+   * Actions rendered no buttons at all — or was not on the page.
+   */
+  const sections = new Map();
+  for (const part of html.split(/(?=<section\b)/)) {
+    const m = part.match(/^<section[^>]*data-section="([^"]+)"/);
+    if (m) sections.set(m[1], part);
+  }
+  const sectionText = (id) => (sections.get(id) || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+
+  for (const id of ['pendingActions', 'quickActions', 'impact', 'deltaTracker', 'processCalendar', 'runHistory']) {
+    check(`section on the page: ${id}`, sections.has(id));
+  }
+
   check('three runs recorded', data.history.length === 3, `got ${data.history.length}`);
-  check('actionable finding is pending', /missing an owner flag/.test(text));
+
+  const pa = sectionText('pendingActions');
+  check('the actionable finding is in Pending Actions',
+    /missing an owner flag/.test(pa) && !/Nothing is marked as needing action/.test(pa),
+    pa.slice(0, 110) || 'section absent');
+
   check('the crash was categorised', data.history.some(r => r.category === 'KeyError'));
-  check('impact total shown', /1,204\.5/.test(text));
-  check('delta pair shown', /found .* resolved to/.test(text));
-  check('downstream is blocked', /waiting on Upstream Extract/.test(text));
-  check('phased process is partial', /1 of 2 phases/.test(text));
-  check('button enabled while issues > 0', !/not needed/.test(text));
+  check('impact total shown', /1,204\.5/.test(sectionText('impact')));
+  check('delta pair shown', /found .* resolved to/.test(sectionText('deltaTracker')));
+  check('downstream is blocked', /waiting on Upstream Extract/.test(sectionText('processCalendar')));
+  check('phased process is partial', /1 of 2 phases/.test(sectionText('processCalendar')));
+
+  const buttons = (sections.get('quickActions') || '').match(/<button\b[\s\S]*?<\/button>/g) || [];
+  const fix = buttons.filter(b => />\s*Fix\s*</.test(b));
+  const labels = buttons.map(b => (b.match(/<span>([^<]*)<\/span>/) || [, '?'])[1]);
+  check('Quick Actions renders the configured Fix button', fix.length === 1,
+    `${buttons.length} button(s): ${labels.join(', ') || 'none'}`);
+  check('the Fix button is ENABLED while issues > 0', fix.length === 1 && !/\sdisabled/.test(fix[0]),
+    fix.length ? fix[0].slice(0, 120) : 'no Fix button to judge');
+
   check('run attributed', data.history.some(r => r.user));
   check('no NaN or undefined on the page', !/\bNaN\b|\bundefined\b/.test(text));
   check('renders for the sidebar too',
     typeof renderSections(data, settings, { now: new Date(), surface: 'sidebar', trusted: true, collapsed: [] }) === 'string');
+}
 
-  const failed = results.filter(r => !r.ok);
-  console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
-  if (failed.length) {
-    console.error(`\nFAILED:\n${failed.map(f => `  - ${f.name}${f.detail ? `: ${f.detail}` : ''}`).join('\n')}`);
-    process.exit(1);
-  }
+try {
+  main();
+} catch (e) {
+  check('gate ran to completion', false, (e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : String(e)));
+}
+
+const failed = results.filter(r => !r.ok);
+console.log(`\n${results.length - failed.length}/${results.length} checks passed`
+  + (skipped.length ? `, ${skipped.length} SKIPPED` : ''));
+if (skipped.length) {
+  console.log(`\nNOT VERIFIED by this run:\n${skipped.map(s => `  - ${s.name} (${s.why})`).join('\n')}`);
+}
+if (failed.length) {
+  console.error(`\nFAILED:\n${failed.map(f => `  - ${f.name}${f.detail ? `: ${f.detail}` : ''}`).join('\n')}`);
+  if (!KEEP) console.error('\nRe-run with --keep to hold the profile open for inspection.');
+  process.exitCode = 1;
+} else {
   console.log('Smoke test clean.');
-} finally {
-  if (KEEP) console.log(`profile kept at ${root}`);
-  else fs.rmSync(root, { recursive: true, force: true });
 }

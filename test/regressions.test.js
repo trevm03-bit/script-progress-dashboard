@@ -111,11 +111,40 @@ for (const r of many) {
 check('durationVerdicts matches durationVerdict for every run', mismatch === 0, `${mismatch} differ`);
 
 // 13 — the O(n^2) render is gone
-const big = [];
-for (let i = 0; i < 5000; i++) big.push({ task: `T${i % 8}`, date: new Date(2026, 7, 1 + (i % 28), 9, i % 60).toISOString().slice(0, 19), success: i % 11 !== 0, elapsed: 10 + (i % 30), warnings: i % 3, summary: 's' });
+//
+// 🔴 This used to be `ms < 200` against the wall clock, and it made CI red from 1.6.1 onward:
+// the GitHub runner took 249ms for work this machine does in well under 200, so the suite failed
+// for being on slower hardware. A correctness gate that goes red on machine speed is worse than
+// no gate — it teaches everyone to ignore the red, which is exactly what happened here.
+//
+// What the test actually cares about is COMPLEXITY, and that is machine-independent. Quadruple
+// the input: a linear render takes ~4x as long, the quadratic one it replaced took ~16x (5,000
+// runs went from 1396ms to 45ms, so 1,250 would have been ~87ms). A ratio below 8 sits squarely
+// between the two on any hardware. The absolute ceiling below is only a catastrophe stop.
+const historyOfSize = (n) => {
+  const out = [];
+  for (let i = 0; i < n; i++) out.push({ task: `T${i % 8}`, date: new Date(2026, 7, 1 + (i % 28), 9, i % 60).toISOString().slice(0, 19), success: i % 11 !== 0, elapsed: 10 + (i % 30), warnings: i % 3, summary: 's' });
+  return out;
+};
 const sBig = S({}); sBig.runHistory = { ...sBig.runHistory, anomalies: true, filters: true };
-let t = Date.now(); render({ ...base, history: big }, sBig); const ms = Date.now() - t;
-check('5,000 runs render in under 200ms (was 1396ms)', ms < 200, `${ms}ms`);
+const timeRender = (n) => {
+  const h = historyOfSize(n);
+  const runs = [];
+  for (let i = 0; i < 3; i++) {
+    const t0 = performance.now();
+    render({ ...base, history: h }, sBig);
+    runs.push(performance.now() - t0);
+  }
+  return runs.sort((a, b) => a - b)[1];   // median of 3, so one scheduling hiccup cannot decide it
+};
+render({ ...base, history: historyOfSize(200) }, sBig);   // warm the JIT before either measurement
+const small = timeRender(1250);
+const large = timeRender(5000);
+const ratio = large / Math.max(small, 0.05);
+check('4x the runs costs ~4x the time, not ~16x (the O(n^2) render stays gone)', ratio < 8,
+  `1250 runs ${small.toFixed(1)}ms -> 5000 runs ${large.toFixed(1)}ms = ${ratio.toFixed(1)}x`);
+check('5,000 runs render without stalling (was 1396ms)', large < 3000, `${large.toFixed(0)}ms`);
+const big = historyOfSize(5000);
 
 // 14 — uncapped lists
 const warns = []; for (let i = 0; i < 500; i++) warns.push({ time: '2026-09-02T09:00:00', msg: `account ${i} unmatched`, actionable: true });

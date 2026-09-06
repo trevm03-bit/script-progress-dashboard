@@ -1,7 +1,7 @@
 node_modules/
 dist/
 *.vsix
-demo/logs/
+logs/
 __pycache__/
 *.pyc
 .DS_Store

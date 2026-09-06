@@ -5,7 +5,11 @@
 src/**
 test/**
 python/test_*.py
-demo/logs/**
+# Reporter output, wherever it lands. `demo/logs/**` alone was not enough: the reporter
+# writes to <repo>/logs the moment anyone runs a script against the working copy, and 1.6.1
+# shipped 9 of those files -- the OS username and an internal commit SHA -- to the Marketplace.
+# vsce packages from the FILESYSTEM, not from git, so .gitignore does not protect this.
+**/logs/**
 scripts/**
 node_modules/**
 tsconfig.json

@@ -24,6 +24,12 @@ jobs:
         with:
           node-version: '22'   # node --test needs glob support (21+) for the test script
 
+      # The reporter is half the product and it is Python. Without this, `npm run test:python`
+      # has no interpreter and the release gate below cannot read the .vsix either.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Tag must equal package.json version
         run: |
           TAG="${GITHUB_REF_NAME#v}"
@@ -36,15 +42,31 @@ jobs:
       - name: Install build tools
         run: npm ci
 
+      # 🔴 Every gate the repo has, not just the JavaScript one. Until 1.6.1 this job ran
+      # `npm test` alone: the Python reporter's two suites and the packaged-artefact smoke gate
+      # were never executed by CI at all, so a tag could be published green with the reporter
+      # broken. Five separate reviews audited the smoke gate itself; none checked whether
+      # anything ever ran it.
       - name: Compile and test
         run: |
           npm run compile
           npm test
+          npm run test:python
 
       - name: Package
         run: |
           mkdir -p dist        # gitignored, so a fresh checkout has no dist/ for vsce to write into
           npm run package
+
+      # Runs against the .vsix this job just built. --no-install because a GitHub runner has no
+      # VS Code: the gate then prints a SKIP list naming every package-integrity check it could
+      # not perform, so this step can never be mistaken for the full local gate. What it DOES
+      # still cover is the check that would have caught the 1.6.1 leak -- it scans the .vsix
+      # itself for developer-only folders and for the build machine's identity.
+      # 🔴 The full `npm run smoke` on a machine with VS Code remains mandatory before the
+      # .vsix is uploaded by hand.
+      - name: Release gate against the packaged .vsix
+        run: node scripts/smoke.js --no-install
 
       - name: Publish (skipped politely when no VSCE_PAT secret exists)
         env:
