@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Script Progress Dashboard - Python reporter (v1.3).
+Script Progress Dashboard - Python reporter.
 
 Drop this file into your project (for example scripts/lib/progress.py) and call it from any
 long-running script. It writes small JSON files that the VS Code extension watches. Nothing
@@ -69,7 +69,7 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
-__all__ = ["Progress", "resolve_logs_dir"]
+__all__ = ["Progress", "resolve_logs_dir", "RunDisplaced"]
 __version__ = "1.6.1"
 
 # Windows consoles default to cp1252; a stray non-ASCII character in a summary must never
@@ -97,6 +97,11 @@ MAX_METRICS = 200
 MAX_ACTIONABLE = 500
 DELTA_KEEP = 50
 ACCESS_NODE_KEEP = 150
+# 🔴 Tasks may take at most a third of the node budget. The cap used to keep EVERY task node
+# and give resources the remainder, but task nodes were never pruned by age or count - so
+# resource coverage decayed with every new task name and hit zero at 150, at which point the
+# edge filter dropped every edge too and the Access Map rendered permanently empty.
+ACCESS_TASK_KEEP = 50
 IMPACT_KEEP = 500
 WARNINGS_IN_PROGRESS = 10
 WARNINGS_IN_HISTORY = 20
@@ -126,6 +131,54 @@ def _cli_number(text):
         return int(s)
     except ValueError:
         return float(s)
+
+
+class RunDisplaced(LookupError):
+    """
+    The slot for this task name now holds a DIFFERENT run than the one asked for.
+
+    🔴 Distinct from 'there is no run in progress', and the difference decides an exit code.
+    README tells shell scripts two things: `complete` on an already-finished run is a no-op so
+    a trap can call it unconditionally, and pass `--run "$RUN"` when runs share a task name.
+    Combining both documented idioms exited 2 with "No run in progress ... Start one first" for
+    a run that had succeeded seconds earlier, so under `set -e` a successful job reported
+    failure to its scheduler. A finished run is a no-op; a DISPLACED one must still be loud,
+    because completing it would close somebody else's run.
+    """
+
+
+def _finite_map(raw):
+    """
+    Values read back from a slot, with non-finite floats turned into text.
+
+    🔴 json.loads accepts NaN and Infinity by default; _write_json forbids them
+    (allow_nan=False). So a slot file written by a hand edit or another producer - and these
+    files are documented as an open contract - put a non-finite float into state, and the very
+    next write raised ValueError into the operator's script. Raised from __exit__ it REPLACED
+    their real exception, so a missing input file surfaced as a JSON complaint and the run was
+    never recorded at all.
+    """
+    out = {}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            if isinstance(v, float) and not math.isfinite(v):
+                v = str(v)
+            out[str(k)] = v
+    return out
+
+
+def _finite_totals(raw):
+    """Running totals read back from a slot: numbers only, since these get summed."""
+    out = {}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(f):
+                out[str(k)] = f
+    return out
 
 
 class _FileLock:
@@ -373,16 +426,20 @@ class Progress:
         self = cls.__new__(cls)
         self._paths(task_name, logs_dir, quiet)
         data = self._read_json(self.slot_file, default=None)
+        # Displacement is checked FIRST and regardless of status: a slot holding someone else's
+        # run must be loud whether or not that run is still going. Only after that does an
+        # absent or finished run count as the ordinary 'nothing to attach to'.
+        slot_run = data.get("runId") if isinstance(data, dict) else None
+        if run_id and slot_run and slot_run != run_id:
+            raise RunDisplaced(
+                f'Run {run_id} of "{task_name}" is no longer the active one - the slot now holds '
+                f'{slot_run}. Another run of the same task name took it over; give each '
+                f"concurrent run its own task name, or this run's steps would land in that one."
+            )
         if not isinstance(data, dict) or data.get("status") != "running":
             raise LookupError(
                 f'No run in progress for "{task_name}". Start one first: '
                 f'python progress.py start "{task_name}"'
-            )
-        if run_id and data.get("runId") != run_id:
-            raise LookupError(
-                f'Run {run_id} of "{task_name}" is no longer the active one - the slot now holds '
-                f'{data.get("runId")}. Another run of the same task name took it over; give each '
-                f"concurrent run its own task name, or this run's steps would land in that one."
             )
         self.run_id = data.get("runId") or ""
         self.started_at = data.get("startedAt") or _now_iso()
@@ -401,13 +458,12 @@ class Progress:
         # A corrupt slot must be survivable. dict() on a list raised ValueError, and int() on a
         # string step raised too - so ONE bad slot file made every later subcommand crash rather
         # than fall back, with no way to recover short of deleting the file by hand.
-        raw_metrics = data.get("metrics")
-        self.metrics = dict(raw_metrics) if isinstance(raw_metrics, dict) else {}
+        self.metrics = _finite_map(data.get("metrics"))
         self.artifacts = list(data.get("artifacts") or [])
         self.accessed = list(data.get("accessed") or [])
         self.completed = False
         self.category = ""
-        self.impacts = dict(data.get("impacts") or {})
+        self.impacts = _finite_totals(data.get("impacts"))
         self.user = data.get("user") or ""
         self.commit = data.get("commit") or ""
         self.current = {
@@ -449,7 +505,10 @@ class Progress:
 
     def log(self, message: str):
         """A short log line for the dashboard's log tail (last 20 kept). Also printed."""
-        self.log_lines.append({"time": _now_iso(), "msg": str(message)})
+        # Clipped like warn(), detail() and step(): the 1.6 sweep capped every other free-text
+        # field because megabyte payloads were rewritten into progress.json AND the slot file on
+        # every later call, and pushed to the webview on every refresh. log() was missed.
+        self.log_lines.append({"time": _now_iso(), "msg": _clip(message)})
         self.log_lines = self.log_lines[-LOG_KEEP:]
         self._write()
         self._say(f"  {message}")
@@ -500,6 +559,13 @@ class Progress:
             value = _clip(value, 300)
         elif isinstance(value, float) and not math.isfinite(value):
             value = str(value)          # NaN / inf are not JSON; keep them as text, never poison the file
+        elif isinstance(value, int) and not isinstance(value, bool) and abs(value) > 2 ** 53:
+            # 🔴 Same reasoning as NaN, one step further along. Writing the int exactly made the
+            # FILE right and left the DASHBOARD wrong: the extension parses it with JSON.parse
+            # into a double, so a 19-digit account id or a 30-digit ledger key still rendered as
+            # a rounded number - the same wrong id as before the exactness fix. Beyond 2^53 a
+            # number is an identifier, not an arithmetic value, so it travels as text.
+            value = str(value)
         self.metrics[str(name)] = value
         self._write()
 
@@ -519,20 +585,28 @@ class Progress:
             return
         if not math.isfinite(v):
             return
-        deltas = self._read_json(self.deltas_file, default={})
-        if not isinstance(deltas, dict):
-            deltas = {}
-        # The FILE being a dict is not enough - the series under this key has to be a list too.
-        # impact() already guarded this; a hand-edited or third-party deltas.json holding
-        # {"m": 5} made .append raise AttributeError straight into the calling script.
-        series = deltas.get(metric_name)
-        if not isinstance(series, list):
-            series = []
-        # runId lets the chart tell that two points came from the SAME run - a value found and
-        # the value after a fix - instead of drawing two unrelated dots.
-        series.append({"date": _now_iso(), "value": v, "task": self.task_name, "runId": self.run_id})
-        deltas[metric_name] = series[-DELTA_KEEP:]
-        self._safe_write(self.deltas_file, deltas)
+        # 🔴 str(), like metric() and impact() already do. JSON has only string keys, so a
+        # non-string series name was written as a string and then looked up with the raw object
+        # on the next run: the lookup missed, series fell back to [], and the accumulated
+        # history was overwritten by a single point. For ever, silently.
+        key = str(metric_name)
+
+        def mutate(deltas):
+            if not isinstance(deltas, dict):
+                deltas = {}
+            # The FILE being a dict is not enough - the series under this key has to be a list
+            # too. impact() already guarded this; a hand-edited or third-party deltas.json
+            # holding {"m": 5} made .append raise AttributeError into the calling script.
+            series = deltas.get(key)
+            if not isinstance(series, list):
+                series = []
+            # runId lets the chart tell that two points came from the SAME run - a value found
+            # and the value after a fix - instead of drawing two unrelated dots.
+            series.append({"date": _now_iso(), "value": v, "task": self.task_name, "runId": self.run_id})
+            deltas[key] = series[-DELTA_KEEP:]
+            return deltas
+
+        self._update_shared(self.deltas_file, mutate, default={})
 
     def impact(self, metric: str, value, label: str = ""):
         """
@@ -557,15 +631,17 @@ class Progress:
         entry = {"date": _now_iso(), "value": v, "task": self.task_name, "runId": self.run_id}
         if label:
             entry["label"] = str(label)[:80]
-        data = self._read_json(self.impact_file, default={})
-        if not isinstance(data, dict):
-            data = {}
-        series = data.setdefault(str(metric), [])
-        if not isinstance(series, list):
-            series = []
-        series.append(entry)
-        data[str(metric)] = series[-IMPACT_KEEP:]
-        self._safe_write(self.impact_file, data)
+        def mutate(data):
+            if not isinstance(data, dict):
+                data = {}
+            series = data.get(str(metric))
+            if not isinstance(series, list):
+                series = []
+            series.append(entry)
+            data[str(metric)] = series[-IMPACT_KEEP:]
+            return data
+
+        self._update_shared(self.impact_file, mutate, default={})
         self.impacts[str(metric)] = self.impacts.get(str(metric), 0.0) + v
         # Persist the running total to the slot as well as the series file: a CLI run resumes
         # from the slot on every call, so a total held only in memory dies with the process.
@@ -589,36 +665,41 @@ class Progress:
         res_id = f"{kind}:{name}"
         now = _now_iso()
 
-        graph = self._read_json(self.access_file, default={"nodes": [], "edges": []})
-        if not isinstance(graph, dict) or not isinstance(graph.get("nodes"), list):
-            graph = {"nodes": [], "edges": []}
-        nodes = {n["id"]: n for n in graph["nodes"] if isinstance(n, dict) and "id" in n}
-        nodes[task_id] = {"id": task_id, "type": "task", "label": self.task_name, "lastSeen": now}
-        nodes[res_id] = {"id": res_id, "type": kind, "label": str(name), "lastSeen": now}
+        def mutate(graph):
+            if not isinstance(graph, dict) or not isinstance(graph.get("nodes"), list):
+                graph = {"nodes": [], "edges": []}
+            nodes = {n["id"]: n for n in graph["nodes"] if isinstance(n, dict) and "id" in n}
+            nodes[task_id] = {"id": task_id, "type": "task", "label": self.task_name, "lastSeen": now}
+            nodes[res_id] = {"id": res_id, "type": kind, "label": str(name), "lastSeen": now}
 
-        edges = [e for e in graph.get("edges", []) if isinstance(e, dict)]
-        detail = str(detail)[:120] if detail else ""
-        for e in edges:
-            if e.get("from") == task_id and e.get("to") == res_id and e.get("mode") == mode:
-                e["count"] = int(e.get("count", 0)) + 1
-                e["lastSeen"] = now
+            edges = [e for e in graph.get("edges", []) if isinstance(e, dict)]
+            for e in edges:
+                if e.get("from") == task_id and e.get("to") == res_id and e.get("mode") == mode:
+                    e["count"] = int(e.get("count", 0)) + 1
+                    e["lastSeen"] = now
+                    if detail:
+                        e["detail"] = detail
+                    break
+            else:
+                edge = {"from": task_id, "to": res_id, "mode": mode, "count": 1, "lastSeen": now}
                 if detail:
-                    e["detail"] = detail
-                break
-        else:
-            edge = {"from": task_id, "to": res_id, "mode": mode, "count": 1, "lastSeen": now}
-            if detail:
-                edge["detail"] = detail
-            edges.append(edge)
+                    edge["detail"] = detail
+                edges.append(edge)
 
-        # Cap: keep every task node, then the most recently seen resources.
-        tasks = [n for n in nodes.values() if n.get("type") == "task"]
-        resources = sorted([n for n in nodes.values() if n.get("type") != "task"], key=lambda n: n.get("lastSeen", ""), reverse=True)
-        keep = tasks + resources[: max(0, ACCESS_NODE_KEEP - len(tasks))]
-        keep_ids = {n["id"] for n in keep}
-        edges = [e for e in edges if e.get("from") in keep_ids and e.get("to") in keep_ids]
+            # Cap: the most recently seen tasks (bounded), then the most recently seen
+            # resources in whatever is left. Both lists are sorted by lastSeen, and the task
+            # and resource touched by THIS call carry lastSeen=now, so they are never evicted.
+            tasks = sorted([n for n in nodes.values() if n.get("type") == "task"],
+                           key=lambda n: n.get("lastSeen", ""), reverse=True)[:ACCESS_TASK_KEEP]
+            resources = sorted([n for n in nodes.values() if n.get("type") != "task"],
+                               key=lambda n: n.get("lastSeen", ""), reverse=True)
+            keep = tasks + resources[: max(0, ACCESS_NODE_KEEP - len(tasks))]
+            keep_ids = {n["id"] for n in keep}
+            return {"nodes": keep, "edges": [e for e in edges
+                                             if e.get("from") in keep_ids and e.get("to") in keep_ids]}
 
-        self._safe_write(self.access_file, {"nodes": keep, "edges": edges})
+        detail = str(detail)[:120] if detail else ""
+        self._update_shared(self.access_file, mutate, default={"nodes": [], "edges": []})
         if res_id not in self.accessed:
             self.accessed.append(res_id)
             self._write()
@@ -715,14 +796,32 @@ class Progress:
             data["user"] = self.user
         if self.commit:
             data["commit"] = self.commit
-        # Short ladder: a lost live-progress write is superseded by the next one, and paying
-        # 0.45 s per call because the dashboard has the file open is a far worse trade.
-        self._safe_write(self.progress_file, data, attempts=2, base=0.01)
+        # 🔴 Two files, two different needs, and the short ladder was wrongly applied to both.
+        #
+        # progress.json while the run is RUNNING really is superseded a second later, so it
+        # takes the short, cheap ladder: paying 0.45 s per call because the dashboard has the
+        # file open is a far worse trade than losing one frame.
+        #
+        # Nothing else here is superseded. The TERMINAL write is the one that takes the run out
+        # of "running": drop it and the dashboard shows the job as still going for ever and the
+        # next run adds a duplicate history row. And the SLOT file is not a cache at all -
+        # resume() rebuilds the ENTIRE run from it on every CLI subcommand, so a dropped slot
+        # write permanently loses whatever that subcommand reported. Measured: with the short
+        # ladder a `warn --actionable` exited 0, printed the warning, recorded nothing, and
+        # Pending Actions then showed a false all-clear.
+        final = status != "running"
+        if final:
+            self._safe_write(self.progress_file, data)
+        else:
+            self._safe_write(self.progress_file, data, attempts=2, base=0.01)
         try:
             self.slots_dir.mkdir(parents=True, exist_ok=True)
-            self._write_json(self.slot_file, data, attempts=2, base=0.01)
         except OSError:
-            pass  # the slot file is a nicety; the main file is the contract
+            return   # cannot create the slot folder; the main file is the contract
+        # _safe_write, not _write_json: this caught OSError only, so a ValueError out of
+        # json.dumps went straight into the calling script - and raised from __exit__ it
+        # REPLACED the operator's real exception with a serialisation complaint.
+        self._safe_write(self.slot_file, data)
 
     def _estimate_eta(self, elapsed: float):
         """Seconds left, from the average of the last few successful runs of this task."""
@@ -759,18 +858,41 @@ class Progress:
             files = list(self.slots_dir.glob("*.json"))
         except OSError:
             return
-        # Sweep abandoned temp files too. A kill -9 between write and os.replace leaves
-        # <name>.<pid>.tmp behind for ever - the glob below only ever matched *.json.
-        for d in (self.logs_dir, self.slots_dir):
+        # Sweep abandoned temp files too: a kill -9 between write and os.replace leaves
+        # <name>.<pid>.tmp behind for ever, and the *.json glob below never matched those.
+        #
+        # 🔴 Only files THIS tool creates. The sweep used to unlink ANY *.tmp or *.lock older
+        # than two days - and logsPath defaults to `logs`, an ordinary shared folder that may
+        # well hold another tool's scheduler lock or a half-written staging file. Those were
+        # deleted silently and permanently, with nothing printed. Our temp files are always
+        # <ourname>.<pid>.tmp and our locks are always <ourname>.lock, so the names are
+        # recognisable and nothing else has to be touched.
+        own = {"progress.json", "run_history.json", "deltas.json", "impact.json", "access.json"}
+        tmp_re = re.compile(r"^(.+)\.\d+\.tmp$")
+
+        def is_ours(name, in_slots):
+            base = name[:-5] if name.endswith(".lock") else None
+            if base is None:
+                m = tmp_re.match(name)
+                if not m:
+                    return False
+                base = m.group(1)
+            # In the slots folder every file we write is <slug>.json, so any .json base is ours.
+            return base in own or (in_slots and base.endswith(".json"))
+
+        for d, in_slots in ((self.logs_dir, False), (self.slots_dir, True)):
             try:
-                for t in list(d.glob("*.tmp")) + list(d.glob("*.lock")):
-                    try:
-                        if t.stat().st_mtime < finished_cutoff:
-                            t.unlink()
-                    except OSError:
-                        continue
+                candidates = list(d.glob("*.tmp")) + list(d.glob("*.lock"))
             except OSError:
-                pass
+                continue
+            for t in candidates:
+                if not is_ours(t.name, in_slots):
+                    continue
+                try:
+                    if t.stat().st_mtime < finished_cutoff:
+                        t.unlink()
+                except OSError:
+                    continue
         for f in files:
             try:
                 if f == self.slot_file:
@@ -823,33 +945,16 @@ class Progress:
             row["impacts"] = dict(self.impacts)
         if getattr(self, "category", ""):
             row["category"] = self.category
-        last = None
-        lock_path = self.history_file.with_name(self.history_file.name + ".lock")
-        # Five attempts, not three. Measured across 60 concurrent completions the lock takes loss
-        # from 38-81% down to 0 - but a stray os.replace failure (a reader holding the file for an
-        # instant on Windows) still cost one row in one run, and this is the file where a lost row
-        # means a run that silently never happened.
-        for attempt in range(5):
-            # Read AND write inside the lock - the whole point is that nothing else reads the file
-            # between our read and our write.
-            with _FileLock(lock_path) as locked:
-                if not locked and attempt == 0:
-                    self._say("  NOTE: run history is busy; another script is finishing")
-                history = self._read_json(self.history_file, default=[])
-                if not isinstance(history, list):
-                    history = []
-                history.append(row)
-                try:
-                    self._write_json(self.history_file, history[-HISTORY_KEEP:])
-                    return
-                except (OSError, ValueError) as e:
-                    # 🔴 Every OSError, not just PermissionError. complete() is called from
-                    # __exit__, so on a full disk ENOSPC escaped from here and REPLACED whatever
-                    # exception the script was actually failing with - the operator got "No space
-                    # left on device" where they needed the ValueError that broke their run.
-                    last = e
-            time.sleep(0.05 * (attempt + 1))
-        self._say(f"  NOTE: could not update {self.history_file.name} ({last.__class__.__name__ if last else 'file busy'}); run not recorded")
+        # Same locked read-modify-write as every other shared file. This one is where a lost row
+        # means a run that silently never happened: no history, no calendar tick, no coverage
+        # credit, no ETA for next time.
+        def mutate(history):
+            if not isinstance(history, list):
+                history = []
+            history.append(row)
+            return history[-HISTORY_KEEP:]
+
+        self._update_shared(self.history_file, mutate, default=[], note="run not recorded")
 
     def _warnings_for_slot(self):
         """
@@ -888,10 +993,75 @@ class Progress:
         return [w for w in self.warnings if id(w) in keep_ids]
 
     def _read_json(self, path: Path, default=None):
+        """
+        Read one of our JSON files, tolerating what other producers actually write.
+
+        🔴 utf-8-SIG, not utf-8. A byte-order mark is what PowerShell's `Set-Content -Encoding
+        utf8` and Notepad produce, and the extension's reader was taught to strip one - so a
+        BOM'd deltas.json or run_history.json rendered perfectly on the dashboard while THIS
+        side raised JSONDecodeError, fell back to the empty default, and the caller wrote that
+        default straight over the file. Measured: 80 delta points and 60 history rows deleted by
+        one ordinary run, with nothing printed. Fixing the reader without fixing the writers
+        removed the alarm and left the fire. utf-8-sig decodes plain UTF-8 unchanged.
+        """
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError, PermissionError):
+            return json.loads(path.read_text(encoding="utf-8-sig"))
+        except (FileNotFoundError, PermissionError):
             return default if default is not None else {}
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            # The file exists and holds something we cannot read. Everything that calls this
+            # goes on to write the default back, which would destroy whatever is in there, so
+            # move it aside first: data loss the operator can undo beats data loss they never
+            # hear about. Once only - a repeatedly unreadable file must not spawn a directory
+            # full of copies.
+            self._quarantine(path)
+            return default if default is not None else {}
+
+    def _quarantine(self, path: Path):
+        """Move an unreadable file to <name>.corrupt and say so. Never raises."""
+        try:
+            bad = path.with_name(path.name + ".corrupt")
+            if bad.exists():
+                return
+            os.replace(str(path), str(bad))
+            self._say(f"  NOTE: {path.name} was unreadable; kept a copy as {bad.name}")
+        except OSError:
+            pass
+
+    def _update_shared(self, path: Path, mutate, default, note="continuing"):
+        """
+        Read-modify-write a file that OTHER PROCESSES also append to, under the advisory lock.
+
+        🔴 The lock was introduced for run_history.json and applied only there, which read as
+        'the concurrency bug is fixed'. deltas.json, impact.json and access.json are the same
+        read-modify-write across the same processes and kept losing data at the same rate.
+        Measured over 16 concurrent runs that each reported the same impact: run_history.json
+        kept 16 of 16 rows and summed to the true $1,600, while impact.json kept ONE - so the
+        Impact Summary card read $100 across 1 run, 94% of the headline figure gone, and the
+        locked file sitting next to it proved the data had existed. The Delta Tracker lost 15
+        of 16 series outright and the Access Map 7 of 16 resource nodes.
+
+        `mutate` takes the current contents and returns what to write. It runs INSIDE the lock,
+        so nothing else can read the file between our read and our write.
+        """
+        lock_path = path.with_name(path.name + ".lock")
+        last = None
+        for attempt in range(5):
+            with _FileLock(lock_path) as locked:
+                if not locked and attempt == 0:
+                    self._say(f"  NOTE: {path.name} is busy; another script is writing to it")
+                try:
+                    self._write_json(path, mutate(self._read_json(path, default=default)))
+                    return True
+                except (OSError, ValueError) as e:
+                    # Every OSError and ValueError, never re-raised. complete() reaches here from
+                    # __exit__, so an ENOSPC or an unserialisable value escaping would REPLACE
+                    # whatever exception the operator's script was actually failing with.
+                    last = e
+            time.sleep(0.05 * (attempt + 1))   # back off; retrying instantly just re-collides
+        self._say(f"  NOTE: could not update {path.name} "
+                  f"({last.__class__.__name__ if last else 'file busy'}); {note}")
+        return False
 
     def _safe_write(self, path: Path, data, attempts=5, base=0.03):
         """Write, and if the disk refuses for longer than the retries, say so and carry on.
@@ -968,7 +1138,10 @@ def _print_status(logs_dir=None):
     upd = data.get("updatedAt", "")
     try:
         age = datetime.now() - datetime.fromisoformat(upd)
-    except ValueError:
+    except (TypeError, ValueError):
+        # TypeError as well: a producer that writes "updatedAt": null hands fromisoformat a
+        # None, and these files are an open contract - the extension's reader already
+        # special-cases third-party writers.
         age = timedelta(0)
     state = data.get("status", "?")
     if state == "running" and age > timedelta(minutes=30):
@@ -977,10 +1150,21 @@ def _print_status(logs_dir=None):
     if data.get("detail"):
         print(f"  {data['detail']}")
     print(f"  elapsed {data.get('elapsed')}s  eta {data.get('eta')}  updated {upd}  ({int(age.total_seconds())}s ago)")
-    for w in data.get("warnings", []):
-        print(f"  WARNING {w.get('time','')} {w.get('msg','')}")
-    for k, v in (data.get("metrics") or {}).items():
-        print(f"  {k} = {v}")
+    # 🔴 Shape-tolerant, not just parse-tolerant. The earlier fix caught unreadable JSON and
+    # stopped there, so a structurally VALID file with null or wrong-typed fields still dumped
+    # a traceback and exited 1 - from the one command whose entire job is to report on the
+    # state of these files. `"warnings": ["some text"]`, a list of plain strings, is exactly
+    # what a hand-rolled producer emits.
+    warnings = data.get("warnings")
+    for w in warnings if isinstance(warnings, list) else []:
+        if isinstance(w, dict):
+            print(f"  WARNING {w.get('time','')} {w.get('msg','')}")
+        else:
+            print(f"  WARNING {w}")
+    metrics = data.get("metrics")
+    if isinstance(metrics, dict):
+        for k, v in metrics.items():
+            print(f"  {k} = {v}")
     return 0
 
 
@@ -1032,7 +1216,10 @@ _COMMANDS = ("start", "step", "detail", "substep", "log", "warn", "metric",
 def _cli_usage(problem=""):
     if problem:
         print(f"progress.py: {problem}", file=sys.stderr)
-    print(__doc__.split("Files written")[0].strip().splitlines()[0], file=sys.stderr)
+    # Printed from __version__, never from the docstring. The docstring said "v1.3" for three
+    # releases after __version__ moved on, and this line is what a user diagnosing a reporter
+    # problem reads. One source or it drifts again.
+    print(f"Script Progress Dashboard - Python reporter v{__version__}", file=sys.stderr)
     print("", file=sys.stderr)
     print("Commands: " + ", ".join(_COMMANDS), file=sys.stderr)
     print('Example:  python progress.py start "Nightly Load" --total 3', file=sys.stderr)
@@ -1106,14 +1293,19 @@ def _cli(argv) -> int:
 
     try:
         p = Progress.resume(task, logs_dir=logs_dir, quiet=quiet, run_id=run_id)
+    except RunDisplaced as e:
+        # The slot holds somebody else's run. Never silent, `complete` included: completing
+        # here would close that other run, or record nothing while exiting 0.
+        print(f"progress.py: {e}", file=sys.stderr)
+        return 2
     except LookupError as e:
-        # `complete` on a run that is already closed is a no-op, not a failure: a shell script
-        # with a trap should be able to call it unconditionally.
-        # A `complete` on an already-closed run is a genuine no-op: a shell trap should be able
-        # to call it unconditionally. But `complete --run <id>` naming a DISPLACED run is the one
-        # case that must not be silent - it exits 0 having recorded nothing, which is precisely
-        # the failure the --run guard exists to make loud for every other subcommand.
-        if cmd == "complete" and not run_id:
+        # `complete` on a run that is already closed is a genuine no-op - README tells shell
+        # scripts to call it unconditionally from a trap. It used to be a no-op only when
+        # --run was absent, so following the README's OTHER instruction (pass --run "$RUN"
+        # when task names collide) made a successful job exit 2 and report failure to its
+        # scheduler. Displacement is handled above; what is left here is genuinely 'nothing
+        # to attach to'.
+        if cmd == "complete":
             return 0
         print(f"progress.py: {e}", file=sys.stderr)
         return 2
@@ -1166,8 +1358,13 @@ def _cli(argv) -> int:
             p.access(args[0], " ".join(args[1:]), mode=mode, detail=detail)
         elif cmd == "complete":
             category = _take_flag(args, "--category") or ""
-            summary = _take_flag(args, "--summary") or " ".join(args)
+            # 🔴 --fail comes out of argv BEFORE the summary fallback reads what is left. Pulled
+            # last, `complete "$TASK" --fail` with no --summary recorded the literal string
+            # "--fail" as the run's summary - in the terminal, in progress.json, in the Run
+            # History row and in the weekly digest. That is precisely the form a shell trap
+            # uses, and the only --fail test always passed --summary, so nothing covered it.
             failed = _take_flag(args, "--fail", has_value=False) is not None
+            summary = _take_flag(args, "--summary") or " ".join(args)
             p.complete(success=not failed, summary=summary, category=category if failed else "")
     except (ValueError, IndexError) as e:
         return _cli_usage(f"{cmd}: {e}")
