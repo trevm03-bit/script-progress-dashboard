@@ -19,6 +19,24 @@
   const FALLBACK = { task: '#3794ff', table: '#b180d7', file: '#d18616', api: '#89d185', other: '#cca700' };
   const reducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const instances = new WeakMap();
+  /**
+   * Every instance that has not been torn down.
+   *
+   * 🔴 The WeakMap keyed by host is not enough. An instance keeps itself alive through the
+   * document-level listeners and the watchdog interval it registers, so when the dashboard
+   * swaps a section's innerHTML the OLD instance survives with its canvas, its graph and its
+   * timers, for the life of the window. Measured on five refreshes of one section: ten
+   * document listeners added, none removed, five ResizeObservers, five intervals started.
+   * This set is strong on purpose - it is what makes them reachable long enough to destroy.
+   */
+  const live = new Set();
+
+  /** Tear down any instance whose host has left the DOM. Cheap, and runs on every attach. */
+  function reapDetached() {
+    for (const inst of [...live]) {
+      if (!inst.host || !inst.host.isConnected) inst.destroy();
+    }
+  }
 
   // ---------------------------------------------------------------- helpers
   function css(name, fallback) {
@@ -130,6 +148,9 @@
 
       this.resize();
       this.fitTimer = 0;
+      // Everything that outlives a repaint is recorded here so destroy() can undo it.
+      this.teardown = [];
+      live.add(this);
       this.ro = new ResizeObserver(() => {
         const before = this.W * this.H;
         this.resize();
@@ -144,10 +165,29 @@
         }, 180);
       });
       this.ro.observe(this.host);
+      this.teardown.push(() => this.ro.disconnect());
       // Coming back from hidden: any frame requested while hidden may be gone, so ask again.
-      document.addEventListener('visibilitychange', () => { if (!document.hidden) { this.raf = 0; this.requestFrame(); if (performance.now() < this.settleUntil) this.ensureLoop(); } });
+      this.onVisible = () => { if (!document.hidden) { this.raf = 0; this.requestFrame(); if (performance.now() < this.settleUntil) this.ensureLoop(); } };
+      document.addEventListener('visibilitychange', this.onVisible);
+      this.teardown.push(() => document.removeEventListener('visibilitychange', this.onVisible));
       if (!mini) { this.bind(); this.bindToolbar(); }
       else this.host.addEventListener('click', () => this.api.post && this.api.post({ type: 'openMap' }));
+    }
+
+    /**
+     * Undo everything this instance registered outside its own DOM subtree.
+     *
+     * Listeners on the canvas go when the canvas does; these do not. Safe to call twice.
+     */
+    destroy() {
+      if (this.destroyed) return;
+      this.destroyed = true;
+      live.delete(this);
+      for (const undo of this.teardown || []) { try { undo(); } catch { /* keep tearing down */ } }
+      this.teardown = [];
+      clearInterval(this.watchdog); this.watchdog = 0;
+      clearTimeout(this.fitTimer); clearTimeout(this.replayTimer); clearTimeout(this.overlayTimer);
+      if (this.raf) { cancelAnimationFrame(this.raf); this.raf = 0; }
     }
 
     // ---------------------------------------------------------------- data in
@@ -831,7 +871,9 @@
         else return;
       });
       c.tabIndex = 0;
-      document.addEventListener('visibilitychange', () => { if (!document.hidden) this.requestFrame(); });
+      this.onVisibleDraw = () => { if (!document.hidden) this.requestFrame(); };
+      document.addEventListener('visibilitychange', this.onVisibleDraw);
+      this.teardown.push(() => document.removeEventListener('visibilitychange', this.onVisibleDraw));
     }
 
     zoomBy(f) {
@@ -1019,6 +1061,7 @@
     attach(section, api) {
       const host = hostOf(section);
       if (!host) return null;
+      reapDetached();
       let inst = instances.get(host);
       if (!inst) { inst = new AccessMap(section, api, false); instances.set(host, inst); }
       else { inst.section = section; inst.legend = section.querySelector('.map-legend') || inst.legend; inst.toolbar = section.querySelector('.map-toolbar') || inst.toolbar; }
@@ -1030,6 +1073,7 @@
     },
     replay(section, rp) { const host = hostOf(section); const inst = host && instances.get(host); if (inst) inst.replay(rp); },
     mini(host, graph, api) {
+      reapDetached();
       let inst = instances.get(host);
       if (!inst) { inst = new AccessMap(host, api, true); instances.set(host, inst); }
       inst.update(graph, {});

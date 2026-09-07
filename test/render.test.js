@@ -5,7 +5,14 @@ const assert = require('node:assert/strict');
 const { renderSections } = require('../out/render/dashboard.js');
 const { esc, icon } = require('../out/render/html.js');
 const fixture = require('./fixtures/data.json');
-const { settings: S, ALL } = require('./fixtures/settings.js');
+const { settings: base, ALL } = require('./fixtures/settings.js');
+
+// 🔴 This suite's subject IS the full page, so it asks for the demo configuration explicitly —
+// every section on, with the example processes and buttons. The fixture's DEFAULT is now what the
+// product actually ships (nine sections on, no processes, no buttons), because a fixture that
+// quietly turns everything on made the default configuration the least-tested one, and hid four
+// of the false positives the 2026-09-04 review later confirmed by hand.
+const S = (o = {}) => base.demo(o);
 
 const NOW = new Date(2026, 8, 2, 10, 0, 30);
 const ctx = (surface = 'panel', trusted = true, collapsed = []) => ({ now: NOW, surface, trusted, collapsed });
@@ -198,9 +205,15 @@ test('delta tracker: metrics, formats, thresholds, points cap', () => {
 });
 
 test('script health: one row per task with dots, fail %, trend and freshness', () => {
-  const c = card(renderSections(fixture, S(), ctx()), 'scriptHealth');
+  // 🔴 The threshold is STATED, not inherited. This asserted "2 stale" against a fixture that set
+  // staleHours to 24 while the product ships 168 — so the freshness rules were only ever exercised
+  // at a threshold no installation has, and the assertion silently described a different product.
+  const c = card(renderSections(fixture, S({ staleHours: 24 }), ctx()), 'scriptHealth');
   assert.equal((c.match(/<tr>/g) || []).length, 4); // header + 3 tasks
   assert.match(c, /2 stale/);
+  // And the same data at the threshold users actually run, which is the case that had no test.
+  const shipped = card(renderSections(fixture, S(), ctx()), 'scriptHealth');
+  assert.match(shipped, /1 stale/, 'the shipped 168-hour threshold is not exercised anywhere');
   assert.match(c, /dot dot-ok/);
   assert.match(c, /dot dot-fail/);
   assert.match(c, /100%/);

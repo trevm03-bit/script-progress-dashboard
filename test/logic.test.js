@@ -210,10 +210,32 @@ test('graph: live flags, degrees, reads/writes, cap, time window', () => {
   assert.equal(monthly.degree, 2);
   assert.equal(monthly.writes, 4);
   assert.equal(monthly.reads, 2);
+  // 🔴 Tasks take a SHARE of the budget, not all of it. The old rule sorted every task ahead of
+  // every resource, so at `maxNodes` task names the cap kept nothing but tasks — and the edge
+  // filter needs both ends, so it dropped every edge and the map rendered permanently empty, which
+  // is the opposite of what a cap is for. This is the same defect as the reporter's own access()
+  // cap; the fix belongs in both halves because these files are an open contract.
   const capped = graph.buildGraph(fixture.access, [], 3, 0, NOW);
   assert.equal(capped.nodes.length, 3);
-  assert.equal(capped.nodes.filter(n => n.type === 'task').length, 2);
+  assert.equal(capped.nodes.filter(n => n.type === 'task').length, 1, 'tasks ate the whole budget');
+  assert.ok(capped.nodes.some(n => n.type !== 'task'), 'no resource survived the cap');
   assert.equal(capped.dropped, 3);
+  // The shape the completeness critic described: more task names than the entire budget. Before
+  // this, `kept` was 150 tasks, no resources, and therefore no edges — an empty map that never
+  // recovered however much the scripts reported.
+  const manyTasks = { nodes: [], edges: [] };
+  for (let i = 0; i < 200; i++) manyTasks.nodes.push({ id: `task:T${i}`, type: 'task', label: `T${i}`, lastSeen: '2026-09-02T09:00:00' });
+  for (let i = 0; i < 200; i++) manyTasks.nodes.push({ id: `table:R${i}`, type: 'table', label: `R${i}`, lastSeen: '2026-09-02T09:30:00' });
+  for (let i = 0; i < 200; i++) manyTasks.edges.push({ from: `task:T${i}`, to: `table:R${i}`, mode: 'read', count: 1, lastSeen: '2026-09-02T09:30:00' });
+  const starved = graph.buildGraph(manyTasks, [], 150, 0, NOW);
+  assert.ok(starved.nodes.some(n => n.type !== 'task'), 'past 150 task names the map kept no resources');
+  assert.ok(starved.edges.length > 0, 'past 150 task names the map had nothing to draw');
+  assert.ok(starved.nodes.filter(n => n.type === 'task').length <= 50, 'tasks took more than their share');
+
+  // A RUNNING task is what the user is watching, so it is drawn whatever the cap says.
+  const watching = graph.buildGraph(manyTasks, [{ task: 'T199', status: 'running', accessed: ['table:R199'] }], 6, 0, NOW);
+  assert.ok(watching.nodes.some(n => n.id === 'task:T199'), 'the running task was capped out');
+
   const windowed = graph.buildGraph(fixture.access, [], 150, 1, NOW); // last 24h only (orders_monthly was 25h ago)
   assert.deepEqual(windowed.nodes.map(n => n.id).sort(), ['file:input/orders.csv', 'table:crm.customers', 'task:Demo Pipeline']);
   assert.equal(windowed.dropped, 3);
@@ -230,7 +252,11 @@ test('prompts: labels and expansion', () => {
 });
 
 test('summary facts, daily text and CSV', () => {
-  const s = settings({ deltas: { thresholds: { reconciliation_delta: { min: -0.5, max: 0.5 } }, formats: {}, points: 50 } });
+  // The demo calendar and the 24-hour staleness threshold are both STATED here. The product
+  // ships no processes at all and a 168-hour threshold, so inheriting them from the fixture
+  // meant this test described a configuration nobody runs — and `nextDue` is null without a
+  // calendar, which is the shipped experience and now has its own assertion below.
+  const s = settings.demo({ staleHours: 24, deltas: { thresholds: { reconciliation_delta: { min: -0.5, max: 0.5 } }, formats: {}, points: 50 } });
   const f = summary.summaryFacts(fixture, s, NOW);
   assert.equal(f.runningCount, 1);
   assert.equal(f.runsToday, 1);
@@ -240,6 +266,13 @@ test('summary facts, daily text and CSV', () => {
   assert.equal(f.nextDue.text, 'due tomorrow');
   assert.deepEqual(f.staleScripts, ['Weekly Rollup', 'Month-End Close']);
   assert.deepEqual(f.metricsOutOfRange, []);
+
+  // The out-of-the-box state: no processes configured, so there is nothing to be due and
+  // nothing to be overdue. This is what almost every installation shows and it had no test.
+  const bare = summary.summaryFacts(fixture, settings(), NOW);
+  assert.equal(bare.nextDue, null, 'a calendar appeared with no processes configured');
+  assert.deepEqual(bare.overdue, []);
+  assert.equal(bare.runsToday, 1, 'run counts must not depend on the calendar');
   const text = summary.dailySummaryText(fixture, s, NOW);
   assert.match(text, /Runs today: 1 \(0 failed, 0 warnings\)/);
   assert.match(text, /OK +09:30 Demo Pipeline · 35s · INSERT: 3,990 rows & more · rows_loaded=3,990, total_value=\$16.2M/);
