@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.7.4 — 2026-09-06
+
+The four findings the completeness critic raised against the 2026-09-04 review itself. They were
+never in the confirmed 112 because they arrived after the confirmation pass, and three of them had
+no test and no finding from any of the sixteen lenses — which was the critic's point.
+
+**The Access Map went permanently empty past 150 task names.** `logic/graph.ts` sorted every task
+node ahead of every resource and then sliced to `accessMap.maxNodes`, so once there were as many
+task names as the cap, `kept` was all tasks and no resources — and an edge needs both ends, so
+every edge was dropped. Measured with 200 tasks and 200 resources at the default cap: 150 nodes
+kept, **0 resources, 0 edges**. The same input now gives 50 tasks, 100 resources, 50 edges. This
+is the same defect already fixed in both reporters' `access()` caps; it is now enforced on the
+read side too, because these files are an open contract and an older file can still carry more.
+
+**Run History could not be sorted or expanded without a mouse.** The webview had handled Enter and
+Space on those controls since the day it was written, and the renderer emitted no `tabindex` — so
+nothing could be focused to press Enter on, and the handler was unreachable code. Sortable headers
+and expandable rows now carry `role="button"` and `tabindex="0"`, declare `aria-sort` and
+`aria-expanded`, and the page updates both when you act; the CSS class was visual only and said
+nothing to a screen reader.
+
+**The Access Map leaked an entire instance per refresh.** A dashboard update swaps a section's
+`innerHTML`, which makes a new host and a new map. The instance cache is a WeakMap and did not
+hold the old one — but its two document-level listeners and its watchdog interval did, keeping the
+whole instance alive with its canvas and its graph for the life of the window. Measured over five
+refreshes of one section: ten document listeners added and **none removed**, five ResizeObservers,
+five intervals. Now ten added and ten removed, with only the live instance still observing.
+
+**And the test fixture was a different product.** It claimed to mirror the real settings reader and
+did not: fifteen sections on where the product ships nine, `staleHours` 24 where the product ships
+**168**, one interpreter where the product ships nine. Every render test therefore exercised a
+configuration no installation has, and the default — what almost everyone runs — was the
+least-tested one. It is now built by calling the real settings reader against `package.json`'s own
+declared defaults, so it cannot drift again.
+
+Correcting it broke twelve tests and **two were real bugs in the tests' own claims**: Script Health
+asserted "2 stale" at a threshold nobody has (it is 1 at the shipped 168 hours), and the summary
+facts depended on demo processes the product does not ship, where the next-due date is null. Both
+now state the configuration they exercise and gained an assertion at the shipped one. It also
+caught the release gate, which had been relying on the fixture switching every section on.
+
+Verified in a real browser throughout: the keyboard interactions with real key presses, and the
+listener counts by instrumenting the page. The guards are derived rather than pinned — the
+keyboard one reads the click handler's own selector list, so a new clickable thing fails until it
+is reachable — and fourteen of their checks fail against the previous build.
+
+Tests: 317 → **387** (340 JavaScript, 30 + 17 Python).
+
 ## 1.7.3 — 2026-09-06
 
 The release gate's own identity scan matched a common word. GitHub's build account is called
