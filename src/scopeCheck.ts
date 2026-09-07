@@ -86,6 +86,9 @@ export async function warnAboutIgnoredSettings(context: vscode.ExtensionContext)
 }
 
 function isEmpty(v: unknown): boolean {
+  // `"scriptProgress.logsPath": null` is valid JSON and means nothing is set, so warning that
+  // it is being ignored is a false alarm in a message whose only job is to be trusted.
+  if (v === null || v === undefined) return true;
   if (Array.isArray(v)) return v.length === 0;
   if (typeof v === 'string') return v.trim() === '';
   if (v && typeof v === 'object') return Object.keys(v).length === 0;

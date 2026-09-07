@@ -44,7 +44,15 @@ export class DashboardHost {
       localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'media')],
     };
     webview.html = this.shell(webview);
-    this.disposables.push(webview.onDidReceiveMessage(msg => this.onMessage(msg)));
+    // 🔴 Nothing awaits onMessage, so anything it throws becomes an unhandled rejection and the
+    // user sees nothing at all. The page renders text that scripts and log files control, so
+    // the message it sends back is untrusted input by the time it arrives here.
+    this.disposables.push(webview.onDidReceiveMessage(msg => {
+      void this.onMessage(msg).catch((e: unknown) => {
+        const why = e instanceof Error ? e.message : String(e);
+        void vscode.window.showErrorMessage(`Script Progress could not handle that action: ${why}`);
+      });
+    }));
   }
 
   setVisible(v: boolean): void {
@@ -140,11 +148,25 @@ export class DashboardHost {
         if (msg.path) await openArtifact(msg.path);
         break;
       case 'setting': {
-        const allowed: Record<string, string[]> = { 'accessMap.layout': ['force', 'radial'], 'accessMap.labels': ['auto', 'all', 'scripts'] };
-        if (msg.id && allowed[msg.id] && typeof msg.value === 'string' && allowed[msg.id].includes(msg.value)) {
-          await vscode.workspace.getConfiguration('scriptProgress').update(msg.id, msg.value, vscode.ConfigurationTarget.Global);
-        } else if (msg.id === 'accessMap.timeWindowDays' && typeof msg.value === 'string' && /^\d+$/.test(msg.value)) {
-          await vscode.workspace.getConfiguration('scriptProgress').update(msg.id, Number(msg.value), vscode.ConfigurationTarget.Global);
+        // 🔴 A Map, because the key comes from the PAGE. Indexing a plain object with an
+        // attacker-chosen key finds the prototype: `allowed['constructor']` is the Object
+        // constructor, which is truthy, and the next line called .includes on a function and
+        // threw. The throw left onMessage as an unhandled rejection, because nothing awaits it.
+        //
+        // This is the THIRD place this shape has been found - processCalendar's frequency map
+        // in 1.6, summaryFacts' threshold lookup in the 2026-09-04 review, and here. The rule
+        // is now written where it can be enforced: any lookup keyed by input from the page,
+        // the settings file or a log file uses a Map or hasOwnProperty, never bare [].
+        const allowed = new Map<string, string[]>([
+          ['accessMap.layout', ['force', 'radial']],
+          ['accessMap.labels', ['auto', 'all', 'scripts']],
+        ]);
+        const id = typeof msg.id === 'string' ? msg.id : '';
+        const choices = allowed.get(id);
+        if (choices && typeof msg.value === 'string' && choices.includes(msg.value)) {
+          await vscode.workspace.getConfiguration('scriptProgress').update(id, msg.value, vscode.ConfigurationTarget.Global);
+        } else if (id === 'accessMap.timeWindowDays' && typeof msg.value === 'string' && /^\d+$/.test(msg.value)) {
+          await vscode.workspace.getConfiguration('scriptProgress').update(id, Number(msg.value), vscode.ConfigurationTarget.Global);
         }
         break;
       }
