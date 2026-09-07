@@ -174,11 +174,34 @@ class ReporterRegressions(unittest.TestCase):
         check("a live run's slot survives a stale mtime", slot.exists())
 
         # --- S3.13 a held reader must not cost the full ladder ---------------------------------------
+        #
+        # 🔴 This measured the MACHINE, not the ladder. It timed one contended write and demanded
+        # it finish inside a fixed 0.1s — but the two ladders differ by 0.03s (attempts=2,
+        # base=0.01) versus 0.45s (attempts=5, base=0.03), and 0.1s of absolute wall clock is
+        # almost entirely process overhead. On a shared CI runner it came in at 0.118s and failed
+        # a build over a fix that was working perfectly. This is the second test in this project
+        # to fence a performance claim with an absolute constant and the second to fail for it.
+        #
+        # So: time the SAME write with and without a reader holding the file, in the same process,
+        # and bound the DIFFERENCE. A slow machine slows both, and the gap being tested is 15×
+        # wide, so 0.2s sits far from either side. `min` of several runs drops scheduler noise
+        # rather than averaging it in.
         d = tmp(); p = Progress("Lock", logs_dir=d, quiet=True)
-        fh = open(d / "progress.json", "r", encoding="utf-8")
-        t0 = time.time(); p.step(1, 2, "x"); dt = time.time() - t0
-        fh.close()
-        check("a held read handle costs under 0.1s (was 0.45s)", dt < 0.1, f"{dt:.3f}s")
+
+        def _step_cost(hold):
+            fh = open(d / "progress.json", "r", encoding="utf-8") if hold else None
+            try:
+                t0 = time.perf_counter()
+                p.step(1, 2, "x")
+                return time.perf_counter() - t0
+            finally:
+                if fh is not None:
+                    fh.close()
+
+        free = min(_step_cost(False) for _ in range(5))
+        held = min(_step_cost(True) for _ in range(5))
+        check("a held reader does not send a live write down the long ladder",
+              held - free < 0.2, f"+{held - free:.3f}s over an uncontended write (long ladder is +0.45s)")
 
         # --- S3.14 text and list growth are bounded ---------------------------------------------------
         d = tmp()
