@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.7.7 — 2026-09-07
+
+No change to the extension. 1.7.6's own test suite failed on the build server, and this is that
+test corrected — published as its own version rather than quietly re-pointing the previous tag, so
+what shipped and what was verified stay the same thing.
+
+The test checked that a write does not pay the full retry ladder while another program has the
+progress file open for reading. It did that by demanding one write finish inside a tenth of a
+second — but the two ladders it distinguishes are 0.03s and 0.45s apart, and a tenth of a second of
+absolute wall clock is mostly process overhead on any machine. On a shared build server it measured
+0.118s and failed a release over code that was working correctly.
+
+It now times the same write with and without a reader holding the file, in the same process, and
+checks the *difference* — which is what the ladder actually costs, and which a slow machine cannot
+inflate. Confirmed by putting the long ladder back: the difference measured 0.452s against a
+predicted 0.45s, and the check failed as it should.
+
 ## 1.7.6 — 2026-09-07
 
 One real fix, from finishing the job 1.7.5 started. That release reported zero untested files,
