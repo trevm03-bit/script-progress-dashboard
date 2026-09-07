@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.7.5 — 2026-09-06
+
+Two fixes found by writing the first tests for six source files that no test, no fixture and not
+the release gate had ever loaded. The four findings fixed in 1.7.4 were all in files like that, so
+the obvious next question was which files were still like that: there were six, 38 KB of them.
+There are now none.
+
+**A message from the dashboard page could silently kill the message handler.** The `setting`
+message carries an id, and the handler checked it against an allow-list held in a plain object.
+Object property lookup finds inherited properties, so `allowed['constructor']` returns the Object
+constructor — truthy, so the guard passed — and the next line called `.includes()` on a function
+and threw. Nothing awaits that handler, so the error became an unhandled rejection: no message, no
+notification, and the panel simply stopped responding to that action with no indication why. The
+allow-list is now a `Map`, which has no inherited keys, and any failure in the handler is now
+caught and shown instead of vanishing. This is the third place this same shape has been found in
+this extension, so the rule now lives in a comment beside the code: anything keyed by input from
+the page, a settings file or a log file uses a `Map`.
+
+**`"scriptProgress.logsPath": null` raised a false warning.** `null` is valid JSON and is how you
+clear a setting, but the scope check treated it as a value that was present and being overridden,
+so the problems panel reported that a setting you had deliberately cleared was "being ignored".
+A panel whose only job is to be trusted must not cry wolf; `null` and `undefined` now count as
+empty, as they always should have.
+
+**Tests: 362 → 380.** Every new test was run against the unfixed build first, and the two sidebar
+and panel files were additionally checked with fourteen single-behaviour mutations applied one at
+a time — all fourteen detected — so no test in the new files passes for the wrong reason.
+
 ## 1.7.4 — 2026-09-06
 
 The four findings the completeness critic raised against the 2026-09-04 review itself. They were
