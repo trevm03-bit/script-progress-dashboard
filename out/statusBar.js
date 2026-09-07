@@ -165,8 +165,13 @@ Watching \`${this.logsHint().replace(/`/g, "'")}\` for progress files. Run **Scr
     }
     logsHint() { return this.logsDir || 'the configured logs folder'; }
     dispose() {
+        // Cleared AND forgotten. The interval stops either way, but leaving a dead handle in the field
+        // means the `!this.timer` guard in update() would see it as live and never arm a new one, so a
+        // manager that was disposed and then updated would show a frozen elapsed time for ever. Not
+        // reachable through the current activation path — closed because it costs a word.
         if (this.timer)
             clearInterval(this.timer);
+        this.timer = undefined;
         this.item.dispose();
     }
 }

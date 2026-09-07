@@ -62,7 +62,7 @@ export function runbookMarkdown(data: DashboardData, settings: Settings, now: Da
     const stepNames = p.subtasks?.length ? p.subtasks : [p.name];
     L.push(gap('Before step 1'));
     stepNames.forEach((name, i) => {
-      const f = facts(name, data, now);
+      const f = facts(name, data, now, stepNames);
       L.push(`### Step ${i + 1} — ${name}`);
       L.push('');
       if (!f.runs.length) {
@@ -97,7 +97,7 @@ export function runbookMarkdown(data: DashboardData, settings: Settings, now: Da
   // history at all. Claiming "never seen" about a process that ran this morning is exactly the
   // wrong thing to tell someone covering in an emergency.
   const unwired = settings.processes.filter(p =>
-    !runsFor(p, data.history).length && !(p.subtasks ?? []).some(n => facts(n, data, now).runs.length));
+    !runsFor(p, data.history).length && !(p.subtasks ?? []).some(n => facts(n, data, now, p.subtasks ?? []).runs.length));
   if (unwired.length) {
     L.push('## ⚠️ Not yet observed');
     L.push('');
@@ -142,15 +142,46 @@ function commandFor(task: string, settings: Settings): string | null {
 function stepMatches(task: string, name: string): boolean {
   const t = (task || '').toLowerCase(), n = name.toLowerCase();
   if (t === n) return true;
-  return t.startsWith(n) && /[\s:_\-/(]/.test(t.charAt(n.length));
+  if (!t.startsWith(n)) return false;
+  // 🔴 A bare space used to count as a separator, which made this function do the exact opposite
+  // of what the comment above it claims: `stepMatches('Load Archive', 'Load')` was TRUE, so step
+  // "Load" absorbed "Load Archive" — its duration skewed the median and its WRITE edge was
+  // printed under the wrong heading, telling an emergency reader that this step writes a table it
+  // never touches. That is the scenario the comment names, permitted by the code beneath it.
+  //
+  // A space alone cannot separate a decoration from a different script's name, because that is
+  // exactly how English separates two words. Punctuation can. So the remainder must begin with
+  // punctuation, optionally after one space: "Load: phase 1", "Load_archive", "Load-extract" and
+  // "Load (phase 1)" all still belong to Load; "Load Archive" no longer does.
+  return /^ ?[:_\-/(]/.test(t.slice(n.length));
 }
 
-function facts(name: string, data: DashboardData, now: Date): StepFacts {
+/**
+ * 🔴 The separator rule above is still a PREFIX rule, so it did not actually do what the comment
+ * says: `stepMatches('Load Archive', 'Load')` is true, because a space is a separator. Step "Load"
+ * therefore absorbed "Load Archive" exactly as the comment warned — its duration went into the
+ * median and its WRITE edge was printed under the wrong heading, telling an emergency reader that
+ * this step writes a table it never touches. A hazard written in a comment is not a hazard handled.
+ *
+ * It cannot be fixed by tightening the separators, because the ambiguity is real: from `("Load
+ * Archive", "Load")` alone there is no way to tell a sibling step from a decorated one, and
+ * dropping `\s` would break "Load (phase 1)" — the case the separators exist for.
+ *
+ * What settles it is context the caller has and the matcher did not: the OTHER configured step
+ * names. A task belongs to the longest configured name that matches it, so "Load Archive" goes to
+ * "Load Archive" when that step is configured, and still falls to "Load" when it is not.
+ */
+function ownsTask(task: string, name: string, siblings: string[]): boolean {
+  if (!stepMatches(task, name)) return false;
+  return !siblings.some(other => other.length > name.length && stepMatches(task, other));
+}
+
+function facts(name: string, data: DashboardData, now: Date, siblings: string[] = []): StepFacts {
   const runs = data.history
-    .filter(r => stepMatches(r.task, name))
+    .filter(r => ownsTask(r.task, name, siblings))
     .sort((a, b) => (parseIso(b.date)?.getTime() ?? 0) - (parseIso(a.date)?.getTime() ?? 0));
   const durations = runs.filter(r => r.success).map(r => Number(r.elapsed) || 0).filter(n => n > 0);
-  const { reads, writes } = accessFor(name, data.access);
+  const { reads, writes } = accessFor(name, data.access, siblings);
   return {
     name, runs,
     successes: durations.length,
@@ -160,7 +191,7 @@ function facts(name: string, data: DashboardData, now: Date): StepFacts {
   };
 }
 
-function accessFor(name: string, graph: AccessGraph | null): { reads: string[]; writes: string[] } {
+function accessFor(name: string, graph: AccessGraph | null, siblings: string[] = []): { reads: string[]; writes: string[] } {
   const reads: string[] = [], writes: string[] = [];
   // access.json is only validated as far as `nodes` being an array, so edges may be anything.
   if (!graph || !Array.isArray(graph.edges) || !Array.isArray(graph.nodes)) return { reads, writes };
@@ -168,7 +199,7 @@ function accessFor(name: string, graph: AccessGraph | null): { reads: string[]; 
   for (const e of graph.edges) {
     if (!e || typeof e.from !== 'string' || typeof e.to !== 'string') continue;
     const from = e.from.replace(/^task:/, '');
-    if (!stepMatches(from, name)) continue;
+    if (!ownsTask(from, name, siblings)) continue;
     (e.mode === 'write' ? writes : reads).push(label(e.to));
   }
   return { reads: unique(reads), writes: unique(writes) };

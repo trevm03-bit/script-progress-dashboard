@@ -44,6 +44,10 @@ vscode.workspace.getConfiguration = (section) => {
   };
 };
 
+// This getConfiguration is now the baseline the stub restores on every __reset(), so a test that
+// swaps in its own gets it taken away again rather than poisoning every later settings() call.
+vscode.__bless();
+
 const { readSettings: realReadSettings } = require(path.join(repo, 'out/settings.js'));
 
 /** Run the product's own settings reader with these raw `scriptProgress.*` values in place. */
