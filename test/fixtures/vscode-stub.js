@@ -210,7 +210,35 @@ const vscode = {
 
 vscode.__calls = calls;
 vscode.__answers = answers;
+
+/**
+ * 🔴 Undo per-test monkey-patching of `window` and `workspace`.
+ *
+ * A test that needs a different `getConfiguration` or a `showTextDocument` that rejects assigns
+ * one — and, before this existed, never put it back. node runs each test FILE in its own process,
+ * so the damage is contained to one file, which is exactly what makes it hard to see: the tests
+ * that break are the ones further down the same file, and they break by reading plausible-looking
+ * wrong values rather than by throwing.
+ *
+ * It cost real time here. `test/fixtures/settings.js` installs its own `getConfiguration` to serve
+ * package.json's declared defaults; a scopeCheck test replaced it, and every `settings({...})`
+ * call after that point silently returned bare defaults with the overrides dropped. Two digest
+ * tests then failed against a product that was working perfectly.
+ *
+ * So: whatever is in place when the fixtures have finished installing is the baseline, and every
+ * `__reset()` restores it.
+ */
+let blessed = null;
+vscode.__bless = () => {
+  blessed = { window: { ...vscode.window }, workspace: { ...vscode.workspace } };
+};
+vscode.__bless();
+
 vscode.__reset = () => {
+  if (blessed) {
+    Object.assign(vscode.window, blessed.window);
+    Object.assign(vscode.workspace, blessed.workspace);
+  }
   for (const k of Object.keys(calls)) calls[k].length = 0;
   answers.length = 0;
   vscode.__files.clear();

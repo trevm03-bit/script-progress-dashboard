@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.7.6 — 2026-09-07
+
+One real fix, from finishing the job 1.7.5 started. That release reported zero untested files,
+which was true and misleading: the sweep behind it only asked whether any test *named* a file.
+Measured properly, nine files were under 80% of their lines. All of them now have tests.
+
+**The generated runbook could attribute one script's work to another.** A step named `Load` matched
+any task beginning with `Load` followed by a separator — and a space counted as a separator, so a
+run called `Load Archive` was folded into the step called `Load`. Its duration went into that
+step's typical-time figure and, worse, the files and tables it writes were listed under the wrong
+heading: the runbook told the reader that `Load` writes something only `Load Archive` touches.
+That is the document someone follows at 3am when they are covering for whoever normally does this.
+
+A step name now claims a task only when the rest of the task name begins with punctuation,
+optionally after a single space — so `Load: phase 1`, `Load_archive`, `Load-extract` and
+`Load (phase 1)` still belong to `Load`, and `Load Archive` no longer does. Where a prefix match is
+still allowed, the longest step name you have actually configured wins, so a task called
+`Load: archive` goes to the `Load: archive` step when one exists rather than to `Load`.
+
+Also closed: the status bar's cleanup now clears its one-second timer *and* forgets it, so a
+manager that is disposed and later reused re-arms its clock instead of freezing. Not reachable
+through the current startup path; closed because it costs a word.
+
+**Tests: 380 → 473**, and every source file is now measured rather than merely mentioned — 96.6% of
+lines, up from 90.7%. The four thinnest files (the runbook generator at 26.6%, the quick-action
+enable rules at 13.3% of branches, the run comparison text and the impact summary at 42%) are all
+at 100% of lines. Every new test was run against the unfixed build first, and the new files were
+additionally checked with 94 single-behaviour mutations applied one at a time — all 94 detected —
+so nothing in them passes for the wrong reason.
+
 ## 1.7.5 — 2026-09-06
 
 Two fixes found by writing the first tests for six source files that no test, no fixture and not
